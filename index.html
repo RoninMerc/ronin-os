@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Ronin Aegis OS | Protective Services</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; user-select: none; box-sizing: border-box; }
+        body { font-family: 'Rajdhani', sans-serif; margin: 0; padding: 0; background: #000; overflow: hidden; color: white; }
+        .orbitron { font-family: 'Orbitron', monospace; }
+        .mono { font-family: 'Share Tech Mono', monospace; }
+        
+        /* Device Frame & Container */
+        .os-container {
+            width: 100%;
+            height: 100vh;
+            height: 100dvh; /* Mobile optimization */
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden;
+            background: #000;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        /* ===== ANIMATIONS ===== */
+        @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
+        @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 10px rgba(220, 38, 38, 0.5); border-color: rgba(220, 38, 38, 0.8); } 50% { box-shadow: 0 0 25px rgba(220, 38, 38, 0.8); border-color: rgba(220, 38, 38, 1); } }
+        @keyframes blink { 0%, 50%, 100% { opacity: 1; } 25%, 75% { opacity: 0; } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes spin-reverse { 0% { transform: rotate(360deg); } 100% { transform: rotate(0deg); } }
+        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        @keyframes glitch { 0% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(-2px, -2px); } 60% { transform: translate(2px, 2px); } 80% { transform: translate(2px, -2px); } 100% { transform: translate(0); } }
+        @keyframes ping-radar { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(3); opacity: 0; } }
+
+        /* ===== UTILITY CLASSES ===== */
+        .scan-overlay {
+            position: absolute; inset: 0;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+            background-size: 100% 4px; pointer-events: none; z-index: 90; opacity: 0.3;
+        }
+        .glass-panel {
+            background: rgba(15, 15, 20, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+        .hex-bg {
+            background-image: radial-gradient(circle at 50% 50%, rgba(20, 20, 30, 1) 0%, #000 100%);
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .text-glow-red { text-shadow: 0 0 10px rgba(220, 38, 38, 0.8); }
+
+        /* ===== BOOT SCREEN ===== */
+        #bootScreen {
+            position: absolute; inset: 0; background: #000; z-index: 1000;
+            display: flex; flex-direction: column; justify-content: space-between; padding: 40px 20px;
+        }
+        .boot-log { font-size: 11px; color: #10B981; line-height: 1.5; font-family: 'Share Tech Mono', monospace; height: 100%; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+        
+        /* ===== APP GRID ===== */
+        .app-item {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 6px; transition: transform 0.1s; cursor: pointer; position: relative;
+        }
+        .app-item:active { transform: scale(0.95); }
+        .app-icon {
+            width: 60px; height: 60px; border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; position: relative;
+            background: linear-gradient(145deg, #1a1a1a, #0a0a0a);
+            border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+        }
+        .app-icon.android-style {
+            background: transparent; border: none; box-shadow: none;
+        }
+        .app-badge {
+            position: absolute; top: -5px; right: -5px;
+            background: #dc2626; color: white; font-size: 10px; font-weight: bold;
+            width: 18px; height: 18px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid #000;
+        }
+        
+        /* ===== MAP STYLES ===== */
+        .leaflet-container { background: #000 !important; font-family: 'Share Tech Mono', monospace; }
+        .leaflet-layer, .leaflet-control-zoom-in, .leaflet-control-zoom-out, .leaflet-control-attribution {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+        }
+        .marker-pin {
+            width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff;
+            box-shadow: 0 0 10px currentColor; background: currentColor; position: relative;
+        }
+        .marker-pulse {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 50px; height: 50px; border-radius: 50%; border: 1px solid currentColor;
+            opacity: 0; animation: ping-radar 2s infinite; pointer-events: none;
+        }
+        
+        /* ===== CCTV STYLES ===== */
+        .cctv-scan-line {
+            position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+            background: rgba(255, 255, 255, 0.2); animation: scanline 3s linear infinite; z-index: 10;
+        }
+
+        /* ===== TOAST ===== */
+        .toast {
+            position: absolute; top: 50px; left: 50%; transform: translateX(-50%) translateY(-150px);
+            background: rgba(20, 20, 25, 0.95); border: 1px solid #333; border-left: 4px solid #dc2626;
+            padding: 12px 20px; border-radius: 8px; z-index: 2000; width: 90%; max-width: 350px;
+            display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+
+        /* PTT Button */
+        .ptt-active { background: radial-gradient(circle, #b91c1c 0%, #7f1d1d 100%) !important; box-shadow: 0 0 30px #dc2626 !important; transform: scale(0.98); }
+        .visualizer-bar { width: 4px; height: 10px; background: #dc2626; border-radius: 2px; transition: height 0.05s ease; }
+    </style>
+</head>
+<body>
+    <div class="os-container hex-bg">
+        <div class="scan-overlay"></div>
+
+        <!-- NOTIFICATION TOAST -->
+        <div id="toast" class="toast">
+            <i class="fas fa-shield-halved text-red-500 text-xl"></i>
+            <div>
+                <h4 class="font-bold text-sm orbitron text-white" id="toastTitle">NOTIFICATION</h4>
+                <p class="text-xs text-gray-400" id="toastMessage">System operational</p>
+            </div>
+        </div>
+
+        <!-- BOOT SCREEN -->
+        <div id="bootScreen">
+            <div class="boot-log" id="bootLog"></div>
+            <div class="absolute inset-0 flex flex-col items-center justify-center opacity-0 transition-opacity duration-1000" id="bootLogoContainer">
+                <i class="fas fa-shield-halved text-6xl text-red-600 mb-4 animate-pulse"></i>
+                <h1 class="orbitron text-3xl font-bold tracking-widest text-white">RONIN AEGIS</h1>
+                <p class="mono text-red-500 text-xs tracking-[0.6em] mt-2">PROTECTIVE SERVICES OS</p>
+                <div class="w-48 h-1 bg-gray-800 mt-8 rounded overflow-hidden">
+                    <div class="h-full bg-red-600 w-0" id="bootProgress"></div>
+                </div>
+            </div>
+            <div class="text-center text-gray-600 text-[9px] mono pb-4">
+                ANDROID KERNEL v5.10.43-RA-SECURE<br>ENCRYPTED BOOTLOADER LOCKED
+            </div>
+        </div>
+
+        <!-- LOCK SCREEN -->
+        <div id="lockScreen" class="absolute inset-0 z-50 flex flex-col items-center justify-center backdrop-blur-xl bg-black/80 hidden">
+            <div class="flex-1 flex flex-col items-center justify-center w-full">
+                <div class="mb-8 text-center">
+                    <h2 class="text-5xl font-light text-white mb-2" id="lockTime">12:00</h2>
+                    <p class="text-red-500 font-bold tracking-widest text-xs orbitron">SECURE LOCK</p>
+                    <p class="text-gray-400 text-xs mt-1 uppercase" id="lockDate">SATURDAY, 12 OCT</p>
+                </div>
+
+                <div class="w-full max-w-[280px]">
+                    <div class="flex justify-center gap-6 mb-10">
+                        <div class="pin-dot w-3 h-3 rounded-full border border-white/30 transition-all duration-200"></div>
+                        <div class="pin-dot w-3 h-3 rounded-full border border-white/30 transition-all duration-200"></div>
+                        <div class="pin-dot w-3 h-3 rounded-full border border-white/30 transition-all duration-200"></div>
+                        <div class="pin-dot w-3 h-3 rounded-full border border-white/30 transition-all duration-200"></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-6 mb-6">
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">1</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">2</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">3</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">4</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">5</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">6</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">7</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">8</button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">9</button>
+                        <button class="w-16 h-16 rounded-full flex items-center justify-center text-red-400 active:scale-95 transition-all" onclick="triggerPanic()"><i class="fas fa-circle-exclamation text-xl"></i></button>
+                        <button class="w-16 h-16 rounded-full bg-white/5 text-2xl font-light hover:bg-white/10 active:scale-95 transition-all pin-btn">0</button>
+                        <button class="w-16 h-16 rounded-full flex items-center justify-center text-white active:scale-95 transition-all" onclick="clearPin()"><i class="fas fa-delete-left text-xl"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="pb-10">
+                <button class="flex flex-col items-center gap-2 text-cyan-400 animate-pulse active:scale-95 transition-transform" onclick="unlock('bio')">
+                    <i class="fas fa-fingerprint text-5xl"></i>
+                    <span class="text-[10px] tracking-widest font-bold">BIOMETRIC SCAN</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- HOME SCREEN -->
+        <div id="homeScreen" class="absolute inset-0 flex flex-col hidden z-10 overflow-hidden bg-center bg-cover" style="background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.8)), url('https://images.unsplash.com/photo-1614064641938-3bcee52970f9?q=80&w=1000&auto=format&fit=crop');">
+            <!-- Android Status Bar -->
+            <div class="h-8 flex justify-between items-center px-4 text-xs font-medium text-white z-20 bg-gradient-to-b from-black/80 to-transparent">
+                <span id="statusBarTime">12:00</span>
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-signal text-[10px]" id="signalIcon"></i>
+                    <span class="text-[9px]" id="networkType">4G</span>
+                    <i class="fas fa-wifi text-[10px]"></i>
+                    <span id="batteryPercent" class="text-[9px]">100%</span>
+                    <i class="fas fa-battery-full text-[10px]" id="batteryIcon"></i>
+                </div>
+            </div>
+
+            <!-- Home Content -->
+            <div class="flex-1 overflow-y-auto p-4 pb-24 scrollbar-hide">
+                <!-- Widget -->
+                <div class="glass-panel rounded-2xl p-4 mb-8 flex justify-between items-center backdrop-blur-md bg-black/40 border-white/10">
+                    <div>
+                        <p class="text-gray-300 text-xs font-bold uppercase tracking-wider">Reaper-7</p>
+                        <p class="text-white text-2xl font-light" id="weatherWidget">24°C Clear</p>
+                        <p class="text-red-500 text-[10px] font-bold mt-1"><i class="fas fa-location-dot mr-1"></i>MIAMI, QLD</p>
+                    </div>
+                    <div class="text-right">
+                        <i class="fas fa-shield-halved text-4xl text-white/20"></i>
+                    </div>
+                </div>
+
+                <!-- Apps Grid -->
+                <div class="grid grid-cols-4 gap-y-6 gap-x-2 mb-6">
+                    <!-- Ronin Security Apps (Main Suite) -->
+                    <div class="app-item" onclick="openApp('patrol')">
+                        <div class="app-icon bg-gradient-to-br from-blue-900 to-black border-blue-500/30"><i class="fas fa-route text-blue-400"></i></div>
+                        <span class="text-[10px] text-gray-200">Patrol</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('cctv')">
+                        <div class="app-icon bg-gradient-to-br from-red-900 to-black border-red-500/30">
+                            <i class="fas fa-video text-red-500"></i>
+                            <div class="app-badge animate-pulse">!</div>
+                        </div>
+                        <span class="text-[10px] text-gray-200">CCTV</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('gps')">
+                        <div class="app-icon bg-gradient-to-br from-emerald-900 to-black border-emerald-500/30"><i class="fas fa-map-location-dot text-emerald-400"></i></div>
+                        <span class="text-[10px] text-gray-200">GPS</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('radio')">
+                        <div class="app-icon bg-gradient-to-br from-purple-900 to-black border-purple-500/30"><i class="fas fa-walkie-talkie text-purple-400"></i></div>
+                        <span class="text-[10px] text-gray-200">Radio</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('incidents')">
+                        <div class="app-icon bg-gradient-to-br from-pink-900 to-black border-pink-500/30"><i class="fas fa-file-contract text-pink-400"></i></div>
+                        <span class="text-[10px] text-gray-200">Reports</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('dispatch')">
+                        <div class="app-icon bg-gradient-to-br from-orange-900 to-black border-orange-500/30"><i class="fas fa-headset text-orange-400"></i></div>
+                        <span class="text-[10px] text-gray-200">Dispatch</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('escort')">
+                        <div class="app-icon bg-gradient-to-br from-amber-900 to-black border-amber-500/30"><i class="fas fa-car-side text-amber-400"></i></div>
+                        <span class="text-[10px] text-gray-200">Escort</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('assets')">
+                        <div class="app-icon bg-gradient-to-br from-teal-900 to-black border-teal-500/30"><i class="fas fa-box-open text-teal-400"></i></div>
+                        <span class="text-[10px] text-gray-200">Assets</span>
+                    </div>
+
+                    <!-- Secondary Tools -->
+                    <div class="app-item" onclick="openApp('tools')">
+                        <div class="app-icon bg-gray-800 border-gray-600/30"><i class="fas fa-toolbox text-gray-400"></i></div>
+                        <span class="text-[10px] text-gray-300">Tools</span>
+                    </div>
+                    <div class="app-item" onclick="openApp('settings')">
+                        <div class="app-icon bg-gray-800 border-gray-600/30"><i class="fas fa-cog text-gray-400"></i></div>
+                        <span class="text-[10px] text-gray-300">Settings</span>
+                    </div>
+                    
+                    <!-- Android Integrations (Discreet) -->
+                     <a href="tel:000" class="app-item no-underline text-white">
+                        <div class="app-icon bg-[#001f3f] border-blue-400/20"><i class="fas fa-phone-alt text-blue-300"></i></div>
+                        <span class="text-[10px] text-gray-300">Comms</span>
+                    </a>
+                    <div class="app-item" onclick="openUrl('https://www.google.com')">
+                        <div class="app-icon bg-[#001f3f] border-blue-400/20"><i class="fas fa-globe-asia text-blue-300"></i></div>
+                        <span class="text-[10px] text-gray-300">Intel</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dock -->
+            <div class="absolute bottom-4 left-4 right-4 h-20 glass-panel rounded-2xl flex items-center justify-around z-20 px-2 bg-black/60 backdrop-blur-xl border-white/5">
+                <button class="flex flex-col items-center gap-1 text-gray-300 hover:text-white active:scale-95" onclick="openApp('messenger')">
+                    <i class="fas fa-comment-alt text-xl"></i>
+                </button>
+                <div class="w-px h-8 bg-white/10"></div>
+                <!-- PANIC BUTTON -->
+                <button class="w-14 h-14 -mt-6 rounded-full bg-gradient-to-br from-red-600 to-red-800 border-4 border-[#1a1a1a] shadow-lg flex items-center justify-center text-white text-xl z-30 active:scale-95 transition-transform" onclick="triggerPanic()">
+                    <i class="fas fa-bell animate-pulse"></i>
+                </button>
+                <div class="w-px h-8 bg-white/10"></div>
+                <button class="flex flex-col items-center gap-1 text-gray-300 hover:text-white active:scale-95" onclick="lockDevice()">
+                    <i class="fas fa-lock text-xl"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- APP CONTAINER -->
+        <div id="appContainer" class="absolute inset-0 bg-black z-30 hidden flex flex-col">
+            <!-- App Header -->
+            <div class="h-14 bg-[#0a0a0a] border-b border-gray-800 flex items-center justify-between px-4 shrink-0">
+                <button onclick="closeApp()" class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-white active:bg-gray-700">
+                    <i class="fas fa-arrow-left text-sm"></i>
+                </button>
+                <h2 class="font-bold orbitron tracking-wider text-white text-sm" id="appTitle">APP</h2>
+                <div class="w-8"></div>
+            </div>
+            <!-- Content -->
+            <div id="appContent" class="flex-1 overflow-y-auto relative bg-[#050505]"></div>
+        </div>
+
+        <!-- PANIC OVERLAY -->
+        <div id="panicOverlay" class="absolute inset-0 z-[100] bg-red-600 hidden flex flex-col items-center justify-center text-center p-6 animate-pulse">
+            <div class="bg-black/90 absolute inset-0 mix-blend-multiply"></div>
+            <div class="relative z-10 w-full max-w-sm">
+                <div class="w-32 h-32 rounded-full border-4 border-red-500 flex items-center justify-center mx-auto mb-6 bg-black">
+                    <i class="fas fa-exclamation text-6xl text-red-500"></i>
+                </div>
+                <h1 class="text-4xl font-black orbitron text-white mb-2">SOS ALERT</h1>
+                <p class="text-white font-bold tracking-widest mb-8 text-lg">BROADCASTING LOCATION</p>
+                <div class="bg-black/50 rounded-xl p-4 mb-8 border border-red-500/50 text-left">
+                    <p class="text-gray-400 text-xs mb-1">COORDINATES</p>
+                    <p class="text-white font-mono text-xl font-bold mb-4" id="panicCoords">-28.0653, 153.4291</p>
+                    <p class="text-gray-400 text-xs mb-1">STATUS</p>
+                    <p class="text-red-500 font-bold uppercase">Distress Signal Active</p>
+                </div>
+                <button onclick="cancelPanic()" class="bg-white text-black font-bold text-lg py-4 px-12 rounded-full shadow-lg active:scale-95 transition-transform w-full">
+                    CANCEL SOS
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========== STATE & DATA ==========
+        const state = {
+            pin: '',
+            passcode: '1234',
+            locked: true,
+            currentApp: null,
+            channel: 'CH-07',
+            currentSite: null,
+            patrolCheckpoints: [
+                { id: 1, name: 'Main Gate Entry', status: 'done', time: '06:00' },
+                { id: 2, name: 'North Perimeter', status: 'done', time: '06:22' },
+                { id: 3, name: 'Loading Dock', status: 'pending' },
+                { id: 4, name: 'Server Room Ext', status: 'pending' },
+                { id: 5, name: 'Executive Parking', status: 'pending' },
+                { id: 6, name: 'Rooftop Access', status: 'pending' }
+            ],
+            incidents: [
+                { id: '#4492', title: 'Suspicious Vehicle', type: 'Warning', date: 'Today, 10:23' }
+            ],
+            messages: [
+                { from: 'DISPATCH', text: 'Unit R-7, confirm status.', time: '11:45', self: false },
+                { from: 'You', text: '10-4, on patrol sector 7.', time: '11:50', self: true }
+            ]
+        };
+
+        const cctvSites = [
+            {
+                id: 'hq', name: 'MIAMI HQ BASE', address: '2285 Gold Coast Hwy, Miami QLD', status: 'ONLINE',
+                cameras: [
+                     { id: 1, name: 'Main Entry', url: 'https://www.youtube.com/embed/ydYDqZQpim8?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=ydYDqZQpim8' },
+                     { id: 2, name: 'Perimeter N', url: 'https://www.youtube.com/embed/1EiC9bvVGnk?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=1EiC9bvVGnk' }
+                ]
+            },
+            {
+                id: 'casino', name: 'THE STAR CASINO VIP', address: '1 Casino Dr, Broadbeach QLD', status: 'ONLINE',
+                cameras: [
+                     { id: 3, name: 'Lobby', url: 'https://www.youtube.com/embed/AdUw5RdyZxI?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=AdUw5RdyZxI' },
+                     { id: 4, name: 'Valet', url: 'https://www.youtube.com/embed/K_-odCoDpSQ?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=K_-odCoDpSQ' }
+                ]
+            },
+            {
+                id: 'depot', name: 'SOUTHPORT DEPOT', address: '142 Scarborough St, Southport QLD', status: 'MAINTENANCE',
+                cameras: [
+                    { id: 5, name: 'Loading Dock', url: 'https://www.youtube.com/embed/gFRtAAmiFbE?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=gFRtAAmiFbE' }
+                ]
+            }
+        ];
+
+        // ========== SYSTEM BOOT ==========
+        window.onload = () => {
+            const log = document.getElementById('bootLog');
+            const lines = ["BOOTLOADER_UNLOCKED...", "KERNEL_INIT...", "MOUNT /SYSTEM_RO...", "CHECKING SECURITY... PASS", "LOADING RONIN_OS...", "GPS_TRIANGULATION... OK", "ENCRYPTION_KEY... VALID"];
+            let i = 0;
+            const interval = setInterval(() => {
+                if(i < lines.length) {
+                    log.innerHTML += `<div class="text-${i%2===0?'green-400':'green-600'}">> ${lines[i]}</div>`;
+                    i++;
+                } else {
+                    clearInterval(interval);
+                    document.getElementById('bootLogoContainer').style.opacity = '1';
+                    document.getElementById('bootProgress').style.width = '100%';
+                    document.getElementById('bootProgress').style.transition = 'width 1.5s ease-out';
+                    setTimeout(() => {
+                        document.getElementById('bootScreen').style.opacity = '0';
+                        setTimeout(() => {
+                             document.getElementById('bootScreen').style.display = 'none';
+                             document.getElementById('lockScreen').classList.remove('hidden');
+                        }, 500);
+                    }, 2000);
+                }
+            }, 250);
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            // Initial map load fix
+            window.addEventListener('resize', () => {
+                if(window.mapInstance) window.mapInstance.invalidateSize();
+            });
+        };
+
+        // ========== LOCK SCREEN ==========
+        document.querySelectorAll('.pin-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (state.pin.length < 4) {
+                    playSfx('click');
+                    state.pin += e.target.innerText;
+                    updatePinDots();
+                    if (state.pin.length === 4) checkPin();
+                }
+            });
+        });
+
+        function clearPin() {
+            state.pin = '';
+            updatePinDots();
+        }
+
+        function updatePinDots() {
+            document.querySelectorAll('.pin-dot').forEach((dot, i) => {
+                dot.style.background = i < state.pin.length ? '#fff' : 'transparent';
+            });
+        }
+
+        function checkPin() {
+            if (state.pin === state.passcode) unlock();
+            else {
+                playSfx('error');
+                navigator.vibrate([50, 50, 50]);
+                document.querySelectorAll('.pin-dot').forEach(d => d.style.borderColor = 'red');
+                setTimeout(() => {
+                    state.pin = '';
+                    updatePinDots();
+                    document.querySelectorAll('.pin-dot').forEach(d => d.style.borderColor = 'rgba(255,255,255,0.3)');
+                }, 500);
+            }
+        }
+
+        function unlock(method) {
+            playSfx('success');
+            document.getElementById('lockScreen').classList.add('hidden');
+            document.getElementById('homeScreen').classList.remove('hidden');
+        }
+
+        function lockDevice() {
+            state.pin = '';
+            updatePinDots();
+            document.getElementById('homeScreen').classList.add('hidden');
+            document.getElementById('appContainer').classList.add('hidden');
+            document.getElementById('lockScreen').classList.remove('hidden');
+        }
+
+        // ========== NAVIGATION ==========
+        function showHome() {
+            document.getElementById('appContainer').classList.add('hidden');
+            state.currentApp = null;
+        }
+
+        function openApp(appName) {
+            playSfx('click');
+            const content = document.getElementById('appContent');
+            const title = document.getElementById('appTitle');
+            document.getElementById('appContainer').classList.remove('hidden');
+            state.currentApp = appName;
+            content.innerHTML = '';
+            
+            switch(appName) {
+                case 'cctv': title.innerText = 'SURVEILLANCE'; renderCCTV(content); break;
+                case 'incidents': title.innerText = 'INCIDENT REPORTS'; renderIncidents(content); break;
+                case 'gps': title.innerText = 'GPS TRACKER'; renderGPS(content); break;
+                case 'radio': title.innerText = 'TACTICAL RADIO'; renderRadio(content); break;
+                case 'patrol': title.innerText = 'PATROL LOG'; renderPatrol(content); break;
+                case 'messenger': title.innerText = 'SECURE CHAT'; renderMessenger(content); break;
+                case 'tools': title.innerText = 'UTILITIES'; renderTools(content); break;
+                default: title.innerText = appName.toUpperCase(); content.innerHTML = '<div class="p-10 text-center text-gray-500">Module Loading...</div>';
+            }
+        }
+
+        function closeApp() {
+            if(state.currentApp === 'cctv' && state.currentSite) {
+                state.currentSite = null;
+                renderCCTV(document.getElementById('appContent'));
+                return;
+            }
+            if(state.currentApp === 'incidents' && document.getElementById('reportForm')) {
+                 renderIncidents(document.getElementById('appContent'));
+                 return;
+            }
+            if(window.mapInstance) { window.mapInstance.remove(); window.mapInstance = null; }
+            showHome();
+        }
+
+        // ========== CCTV APP ==========
+        function renderCCTV(container) {
+            if (!state.currentSite) {
+                // Site List View - Sorted by property/address as requested
+                let html = `<div class="p-4 space-y-4">`;
+                html += `<div class="text-xs font-bold text-gray-500 mb-2 pl-1 tracking-widest">AVAILABLE SITES</div>`;
+                cctvSites.forEach(site => {
+                    html += `
+                        <div class="glass-panel p-4 rounded-xl active:bg-white/5 transition-colors border-l-4 ${site.status==='ONLINE'?'border-green-600':'border-yellow-600'}" onclick="openSite('${site.id}')">
+                            <div class="flex justify-between items-start mb-2">
+                                <h3 class="font-bold text-white text-lg">${site.name}</h3>
+                                <span class="text-[10px] px-2 py-0.5 rounded ${site.status==='ONLINE'?'bg-green-900/50 text-green-400':'bg-yellow-900/50 text-yellow-400'} border border-white/10">${site.status}</span>
+                            </div>
+                            <p class="text-xs text-gray-400 mb-4"><i class="fas fa-map-marker-alt mr-1 text-red-500"></i>${site.address}</p>
+                            <div class="flex items-center justify-between">
+                                <div class="flex gap-1">
+                                    ${site.cameras.map(() => `<div class="w-2 h-2 bg-gray-600 rounded-full"></div>`).join('')}
+                                </div>
+                                <p class="text-[10px] text-right text-gray-500 font-mono">${site.cameras.length} CAMS</p>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+                container.innerHTML = html;
+            } else {
+                // NVR View
+                const site = cctvSites.find(s => s.id === state.currentSite);
+                const cam = site.cameras[0]; // Default to first
+                
+                container.innerHTML = `
+                    <div class="flex flex-col h-full bg-black">
+                        <div class="relative flex-1 bg-black border-b border-gray-800" id="mainFeed">
+                            <iframe src="${cam.url}" class="w-full h-full object-cover pointer-events-none" frameborder="0"></iframe>
+                            <!-- NVR Overlay -->
+                            <div class="absolute inset-0 p-3 flex flex-col justify-between pointer-events-none bg-gradient-to-b from-black/50 via-transparent to-black/50">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex gap-2">
+                                        <span class="text-red-500 font-bold animate-pulse text-xs bg-black/50 px-2 py-1 rounded">● REC</span>
+                                        <span class="text-green-500 font-bold text-xs bg-black/50 px-2 py-1 rounded">LIVE</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-white font-mono text-xs block" id="cctvTimer">00:00:00:00</span>
+                                        <span class="text-gray-400 text-[10px] block">CAM-0${cam.id} // 1080p // 30FPS</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 class="text-white font-bold text-lg">${cam.name}</h3>
+                                    <p class="text-gray-400 text-xs">${site.name}</p>
+                                </div>
+                            </div>
+                            <div class="cctv-scan-line"></div>
+                        </div>
+                        <!-- Camera Strip -->
+                        <div class="h-28 overflow-x-auto whitespace-nowrap p-2 bg-[#0a0a0a] border-t border-gray-800">
+                            ${site.cameras.map((c, i) => `
+                                <div class="inline-block h-full aspect-video bg-gray-900 rounded border border-gray-700 relative overflow-hidden mr-2" onclick="switchCam('${c.url}', '${c.name}')">
+                                    ${c.url ? `<iframe src="${c.url}" class="w-full h-full object-cover opacity-60 pointer-events-none"></iframe>` : `<div class="w-full h-full flex items-center justify-center text-gray-700"><i class="fas fa-video-slash"></i></div>`}
+                                    <div class="absolute bottom-0 inset-x-0 bg-black/70 p-1">
+                                        <p class="text-[9px] text-white truncate text-center">${c.name}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                
+                // Clock for CCTV
+                const timer = document.getElementById('cctvTimer');
+                if(window.cctvInt) clearInterval(window.cctvInt);
+                window.cctvInt = setInterval(() => {
+                    if(document.getElementById('cctvTimer')) {
+                        const d = new Date();
+                        timer.innerText = d.toLocaleTimeString('en-GB') + ':' + d.getMilliseconds().toString().padStart(3,'0');
+                    }
+                }, 41);
+            }
+        }
+
+        function openSite(id) {
+            state.currentSite = id;
+            renderCCTV(document.getElementById('appContent'));
+        }
+
+        function switchCam(url, name) {
+            const feed = document.getElementById('mainFeed');
+            if(url && url !== 'null') {
+                feed.querySelector('iframe').src = url;
+                feed.querySelector('h3').innerText = name;
+            }
+        }
+
+        // ========== REPORTS APP ==========
+        function renderIncidents(container) {
+            container.innerHTML = `
+                <div class="p-4">
+                    <button onclick="showReportTemplates()" class="w-full py-4 bg-gradient-to-r from-pink-700 to-pink-900 rounded-xl font-bold text-white mb-6 shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-transform border border-pink-500/30">
+                        <i class="fas fa-plus-circle"></i> NEW INCIDENT REPORT
+                    </button>
+                    
+                    <h3 class="text-xs font-bold text-gray-500 mb-2 pl-1 tracking-widest">RECENT LOGS</h3>
+                    <div class="space-y-3" id="incidentList">
+                        ${state.incidents.map(inc => `
+                            <div class="glass-panel p-3 rounded-lg border-l-4 border-pink-500 flex justify-between items-center">
+                                <div>
+                                    <h4 class="font-bold text-white text-sm">${inc.title}</h4>
+                                    <p class="text-xs text-gray-400">${inc.type} • ${inc.date}</p>
+                                </div>
+                                <span class="text-[10px] bg-gray-800 px-2 py-1 rounded text-pink-400 font-mono">${inc.id}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function showReportTemplates() {
+            const container = document.getElementById('appContent');
+            const templates = [
+                { icon: 'fa-car-crash', name: 'Vehicle Incident', color: 'text-red-400', desc: 'Crash, Damage, Theft' },
+                { icon: 'fa-user-injured', name: 'Injury / Medical', color: 'text-blue-400', desc: 'First Aid, Ambulance' },
+                { icon: 'fa-door-open', name: 'Breach / Intrusion', color: 'text-orange-400', desc: 'Unauthorized Access' },
+                { icon: 'fa-screwdriver-wrench', name: 'Maintenance', color: 'text-gray-400', desc: 'Repairs Required' },
+                { icon: 'fa-person-military-pointing', name: 'Use of Force', color: 'text-purple-400', desc: 'Physical Intervention' },
+                { icon: 'fa-clipboard-check', name: 'Routine Check', color: 'text-green-400', desc: 'Standard Log' }
+            ];
+            
+            container.innerHTML = `
+                <div class="p-4">
+                    <div class="flex items-center gap-3 mb-4">
+                        <button onclick="renderIncidents(document.getElementById('appContent'))" class="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-white"><i class="fas fa-arrow-left text-xs"></i></button>
+                        <h3 class="text-white font-bold text-sm">SELECT REPORT TYPE</h3>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        ${templates.map(t => `
+                            <button onclick="openReportForm('${t.name}')" class="glass-panel p-4 rounded-xl flex flex-col items-center gap-2 active:scale-95 transition-transform text-center h-full">
+                                <i class="fas ${t.icon} text-3xl ${t.color} mb-1"></i>
+                                <span class="text-xs font-bold text-gray-200">${t.name}</span>
+                                <span class="text-[9px] text-gray-500">${t.desc}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function openReportForm(type) {
+            const container = document.getElementById('appContent');
+            container.innerHTML = `
+                <div class="p-4" id="reportForm">
+                    <div class="flex items-center gap-2 mb-6 text-pink-500">
+                        <i class="fas fa-file-signature"></i>
+                        <span class="font-bold uppercase tracking-wider text-sm">${type} REPORT</span>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Location / Site</label>
+                            <input type="text" class="w-full bg-gray-900 border border-gray-700 rounded p-3 text-white text-sm outline-none focus:border-pink-500" placeholder="e.g. Miami HQ Main Gate">
+                        </div>
+                        
+                        ${type === 'Use of Force' ? `
+                        <div>
+                            <label class="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Force Level</label>
+                            <select class="w-full bg-gray-900 border border-gray-700 rounded p-3 text-white text-sm outline-none focus:border-pink-500">
+                                <option>Verbal Command</option>
+                                <option>Soft Physical Control</option>
+                                <option>Hard Physical Control</option>
+                                <option>Defensive Equipment</option>
+                            </select>
+                        </div>` : ''}
+
+                        <div>
+                            <label class="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Incident Details</label>
+                            <textarea class="w-full bg-gray-900 border border-gray-700 rounded p-3 text-white text-sm outline-none focus:border-pink-500 h-32" placeholder="Describe exactly what happened..."></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Evidence</label>
+                            <button class="w-full py-3 border border-dashed border-gray-600 rounded text-gray-500 text-xs flex items-center justify-center gap-2 active:bg-gray-800 transition-colors">
+                                <i class="fas fa-camera"></i> TAKE PHOTO / UPLOAD
+                            </button>
+                        </div>
+                        
+                        <div class="pt-4 flex gap-3">
+                            <button onclick="renderIncidents(document.getElementById('appContent'))" class="flex-1 py-3 bg-gray-800 rounded text-gray-400 text-xs font-bold">CANCEL</button>
+                            <button onclick="submitReport('${type}')" class="flex-1 py-3 bg-pink-700 rounded text-white text-xs font-bold shadow-lg shadow-pink-900/20">SUBMIT</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function submitReport(type) {
+            playSfx('success');
+            state.incidents.unshift({
+                id: '#' + Math.floor(Math.random()*9000+1000),
+                title: type,
+                type: 'Pending Review',
+                date: 'Just now'
+            });
+            showToast('REPORT SUBMITTED', 'Uploaded to HQ Server');
+            renderIncidents(document.getElementById('appContent'));
+        }
+
+        // ========== GPS APP ==========
+        function renderGPS(container) {
+             container.innerHTML = `
+             <div class="relative w-full h-full">
+                 <div id="map" class="w-full h-full bg-[#111]"></div>
+                 
+                 <!-- Locate Me Button -->
+                 <button onclick="locateMe()" class="absolute bottom-6 right-6 w-12 h-12 bg-blue-600 rounded-full text-white shadow-lg flex items-center justify-center z-[500] active:scale-95 transition-transform border-2 border-white/20">
+                    <i class="fas fa-crosshairs"></i>
+                 </button>
+                 
+                 <!-- Compass -->
+                 <div class="absolute top-4 right-4 z-[500] bg-black/60 backdrop-blur rounded-full w-12 h-12 flex items-center justify-center border border-white/10">
+                    <div id="compassArrow" class="text-red-500 text-2xl transition-transform duration-500"><i class="fas fa-location-arrow"></i></div>
+                 </div>
+             </div>`;
+             
+             setTimeout(() => {
+                 if(window.mapInstance) window.mapInstance.remove();
+                 // Dark Matter Map
+                 const map = L.map('map', {zoomControl: false}).setView([-28.0653, 153.4291], 11);
+                 window.mapInstance = map;
+                 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+                 
+                 // Real Markers for requested locations
+                 const agents = [
+                     {lat: -28.0653, lng: 153.4291, color: '#ef4444', name: 'Reaper-7 (YOU)', loc: 'Miami HQ'},
+                     {lat: -27.9628, lng: 153.4121, color: '#14b8a6', name: 'Shadow-3', loc: 'Southport'},
+                     {lat: -28.1667, lng: 153.5333, color: '#14b8a6', name: 'Spectre-5', loc: 'Coolangatta'},
+                     {lat: -27.9944, lng: 153.3000, color: '#f59e0b', name: 'Phantom-9', loc: 'Hinterland'}
+                 ];
+                 
+                 agents.forEach(a => {
+                     const iconHtml = `<div class="marker-pin" style="color:${a.color};box-shadow:0 0 15px ${a.color}"></div>${a.name==='Reaper-7 (YOU)'?'<div class="marker-pulse" style="color:#ef4444"></div>':''}`;
+                     const icon = L.divIcon({className: '', html: iconHtml, iconSize: [16,16]});
+                     L.marker([a.lat, a.lng], {icon}).addTo(map).bindPopup(`<b style="color:black">${a.name}</b><br><span style="color:gray">${a.loc}</span>`);
+                 });
+
+                 // Device Orientation for compass
+                 if (window.DeviceOrientationEvent) {
+                    window.addEventListener('deviceorientation', function(event) {
+                        if(event.alpha) {
+                             document.getElementById('compassArrow').style.transform = `rotate(${360 - event.alpha}deg)`;
+                        }
+                    });
+                 }
+             }, 100);
+        }
+
+        function locateMe() {
+            // Simulator for "Locate Me" that zooms to Miami (Home Base)
+            if(window.mapInstance) {
+                window.mapInstance.flyTo([-28.0653, 153.4291], 15);
+                showToast('GPS LOCKED', 'Accuracy: 3m');
+            }
+        }
+
+        // ========== RADIO APP ==========
+        function renderRadio(container) {
+            container.innerHTML = `
+                <div class="h-full flex flex-col p-6 items-center justify-between bg-gradient-to-b from-gray-900 to-black">
+                    <div class="text-center w-full">
+                        <h2 class="text-5xl font-bold orbitron text-white glitch-text mb-2">${state.channel}</h2>
+                        <div class="flex justify-center gap-1 h-8 items-end mb-8">
+                            <div class="visualizer-bar"></div><div class="visualizer-bar"></div><div class="visualizer-bar"></div><div class="visualizer-bar"></div>
+                            <div class="visualizer-bar"></div><div class="visualizer-bar"></div><div class="visualizer-bar"></div><div class="visualizer-bar"></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            <button class="p-3 border border-gray-700 rounded text-xs text-gray-400 active:bg-gray-800" onclick="setCh('CH-01')">CH-01 CMD</button>
+                            <button class="p-3 border border-purple-500 text-white bg-purple-900/20 rounded text-xs active:bg-purple-900/40" onclick="setCh('CH-07')">CH-07 TAC</button>
+                            <button class="p-3 border border-gray-700 rounded text-xs text-gray-400 active:bg-gray-800" onclick="setCh('CH-12')">CH-12 OPS</button>
+                            <button class="p-3 border border-gray-700 rounded text-xs text-gray-400 active:bg-gray-800" onclick="setCh('CH-05')">CH-05 EMERG</button>
+                        </div>
+                        <div class="text-[10px] text-green-500 font-mono tracking-widest">ENCRYPTION: AES-256 ACTIVE</div>
+                    </div>
+                    
+                    <div class="relative">
+                        <button class="w-48 h-48 rounded-full bg-gray-800 border-4 border-gray-700 shadow-2xl flex items-center justify-center active:scale-95 transition-transform z-10 relative" onmousedown="startPTT()" onmouseup="endPTT()" ontouchstart="startPTT()" ontouchend="endPTT()">
+                            <i class="fas fa-microphone text-4xl text-gray-500" id="pttIcon"></i>
+                        </button>
+                        <div class="absolute inset-0 bg-red-600/20 rounded-full animate-ping hidden" id="pttPing"></div>
+                    </div>
+                    
+                    <p class="text-xs text-gray-500 font-bold">PUSH AND HOLD TO TALK</p>
+                </div>
+            `;
+        }
+        function setCh(ch) { 
+            playSfx('click'); 
+            state.channel = ch; 
+            renderRadio(document.getElementById('appContent')); 
+        }
+        function startPTT() { 
+            navigator.vibrate(50); 
+            document.getElementById('pttIcon').classList.add('text-white');
+            document.getElementById('pttPing').classList.remove('hidden');
+            document.querySelectorAll('.visualizer-bar').forEach(b => {
+                b.style.animation = 'blink 0.2s infinite alternate';
+                b.style.height = Math.random()*20+10+'px';
+            });
+            // Request mic for realism (browser will prompt)
+            navigator.mediaDevices.getUserMedia({audio:true}).then(()=>{}).catch(()=>{});
+        }
+        function endPTT() { 
+            document.getElementById('pttIcon').classList.remove('text-white');
+            document.getElementById('pttPing').classList.add('hidden');
+            document.querySelectorAll('.visualizer-bar').forEach(b => {
+                b.style.animation = 'none';
+                b.style.height = '4px';
+            });
+        }
+
+        // ========== MESSENGER APP ==========
+        function renderMessenger(container) {
+            container.innerHTML = `
+                <div class="flex flex-col h-full">
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide" id="chatList">
+                        <div class="text-center text-[10px] text-gray-600 my-4 uppercase tracking-widest">--- End-to-End Encrypted ---</div>
+                        ${state.messages.map(m => `
+                            <div class="flex flex-col ${m.self?'items-end':'items-start'} animate-[slideInRight_0.3s]">
+                                <div class="p-3 rounded-2xl ${m.self?'bg-blue-600 text-white rounded-tr-none':'bg-gray-800 text-gray-200 rounded-tl-none'} max-w-[80%] text-sm shadow-md">
+                                    <p class="font-bold text-[10px] opacity-70 mb-1 flex justify-between gap-4"><span>${m.from}</span> <span>${m.time}</span></p>
+                                    ${m.text}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="p-3 border-t border-gray-800 flex gap-2 bg-black">
+                        <button class="w-10 h-10 rounded-full text-gray-400 flex items-center justify-center"><i class="fas fa-plus"></i></button>
+                        <input type="text" id="msgIn" class="flex-1 bg-gray-900 border border-gray-700 rounded-full px-4 text-sm outline-none text-white focus:border-blue-500" placeholder="Secure Message..." onkeypress="if(event.key==='Enter') sendMsg()">
+                        <button onclick="sendMsg()" class="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg active:scale-95"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            `;
+            // Auto scroll to bottom
+            const cl = document.getElementById('chatList');
+            if(cl) cl.scrollTop = cl.scrollHeight;
+        }
+        function sendMsg() {
+            const inp = document.getElementById('msgIn');
+            if(inp && inp.value) {
+                playSfx('click');
+                state.messages.push({from:'You', text:inp.value, time:'Now', self:true});
+                inp.value=''; renderMessenger(document.getElementById('appContent'));
+                setTimeout(() => {
+                    playSfx('success');
+                    state.messages.push({from:'DISPATCH', text:'Copy that. Logged.', time:'Now', self:false});
+                    if(state.currentApp==='messenger') renderMessenger(document.getElementById('appContent'));
+                    else showToast('NEW MESSAGE', 'Dispatch');
+                }, 2000);
+            }
+        }
+        
+        // ========== PATROL APP ==========
+        function renderPatrol(container) {
+             container.innerHTML = `<div class="p-4 space-y-3">
+                <div class="flex justify-between items-center mb-4">
+                     <h3 class="text-gray-400 text-xs font-bold uppercase tracking-wider">Patrol Route: Sector 7</h3>
+                     <span class="text-xs text-green-500 font-mono">ACTIVE</span>
+                </div>
+                ${state.patrolCheckpoints.map(cp => `
+                    <div class="glass-panel p-3 rounded-lg flex items-center gap-3 ${cp.status==='done'?'opacity-50 border-green-900':''}">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center ${cp.status==='done'?'bg-green-900 text-green-500':'bg-gray-800 text-white border border-gray-600'}">
+                            ${cp.status==='done'?'<i class="fas fa-check"></i>':'<i class="fas fa-barcode"></i>'}
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="text-white text-sm font-bold">${cp.name}</h4>
+                            <p class="text-[10px] text-gray-400 uppercase">${cp.status}</p>
+                        </div>
+                        ${cp.status!=='done'?`<button onclick="scanCp(${cp.id})" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs text-white font-bold shadow-lg active:scale-95 transition-all">SCAN</button>`:''}
+                    </div>
+                `).join('')}
+             </div>`;
+        }
+        function scanCp(id) {
+            navigator.vibrate(200);
+            playSfx('success');
+            const cp = state.patrolCheckpoints.find(c => c.id === id);
+            cp.status = 'done';
+            showToast('CHECKPOINT VERIFIED', cp.name);
+            renderPatrol(document.getElementById('appContent'));
+        }
+
+        // ========== TOOLS APP ==========
+        function renderTools(container) {
+             container.innerHTML = `
+                <div class="p-4 grid grid-cols-2 gap-4">
+                     <div class="glass-panel p-4 rounded-xl flex flex-col items-center justify-center gap-2 aspect-square active:bg-white/5" onclick="showToast('SCHEDULE','Shift: 0600 - 1800')">
+                         <i class="fas fa-calendar-alt text-3xl text-blue-400"></i>
+                         <span class="text-xs font-bold">ROSTER</span>
+                     </div>
+                     <div class="glass-panel p-4 rounded-xl flex flex-col items-center justify-center gap-2 aspect-square active:bg-white/5" onclick="showToast('DOCS','Opening SOPs...')">
+                         <i class="fas fa-book text-3xl text-yellow-400"></i>
+                         <span class="text-xs font-bold">SOPs</span>
+                     </div>
+                     <div class="glass-panel p-4 rounded-xl flex flex-col items-center justify-center gap-2 aspect-square active:bg-white/5" onclick="showToast('CHECK-IN','QR Scanner Active')">
+                         <i class="fas fa-qrcode text-3xl text-white"></i>
+                         <span class="text-xs font-bold">QR CHECK</span>
+                     </div>
+                     <div class="glass-panel p-4 rounded-xl flex flex-col items-center justify-center gap-2 aspect-square active:bg-white/5" onclick="openApp('settings')">
+                         <i class="fas fa-sliders text-3xl text-gray-400"></i>
+                         <span class="text-xs font-bold">SYSTEM</span>
+                     </div>
+                </div>
+             `;
+        }
+
+        // ========== UTILS ==========
+        function openUrl(url) { window.open(url, '_blank'); }
+        function showToast(t, m) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastTitle').innerText = t;
+            document.getElementById('toastMessage').innerText = m;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+        
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('statusBarTime').innerText = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            document.getElementById('lockTime').innerText = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            document.getElementById('lockDate').innerText = now.toLocaleDateString([], {weekday: 'long', day: 'numeric', month: 'short'}).toUpperCase();
+            
+            // Connection
+            const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            if(conn) {
+                document.getElementById('networkType').innerText = conn.effectiveType ? conn.effectiveType.toUpperCase() : '4G';
+            }
+            
+            // Battery
+            if(navigator.getBattery) {
+                navigator.getBattery().then(b => {
+                    document.getElementById('batteryPercent').innerText = Math.round(b.level * 100) + '%';
+                    document.getElementById('batteryIcon').className = b.charging ? 'fas fa-bolt text-yellow-400 text-[10px]' : 'fas fa-battery-full text-[10px]';
+                });
+            }
+        }
+
+        function playSfx(type) {
+            const ctx = new (window.AudioContext||window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            
+            if(type==='click') {
+                osc.frequency.setValueAtTime(600, ctx.currentTime);
+                gain.gain.setValueAtTime(0.05, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.05);
+                osc.start(); osc.stop(ctx.currentTime+0.05);
+            } else if (type==='error') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime+0.2);
+                osc.start(); osc.stop(ctx.currentTime+0.2);
+            } else if (type==='success') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime+0.1);
+                gain.gain.setValueAtTime(0.05, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.001, ctx.currentTime+0.2);
+                osc.start(); osc.stop(ctx.currentTime+0.2);
+            }
+        }
+
+        function triggerPanic() {
+            document.getElementById('panicOverlay').classList.remove('hidden');
+            navigator.vibrate([200,100,200]);
+            playSfx('error');
+            setTimeout(() => {
+                // Simulate broadcast
+                document.getElementById('panicCoords').innerText = "BROADCASTING...";
+                setTimeout(() => document.getElementById('panicCoords').innerText = "-28.0653, 153.4291", 1000);
+            }, 500);
+        }
+        function cancelPanic() {
+            document.getElementById('panicOverlay').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
