@@ -723,6 +723,13 @@
              <div class="relative w-full h-full">
                  <div id="map" class="w-full h-full bg-[#111]"></div>
                  
+                 <!-- Control Overlay -->
+                 <div class="absolute top-4 left-4 z-[500] flex flex-col gap-2">
+                    <div class="bg-black/80 backdrop-blur border border-white/10 p-2 rounded text-[10px] font-mono text-green-400">
+                        <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> LIVE TRACKING</div>
+                    </div>
+                 </div>
+
                  <!-- Locate Me Button -->
                  <button onclick="locateMe()" class="absolute bottom-6 right-6 w-12 h-12 bg-blue-600 rounded-full text-white shadow-lg flex items-center justify-center z-[500] active:scale-95 transition-transform border-2 border-white/20">
                     <i class="fas fa-crosshairs"></i>
@@ -736,24 +743,44 @@
              
              setTimeout(() => {
                  if(window.mapInstance) window.mapInstance.remove();
+                 if(window.gpsInterval) clearInterval(window.gpsInterval);
+
                  // Dark Matter Map
                  const map = L.map('map', {zoomControl: false}).setView([-28.0653, 153.4291], 11);
                  window.mapInstance = map;
                  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
                  
-                 // Real Markers for requested locations
+                 // Initial Agents Data
                  const agents = [
-                     {lat: -28.0653, lng: 153.4291, color: '#ef4444', name: 'Reaper-7 (YOU)', loc: 'Miami HQ'},
-                     {lat: -27.9628, lng: 153.4121, color: '#14b8a6', name: 'Shadow-3', loc: 'Southport'},
-                     {lat: -28.1667, lng: 153.5333, color: '#14b8a6', name: 'Spectre-5', loc: 'Coolangatta'},
-                     {lat: -27.9944, lng: 153.3000, color: '#f59e0b', name: 'Phantom-9', loc: 'Hinterland'}
+                     {id: 'me', lat: -28.0653, lng: 153.4291, color: '#ef4444', name: 'Reaper-7 (YOU)', loc: 'Miami HQ'},
+                     {id: 's3', lat: -27.9628, lng: 153.4121, color: '#14b8a6', name: 'Shadow-3', loc: 'Southport'},
+                     {id: 's5', lat: -28.1667, lng: 153.5333, color: '#14b8a6', name: 'Spectre-5', loc: 'Coolangatta'},
+                     {id: 'p9', lat: -27.9944, lng: 153.3000, color: '#f59e0b', name: 'Phantom-9', loc: 'Hinterland'}
                  ];
                  
+                 const markers = {};
+
+                 // Create Markers
                  agents.forEach(a => {
-                     const iconHtml = `<div class="marker-pin" style="color:${a.color};box-shadow:0 0 15px ${a.color}"></div>${a.name==='Reaper-7 (YOU)'?'<div class="marker-pulse" style="color:#ef4444"></div>':''}`;
+                     const iconHtml = `<div class="marker-pin" style="color:${a.color};box-shadow:0 0 15px ${a.color}"></div>${a.name.includes('YOU')?'<div class="marker-pulse" style="color:#ef4444"></div>':''}`;
                      const icon = L.divIcon({className: '', html: iconHtml, iconSize: [16,16]});
-                     L.marker([a.lat, a.lng], {icon}).addTo(map).bindPopup(`<b style="color:black">${a.name}</b><br><span style="color:gray">${a.loc}</span>`);
+                     const marker = L.marker([a.lat, a.lng], {icon}).addTo(map).bindPopup(`<b style="color:black">${a.name}</b><br><span style="color:gray">${a.loc}</span>`);
+                     markers[a.id] = marker;
                  });
+
+                 // Simulate Live Movement (The "Tracker" Script)
+                 window.gpsInterval = setInterval(() => {
+                     agents.forEach(a => {
+                         if(!a.name.includes('YOU')) { // Don't move user, they move themselves
+                             // Small random jitter to simulate movement
+                             const latOffset = (Math.random() - 0.5) * 0.001; 
+                             const lngOffset = (Math.random() - 0.5) * 0.001;
+                             const newLat = markers[a.id].getLatLng().lat + latOffset;
+                             const newLng = markers[a.id].getLatLng().lng + lngOffset;
+                             markers[a.id].setLatLng([newLat, newLng]);
+                         }
+                     });
+                 }, 3000);
 
                  // Device Orientation for compass
                  if (window.DeviceOrientationEvent) {
