@@ -38,7 +38,9 @@ jobs:
           python3 vanta/v05/final_audit.py
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
           python3 vanta/v06/apply_experience.py
-          if [ -f vanta/v06/review_fixes.py ]; then python3 vanta/v06/review_fixes.py; fi
+          python3 vanta/v06/review_fixes.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
+          python3 vanta/v06/responsive_layout.py
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
           gradle -p vanta/personal --no-daemon --max-workers=2 wrapper --gradle-version 8.13
           mkdir -p distribution
