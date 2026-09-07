@@ -8,6 +8,8 @@ assert len(files)==21
 for name,content in files.items():
     p=Path(name)
     assert not p.is_absolute() and '..' not in p.parts
+    if name=='app/src/main/java/com/ronin/vanta/MainActivity.java':
+        content=content.replace('import android.content.*;','import android.content.*;\nimport android.content.ClipboardManager;')
     target=root/'reviewed'/p
     target.parent.mkdir(parents=True,exist_ok=True)
     target.write_text(content,encoding='utf-8')
