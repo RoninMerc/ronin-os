@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply Vanta v0.2 source upgrade
-        run: python3 vanta/apply_v02.py
+      - name: Apply Vanta v0.3 source package
+        run: python3 vanta/apply_v03.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -27,6 +27,6 @@ jobs:
         run: gradle -p vanta assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: ronin-vanta-v0.2-apk
+          name: ronin-vanta-v0.3-apk
           path: vanta/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
