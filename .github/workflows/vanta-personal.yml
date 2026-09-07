@@ -35,12 +35,14 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
       - name: Compile both builds, all JVM tests, instrumentation APK and lint
         run: gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --stacktrace
-      - name: Format final source and generate Gradle wrapper
+      - name: Format source, apply final audit and generate Gradle wrapper
         run: |
           curl --fail --location --retry 3 -o /tmp/google-java-format.jar https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
+          python3 vanta/v05/final_audit.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
           gradle -p vanta/personal --no-daemon --max-workers=2 wrapper --gradle-version 8.13
-      - name: Rebuild and retest formatted source
+      - name: Rebuild and retest final source
         run: gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --stacktrace
       - name: Stage installable test artifacts and release candidate
         run: |
