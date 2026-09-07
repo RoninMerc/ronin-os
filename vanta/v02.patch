@@ -1,0 +1,284 @@
+--- a/vanta/app/build.gradle
++++ b/vanta/app/build.gradle
+@@ -8,8 +8,8 @@
+         applicationId 'com.ronin.vanta'
+         minSdk 28
+         targetSdk 35
+-        versionCode 1
+-        versionName '0.1.0'
++        versionCode 2
++        versionName '0.2.0'
+     }
+ 
+     buildTypes {
+--- a/vanta/app/src/main/java/com/ronin/vanta/ModelInfo.java
++++ b/vanta/app/src/main/java/com/ronin/vanta/ModelInfo.java
+@@ -12,12 +12,21 @@
+     public boolean manuallyUncensored = false;
+     public boolean heuristicUncensored = false;
+ 
++    // Capability metadata used by Vanta's category-specific ranking.
++    public boolean codeCapable = false;
++    public boolean supportsReasoning = false;
++    public boolean supportsVision = false;
++    public boolean supportsFunctionCalling = false;
++    public long contextTokens = 0;
++
+     public ModelInfo(String id, String name, String type, String description) {
+         this.id = id;
+         this.name = name == null || name.isEmpty() ? id : name;
+         this.type = type == null || type.isEmpty() ? "text" : type;
+         this.description = description == null ? "" : description;
+-        this.heuristicUncensored = detectUncensored(id + " " + this.name + " " + this.description);
++        String combined = id + " " + this.name + " " + this.description;
++        this.heuristicUncensored = detectUncensored(combined);
++        this.codeCapable = detectCodeCapable(combined);
+     }
+ 
+     public boolean isUncensored() { return manuallyUncensored || heuristicUncensored; }
+@@ -25,7 +34,14 @@
+     private static boolean detectUncensored(String s) {
+         String x = s.toLowerCase();
+         return x.contains("uncensored") || x.contains("unfiltered") || x.contains("abliterated") ||
+-                x.contains("no-censor") || x.contains("no censor") || x.contains("role play uncensored");
++                x.contains("no-censor") || x.contains("no censor") || x.contains("role play uncensored") ||
++                x.contains("heretic");
++    }
++
++    private static boolean detectCodeCapable(String s) {
++        String x = s.toLowerCase();
++        return x.contains("coder") || x.contains("codex") || x.contains(" code") || x.contains("-code") ||
++                x.contains("optimizedforcode") || x.contains("optimized for code");
+     }
+ 
+     public String displayName() {
+@@ -36,6 +52,9 @@
+         JSONObject o = new JSONObject();
+         o.put("id", id); o.put("name", name); o.put("type", type); o.put("description", description);
+         o.put("enabled", enabled); o.put("manualUncensored", manuallyUncensored);
++        o.put("codeCapable", codeCapable); o.put("supportsReasoning", supportsReasoning);
++        o.put("supportsVision", supportsVision); o.put("supportsFunctionCalling", supportsFunctionCalling);
++        o.put("contextTokens", contextTokens);
+         return o;
+     }
+ 
+@@ -43,6 +62,11 @@
+         ModelInfo m = new ModelInfo(o.getString("id"), o.optString("name"), o.optString("type", "text"), o.optString("description"));
+         m.enabled = o.optBoolean("enabled", true);
+         m.manuallyUncensored = o.optBoolean("manualUncensored", false);
++        m.codeCapable = o.optBoolean("codeCapable", m.codeCapable);
++        m.supportsReasoning = o.optBoolean("supportsReasoning", false);
++        m.supportsVision = o.optBoolean("supportsVision", false);
++        m.supportsFunctionCalling = o.optBoolean("supportsFunctionCalling", false);
++        m.contextTokens = o.optLong("contextTokens", 0);
+         return m;
+     }
+ }
+--- a/vanta/app/src/main/java/com/ronin/vanta/ApiClient.java
++++ b/vanta/app/src/main/java/com/ronin/vanta/ApiClient.java
+@@ -99,6 +99,7 @@
+             JSONObject o = data.getJSONObject(i);
+             String id = o.optString("id", o.optString("name", "model-" + i));
+             String name = id, type = inferType(id), description = "";
++            ModelInfo model;
+             if (ProviderConfig.VENICE.equals(p.kind)) {
+                 type = o.optString("type", type);
+                 JSONObject spec = o.optJSONObject("model_spec");
+@@ -108,11 +109,31 @@
+                     JSONArray traits = spec.optJSONArray("traits");
+                     if (traits != null) description += " " + traits.toString();
+                 }
++                model = new ModelInfo(id, name, type, description);
++                if (spec != null) {
++                    model.contextTokens = spec.optLong("availableContextTokens", 0);
++                    JSONObject caps = spec.optJSONObject("capabilities");
++                    if (caps != null) {
++                        model.codeCapable = caps.optBoolean("optimizedForCode", model.codeCapable);
++                        model.supportsReasoning = caps.optBoolean("supportsReasoning", false);
++                        model.supportsVision = caps.optBoolean("supportsVision", false);
++                        model.supportsFunctionCalling = caps.optBoolean("supportsFunctionCalling", false);
++                    }
++                }
+             } else if (ProviderConfig.ANTHROPIC.equals(p.kind)) {
+                 name = o.optString("display_name", id);
+                 type = "text";
++                model = new ModelInfo(id, name, type, description);
++                model.codeCapable = true;
++                model.supportsReasoning = true;
++            } else {
++                model = new ModelInfo(id, name, type, description);
++                if (ProviderConfig.OPENAI.equals(p.kind) && "text".equals(type) &&
++                        (id.toLowerCase().contains("gpt") || id.toLowerCase().contains("codex"))) {
++                    model.codeCapable = true;
++                }
+             }
+-            out.add(new ModelInfo(id, name, type, description));
++            out.add(model);
+         }
+         return out;
+     }
+--- a/vanta/app/src/main/java/com/ronin/vanta/MainActivity.java
++++ b/vanta/app/src/main/java/com/ronin/vanta/MainActivity.java
+@@ -100,6 +100,7 @@
+         tts = new TextToSpeech(this, this);
+         buildShell();
+         showMode("chat");
++        refreshRankingMetadataIfNeeded();
+     }
+ 
+     private void buildShell() {
+@@ -121,7 +122,7 @@
+         HorizontalScrollView hsv = new HorizontalScrollView(this);
+         hsv.setHorizontalScrollBarEnabled(false);
+         LinearLayout nav = new LinearLayout(this); nav.setOrientation(LinearLayout.HORIZONTAL);
+-        String[][] items = {{"CHAT","chat"},{"IMAGE","image"},{"VIDEO","video"},{"CONVERSATE","converse"},{"SETUP","setup"}};
++        String[][] items = {{"TEXT","chat"},{"CODE","code"},{"IMAGE","image"},{"VIDEO","video"},{"CONVERSATE","converse"},{"SETUP","setup"}};
+         for (String[] it : items) {
+             Button b = button(it[0]);
+             b.setOnClickListener(v -> showMode(it[1]));
+@@ -142,7 +143,7 @@
+         content.removeAllViews();
+         selectedProvider = null; selectedModel = null;
+         if ("setup".equals(mode)) { buildSetup(); return; }
+-        if ("chat".equals(mode)) buildChat(false);
++        if ("chat".equals(mode) || "code".equals(mode)) buildChat(false);
+         else if ("converse".equals(mode)) buildChat(true);
+         else if ("image".equals(mode)) buildMedia(false);
+         else if ("video".equals(mode)) buildMedia(true);
+@@ -160,14 +161,17 @@
+     }
+ 
+     private void buildChat(boolean conversate) {
+-        addSelectorRow("text");
++        String category = "code".equals(currentMode) ? "code" : "text";
++        addSelectorRow(category);
++        TextView rankingNote = text(("code".equals(category) ? "CODE" : "TEXT") + " models are ranked strongest → lighter using live capability metadata plus model family/version.", 12, MUTED, false);
++        content.addView(rankingNote, marginTop(dp(5)));
+         uncensoredOnly = new Switch(this);
+         uncensoredOnly.setText("Only show UNCENSORED models");
+         uncensoredOnly.setTextColor(Color.WHITE);
+         uncensoredOnly.setChecked(prefs.getBoolean("uncensored_only", false));
+         uncensoredOnly.setOnCheckedChangeListener((b, checked) -> {
+             prefs.edit().putBoolean("uncensored_only", checked).apply();
+-            selectedModel = null; refreshSelectorLabels("text");
++            selectedModel = null; refreshSelectorLabels(category);
+         });
+         content.addView(uncensoredOnly, marginTop(dp(6)));
+ 
+@@ -176,7 +180,7 @@
+             chatOutput.setBackgroundColor(PANEL); chatOutput.setPadding(dp(12), dp(12), dp(12), dp(12));
+             chatOutput.setTextIsSelectable(true); chatOutput.setMovementMethod(new ScrollingMovementMethod());
+             content.addView(chatOutput, fixedHeight(dp(300), dp(8)));
+-            promptInput = edit("Talk, research, code, analyse…");
++            promptInput = edit("code".equals(category) ? "Describe what you want built, debugged or reviewed…" : "Talk, research, analyse…");
+             promptInput.setMinLines(3); promptInput.setMaxLines(8);
+             content.addView(promptInput, marginTop(dp(10)));
+             LinearLayout actions = new LinearLayout(this); actions.setOrientation(LinearLayout.HORIZONTAL);
+@@ -214,6 +218,7 @@
+         addSelectorRow(video ? "video" : "image");
+         TextView desc = text(video ? "Generate video with the selected provider/model." : "Generate an image with the selected provider/model.", 14, MUTED, false);
+         content.addView(desc, marginTop(dp(8)));
++        content.addView(text((video ? "VIDEO" : "IMAGE") + " models are ranked strongest → lighter for general output quality.", 12, MUTED, false), marginTop(dp(4)));
+         EditText prompt = edit(video ? "Describe the video…" : "Describe the image…"); prompt.setMinLines(4);
+         content.addView(prompt, marginTop(dp(8)));
+         Button generate = button(video ? "GENERATE VIDEO" : "GENERATE IMAGE");
+@@ -295,9 +300,10 @@
+ 
+     private void sendChat(boolean speak, String text) {
+         if (text == null || text.isEmpty()) return;
+-        if (!ensureSelection("text")) return;
++        String category = (!speak && "code".equals(currentMode)) ? "code" : "text";
++        if (!ensureSelection(category)) return;
+         String key = vault.getSecret(selectedProvider.id);
+-        if (key == null || key.isEmpty()) { editProviderKey(selectedProvider, speak ? "converse" : "chat"); return; }
++        if (key == null || key.isEmpty()) { editProviderKey(selectedProvider, speak ? "converse" : currentMode); return; }
+         try {
+             JSONObject u = new JSONObject(); u.put("role", "user"); u.put("content", text); chatHistory.put(u); saveChatHistory();
+         } catch (Exception ignored) {}
+@@ -347,14 +353,27 @@
+                     .setPositiveButton("SYNC NOW", (d,w) -> syncModels(selectedProvider, null)).setNegativeButton("CANCEL", null).show();
+             return;
+         }
+-        String[] items = new String[candidates.size()]; for (int i=0;i<candidates.size();i++) items[i] = candidates.get(i).displayName();
+-        new AlertDialog.Builder(this).setTitle("Choose model").setItems(items, (d, which) -> { selectedModel = candidates.get(which); refreshSelectorLabels(wantedType); }).show();
++        String[] items = new String[candidates.size()];
++        for (int i=0;i<candidates.size();i++) {
++            ModelInfo m = candidates.get(i);
++            items[i] = (i + 1) + ". " + m.displayName();
++        }
++        new AlertDialog.Builder(this).setTitle("Choose " + wantedType.toUpperCase(Locale.US) + " model · strongest first")
++                .setItems(items, (d, which) -> { selectedModel = candidates.get(which); refreshSelectorLabels(wantedType); }).show();
+     }
+ 
+     private List<ModelInfo> eligibleModels(ProviderConfig p, String wantedType) {
+-        List<ModelInfo> out = new ArrayList<>(); boolean unc = uncensoredOnly != null && uncensoredOnly.isChecked() && "text".equals(wantedType);
+-        for (ModelInfo m : modelsFor(p)) if (m.enabled && wantedType.equals(m.type) && (!unc || m.isUncensored())) out.add(m);
+-        Collections.sort(out, Comparator.comparing((ModelInfo m) -> !m.isUncensored()).thenComparing(m -> m.name.toLowerCase(Locale.US)));
++        List<ModelInfo> out = new ArrayList<>();
++        boolean textLike = "text".equals(wantedType) || "code".equals(wantedType);
++        boolean unc = uncensoredOnly != null && uncensoredOnly.isChecked() && textLike;
++        for (ModelInfo m : modelsFor(p)) {
++            if (m.enabled && ModelRanker.matchesCategory(m, wantedType) && (!unc || m.isUncensored())) out.add(m);
++        }
++        Collections.sort(out, (a, b) -> {
++            int byRank = Integer.compare(ModelRanker.score(b, wantedType), ModelRanker.score(a, wantedType));
++            if (byRank != 0) return byRank;
++            return a.name.compareToIgnoreCase(b.name);
++        });
+         return out;
+     }
+ 
+@@ -369,7 +388,7 @@
+ 
+     private boolean ensureSelection(String type) {
+         if (selectedProvider == null) { toast("Choose a provider."); return false; }
+-        if (selectedModel == null || !type.equals(selectedModel.type)) {
++        if (selectedModel == null || !ModelRanker.matchesCategory(selectedModel, type)) {
+             List<ModelInfo> e = eligibleModels(selectedProvider, type);
+             if (e.isEmpty()) { toast("No enabled " + type + " models. Sync/manage models in Setup."); return false; }
+             selectedModel = e.get(0); refreshSelectorLabels(type);
+@@ -379,12 +398,43 @@
+ 
+     private void refreshSelectorLabels(String type) {
+         if (providerButton != null) providerButton.setText(selectedProvider == null ? "PROVIDER" : selectedProvider.name.toUpperCase(Locale.US));
+-        if (selectedProvider != null && (selectedModel == null || !type.equals(selectedModel.type) || (uncensoredOnly != null && uncensoredOnly.isChecked() && type.equals("text") && !selectedModel.isUncensored()))) {
++        boolean uncFilter = uncensoredOnly != null && uncensoredOnly.isChecked() && ("text".equals(type) || "code".equals(type));
++        if (selectedProvider != null && (selectedModel == null || !ModelRanker.matchesCategory(selectedModel, type) || (uncFilter && !selectedModel.isUncensored()))) {
+             List<ModelInfo> e = eligibleModels(selectedProvider, type); selectedModel = e.isEmpty() ? null : e.get(0);
+         }
+         if (modelButton != null) modelButton.setText(selectedModel == null ? "MODEL" : (selectedModel.isUncensored() ? "⚡ " : "") + selectedModel.name);
+     }
+ 
++    private void refreshRankingMetadataIfNeeded() {
++        if (prefs.getBoolean("ranking_metadata_v2", false)) return;
++        io.submit(() -> {
++            boolean refreshedAny = false;
++            for (ProviderConfig p : new ArrayList<>(providers)) {
++                String key = vault.getSecret(p.id);
++                if (key == null || key.isEmpty()) continue;
++                try {
++                    List<ModelInfo> fresh = ApiClient.listModels(p, key);
++                    HashMap<String, ModelInfo> old = new HashMap<>();
++                    for (ModelInfo m : modelsFor(p)) old.put(m.id, m);
++                    for (ModelInfo m : fresh) {
++                        ModelInfo prev = old.get(m.id);
++                        if (prev != null) { m.enabled = prev.enabled; m.manuallyUncensored = prev.manuallyUncensored; }
++                    }
++                    modelCache.put(p.id, fresh);
++                    saveModelCache(p.id);
++                    refreshedAny = true;
++                } catch (Exception ignored) {}
++            }
++            if (refreshedAny) {
++                prefs.edit().putBoolean("ranking_metadata_v2", true).apply();
++                runOnUiThread(() -> {
++                    String category = "code".equals(currentMode) ? "code" : ("image".equals(currentMode) ? "image" : ("video".equals(currentMode) ? "video" : "text"));
++                    if (!"setup".equals(currentMode)) { selectedModel = null; refreshSelectorLabels(category); }
++                });
++            }
++        });
++    }
++
+     private void syncModels(ProviderConfig p, TextView statusView) {
+         String key = vault.getSecret(p.id);
+         if (key == null || key.isEmpty()) { editProviderKey(p, "setup"); return; }
