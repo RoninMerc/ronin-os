@@ -4,34 +4,25 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Capability-aware model ordering for Vanta.
- *
- * Venice does not publish a single canonical "best model" rank, so this combines
- * live API metadata (context, reasoning, code optimisation, vision/function support)
- * with family/version/tier signals. Curated family priorities are deliberately
- * small; unknown/new models still receive a useful heuristic score and therefore
- * slot into the list instead of being hidden.
- */
+/** Category-specific strongest-first ordering for Vanta. */
 public final class ModelRanker {
     private ModelRanker() {}
 
     public static boolean matchesCategory(ModelInfo m, String category) {
         if (m == null) return false;
-        if ("code".equals(category)) return "text".equals(m.type) && m.codeCapable;
+        if ("code".equals(category)) return "text".equals(m.type);
         if ("image".equals(category)) {
             if (!"image".equals(m.type)) return false;
             String s = haystack(m);
-            // Vanta's IMAGE screen is prompt-to-image. Keep edit/upscale utilities out.
             return !s.contains("-edit") && !s.contains(" edit") && !s.contains("upscale") &&
                     !s.contains("upscaler") && !s.contains("background remover") && !s.contains("bg-remover");
         }
         if ("video".equals(category)) {
             if (!"video".equals(m.type)) return false;
             String s = haystack(m);
-            // The current VIDEO screen is text-prompt-only, so only surface variants that can run without an input clip/image.
-            return !s.contains("image-to-video") && !s.contains("reference-to-video") && !s.contains("video-to-video") &&
-                    !s.contains("motion-control") && !s.contains("transition") && !s.contains("upscale");
+            return !s.contains("image-to-video") && !s.contains("reference-to-video") &&
+                    !s.contains("video-to-video") && !s.contains("motion-control") &&
+                    !s.contains("transition") && !s.contains("upscale");
         }
         return category.equals(m.type);
     }
@@ -40,13 +31,11 @@ public final class ModelRanker {
         String s = haystack(m);
         if ("image".equals(category)) return imageScore(s);
         if ("video".equals(category)) return videoScore(s);
-        if ("code".equals(category)) return textScore(m, s, true);
-        return textScore(m, s, false);
+        return textScore(s, "code".equals(category));
     }
 
-    private static int textScore(ModelInfo m, String s, boolean code) {
+    private static int textScore(String s, boolean code) {
         int score = 1000;
-
         if (has(s, "gpt-6", "gpt 6")) score += 9000;
         else if (has(s, "claude opus 5", "claude-opus-5")) score += 8750;
         else if (has(s, "kimi k3", "kimi-k3")) score += 8600;
@@ -77,29 +66,20 @@ public final class ModelRanker {
         else if (has(s, "qwen 3 coder 480", "qwen3-coder-480")) score += 6050;
         else score += genericFamilyVersionScore(s);
 
-        if (m.contextTokens >= 1_000_000) score += 500;
-        else if (m.contextTokens >= 500_000) score += 350;
-        else if (m.contextTokens >= 250_000) score += 220;
-        else if (m.contextTokens >= 128_000) score += 120;
-
-        if (m.supportsReasoning) score += code ? 520 : 430;
-        if (m.supportsFunctionCalling) score += 120;
-        if (m.supportsVision) score += 80;
-        if (m.codeCapable) score += code ? 700 : 120;
-
+        if (has(s, " reasoning", "thinking")) score += 260;
         if (has(s, " pro", "-pro")) score += 260;
         if (has(s, " max", "-max")) score += 190;
         if (has(s, " opus", "-opus")) score += 180;
         if (has(s, " terra", "-terra")) score += 150;
         if (has(s, " sol", "-sol")) score += 120;
         if (has(s, "multi-agent", "multi agent")) score += 170;
-        if (has(s, "fast")) score += 20;
 
         if (code) {
-            if (has(s, "codex")) score += 900;
-            if (has(s, "coder")) score += 820;
-            if (has(s, " code", "-code")) score += 720;
-            if (has(s, "build")) score += 380;
+            if (has(s, "codex")) score += 1100;
+            if (has(s, "coder")) score += 1000;
+            if (has(s, " code", "-code")) score += 850;
+            if (has(s, "build")) score += 420;
+            if (has(s, "reasoning", "thinking")) score += 220;
         }
 
         if (has(s, " mini", "-mini")) score -= 650;
@@ -109,7 +89,6 @@ public final class ModelRanker {
         if (has(s, " flash-lite", "flash lite")) score -= 700;
         else if (has(s, " flash", "-flash")) score -= 260;
         if (has(s, "3b", "7b", "9b")) score -= 280;
-
         return score;
     }
 
@@ -137,7 +116,6 @@ public final class ModelRanker {
         else if (has(s, "seedream-v4", "seedream v4")) score = 16400;
         else if (has(s, "hunyuan-image-v3", "hunyuan image 3")) score = 16200;
         else score = 9000 + genericFamilyVersionScore(s);
-
         if (has(s, " pro", "-pro")) score += 80;
         if (has(s, " max", "-max")) score += 60;
         if (has(s, " quality", "sota")) score += 50;
@@ -173,7 +151,6 @@ public final class ModelRanker {
         else if (has(s, "kling-v3-turbo-pro", "kling v3 turbo pro")) score = 19900;
         else if (has(s, "veo3-fast", "veo 3 fast")) score = 19700;
         else score = 10000 + genericFamilyVersionScore(s);
-
         if (has(s, "4k")) score += 120;
         if (has(s, " prime", "-prime")) score += 100;
         if (has(s, " full", "-full")) score += 90;
@@ -184,7 +161,6 @@ public final class ModelRanker {
         if (has(s, " mini", "-mini")) score -= 350;
         if (has(s, " fast", "-fast")) score -= 100;
         if (has(s, " turbo", "-turbo")) score -= 80;
-        if (has(s, "upscale")) score -= 5000;
         return score;
     }
 
