@@ -1,0 +1,128 @@
+name: Ronin Vanta 0.6 - experience verification
+on:
+  push:
+    branches: ['build/vanta-experience-06']
+    paths: ['vanta/v06/*.py', 'vanta/v06/release.json', '.github/workflows/vanta-experience.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vanta-experience-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Reproduce original baseline and apply checksummed redesign
+        run: |
+          python3 vanta/v05/materialize.py
+          curl --fail --location --retry 3 -o /tmp/google-java-format.jar https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
+          python3 vanta/v05/final_audit.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
+          python3 vanta/v06/apply_experience.py
+          if [ -f vanta/v06/review_fixes.py ]; then python3 vanta/v06/review_fixes.py; fi
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/google-java-format.jar --replace
+          gradle -p vanta/personal --no-daemon --max-workers=2 wrapper --gradle-version 8.13
+          mkdir -p distribution
+          cd vanta/personal && zip -qr ../../distribution/ronin-vanta-0.6-source.zip app/src app/build.gradle build.gradle settings.gradle gradle.properties gradle gradlew gradlew.bat README.md docs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-0.6-materialized-source
+          path: distribution/ronin-vanta-0.6-source.zip
+          if-no-files-found: error
+      - name: Compile, unit tests and lint
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --stacktrace 2>&1 | tee build.log
+      - name: Stage tested artifacts
+        run: |
+          cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/
+          cp vanta/personal/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" distribution/
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs distribution/app-debug.apk > distribution/debug-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/app-debug.apk > distribution/debug-package.txt
+      - name: Compile compatible personal-track update
+        run: |
+          gradle -p vanta/personal -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/personal-release-unsigned.apk
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-0.6-build
+          path: distribution/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.6-build-reports
+          path: |
+            vanta/personal/app/build/reports/
+            vanta/personal/app/build/test-results/
+            build.log
+          if-no-files-found: warn
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 36]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.6-build
+          path: distribution
+      - name: Enable acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run Android UI and regression suites
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 2048M
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            adb install -r distribution/app-debug.apk
+            adb install -r distribution/app-debug-androidTest.apk
+            adb logcat -c
+            adb shell am instrument -w -r com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee instrumentation-${{ matrix.api }}.txt
+            adb logcat -d > logcat-${{ matrix.api }}.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files qa-previews-${{ matrix.api }} || true
+            grep -Eq '^OK \([0-9]+ tests?\)' instrumentation-${{ matrix.api }}.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.6-device-${{ matrix.api }}
+          path: |
+            instrumentation-*.txt
+            logcat-*.txt
+            qa-previews-*/
+          if-no-files-found: warn
