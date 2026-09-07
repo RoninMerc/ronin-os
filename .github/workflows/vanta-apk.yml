@@ -13,6 +13,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply Vanta v0.3 source package
         run: python3 vanta/apply_v03.py
+      - name: Snapshot materialized source
+        run: |
+          cd vanta
+          zip -qr /tmp/ronin-vanta-v0.3-materialized-source.zip app build.gradle gradle.properties settings.gradle
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -25,8 +29,15 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
         run: gradle -p vanta assembleDebug --stacktrace
+      - name: Run Android lint
+        run: gradle -p vanta lintDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: ronin-vanta-v0.3-apk
           path: vanta/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ronin-vanta-v0.3-materialized-source
+          path: /tmp/ronin-vanta-v0.3-materialized-source.zip
           if-no-files-found: error
