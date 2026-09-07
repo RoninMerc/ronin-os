@@ -1,0 +1,29 @@
+name: Vanta public catalogue schema inspection
+on:
+  push:
+    branches: ['fix/vanta-042-models-video']
+    paths: ['.github/workflows/vanta-catalog-probe.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read public provider metadata only
+        run: |
+          mkdir -p public-schema
+          python3 - <<'PY'
+          import urllib.request, urllib.error, pathlib, json
+          urls={'models':'https://api.venice.ai/api/v1/models?type=all','swagger':'https://api.venice.ai/doc/api/swagger.yaml','docs':'https://docs.venice.ai/llms.txt'}
+          for name,url in urls.items():
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Ronin-Vanta-schema-check/0.4.2'}),timeout=25) as r:
+                      b=r.read(4000000);pathlib.Path('public-schema/'+name+'.txt').write_bytes(b);print(name,r.status,len(b))
+              except Exception as e: pathlib.Path('public-schema/'+name+'-error.txt').write_text(str(e));print(name,type(e).__name__)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-public-schema
+          path: public-schema/
+          if-no-files-found: error

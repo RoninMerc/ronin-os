@@ -1,0 +1,111 @@
+name: Vanta 0.4.2 - video and model regression release
+on:
+  pull_request:
+    paths:
+      - 'vanta/**'
+      - '.github/workflows/vanta-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vanta-hotfix-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Materialize and validate hotfix source
+        run: |
+          python3 vanta/materialize_v04.py
+          python3 vanta/review_final.py
+          python3 vanta/review_qa.py
+          python3 vanta/apply_v042.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('vanta/reviewed')
+          p=root/'app/build.gradle'
+          s,n=re.subn(r"applicationId\s+['\"][^'\"]+['\"]", "applicationId 'com.ronin.vanta.fixed'",p.read_text())
+          assert n==1,'Expected one application ID'
+          p.write_text(s)
+          p=root/'app/src/main/AndroidManifest.xml'
+          s,n=re.subn(r'android:label="[^"]+"','android:label="Ronin Vanta 0.4.2"',p.read_text(),count=1)
+          assert n==1,'Expected a launcher label'
+          p.write_text(s)
+          (root/'DELIVERY-NOTE.txt').write_text('0.4.2 installs beside the earlier preview because its old temporary debug signing key was not retained. It does not overwrite old keys or chats. Application ID: com.ronin.vanta.fixed.\n')
+          print((root/'app/build.gradle').read_text())
+          PY
+          cd vanta/reviewed && zip -qr "$RUNNER_TEMP/reviewed-source.zip" app/src app/build.gradle build.gradle settings.gradle gradle.properties DELIVERY-NOTE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ronin-vanta-0.4.2-source
+          path: ${{ runner.temp }}/reviewed-source.zip
+          if-no-files-found: error
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile, run regression tests and lint
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p vanta/reviewed --no-daemon --max-workers=2 testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Collect APKs and verify packaging
+        run: |
+          mkdir -p vanta-distribution
+          cp vanta/reviewed/app/build/outputs/apk/release/app-release-unsigned.apk vanta-distribution/
+          cp vanta/reviewed/app/build/outputs/apk/debug/app-debug.apk vanta-distribution/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" vanta-distribution/
+          cp "$RUNNER_TEMP/reviewed-source.zip" vanta-distribution/
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs vanta-distribution/app-debug.apk > vanta-distribution/signature-verification.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging vanta-distribution/app-debug.apk > vanta-distribution/apk-badging.txt
+          sha256sum vanta-distribution/*.apk > vanta-distribution/SHA256SUMS.txt
+          unzip -t vanta-distribution/app-debug.apk > vanta-distribution/archive-test.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ronin-vanta-0.4.2-compiled
+          path: vanta-distribution/
+          if-no-files-found: error
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 UI and video controls regression tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 2048M
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            gradle -p vanta/reviewed --no-daemon --max-workers=2 connectedDebugAndroidTest --stacktrace
+            adb pull /sdcard/Download/Vanta-QA qa-previews
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ronin-vanta-0.4.2-QA
+          path: |
+            vanta/reviewed/app/build/reports/
+            vanta/reviewed/app/build/test-results/
+            vanta/reviewed/app/build/outputs/androidTest-results/
+            qa-previews/
+            ${{ runner.temp }}/build.log
+          if-no-files-found: warn
