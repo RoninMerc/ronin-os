@@ -33,5 +33,6 @@ for name, content in data['binary'].items():
     target.write_bytes(base64.b64decode(content, validate=True))
 for name in ('DELIVERY.json', 'IMPLEMENTATION-AND-VERIFICATION.md'):
     (project / name).unlink(missing_ok=True)
-subprocess.run(['python3', str(root/'final_ui.py')], check=True)
-print('Applied 0.6 source, lifecycle navigation and native transcript formatting.')
+for review in ('final_ui.py','lint_review.py'):
+    subprocess.run(['python3', str(root/review)], check=True)
+print('Applied 0.6 source, lifecycle navigation, native formatting and strict lint corrections.')
