@@ -26,16 +26,18 @@ jobs:
           python3 vanta/apply_v042.py
           python3 - <<'PY'
           from pathlib import Path
+          import re
           root=Path('vanta/reviewed')
           p=root/'app/build.gradle'
-          s=p.read_text()
-          assert "applicationId 'com.ronin.vanta.preview'" in s
-          s=s.replace("applicationId 'com.ronin.vanta.preview'", "applicationId 'com.ronin.vanta.fixed'")
+          s,n=re.subn(r"applicationId\s+['\"][^'\"]+['\"]", "applicationId 'com.ronin.vanta.fixed'",p.read_text())
+          assert n==1,'Expected one application ID'
           p.write_text(s)
           p=root/'app/src/main/AndroidManifest.xml'
-          s=p.read_text().replace('android:label="Vanta Preview"','android:label="Ronin Vanta 0.4.2"')
+          s,n=re.subn(r'android:label="[^"]+"','android:label="Ronin Vanta 0.4.2"',p.read_text(),count=1)
+          assert n==1,'Expected a launcher label'
           p.write_text(s)
           (root/'DELIVERY-NOTE.txt').write_text('0.4.2 installs beside the earlier preview because its old temporary debug signing key was not retained. It does not overwrite old keys or chats. Application ID: com.ronin.vanta.fixed.\n')
+          print((root/'app/build.gradle').read_text())
           PY
           cd vanta/reviewed && zip -qr "$RUNNER_TEMP/reviewed-source.zip" app/src app/build.gradle build.gradle settings.gradle gradle.properties DELIVERY-NOTE.txt
       - uses: actions/upload-artifact@v4
