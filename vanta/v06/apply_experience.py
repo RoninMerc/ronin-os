@@ -12,8 +12,6 @@ raw = lzma.decompress(packed, memlimit=256*1024*1024)
 if len(raw) > 1000000:
     raise SystemExit('Unexpected source delta size')
 data = json.loads(raw)
-# The delivered source archive added its handover README after compilation.
-# Reconstruct only that complete documentation hunk, never missing source code.
 readme = project / 'README.md'
 if not readme.exists():
     first = data['patch'].split('--- a/README.md\n+++ b/README.md\n',1)[1].split('\n--- ',1)[0]
@@ -35,4 +33,5 @@ for name, content in data['binary'].items():
     target.write_bytes(base64.b64decode(content, validate=True))
 for name in ('DELIVERY.json', 'IMPLEMENTATION-AND-VERIFICATION.md'):
     (project / name).unlink(missing_ok=True)
-print('Applied 0.6 source: reusable UI system, conversation-first shell, router, model experience, encrypted output library, consolidated media contracts and regression tests.')
+subprocess.run(['python3', str(root/'final_ui.py')], check=True)
+print('Applied 0.6 source, lifecycle navigation and native transcript formatting.')
