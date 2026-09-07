@@ -1,22 +1,25 @@
-name: Build Ronin Vanta APK
+name: Vanta Preview - build and device QA
 on:
   pull_request:
     paths:
       - 'vanta/**'
       - '.github/workflows/vanta-apk.yml'
   workflow_dispatch:
-
+permissions:
+  contents: read
+concurrency:
+  group: vanta-preview-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  build:
+  audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Apply Vanta v0.3 source package
-        run: python3 vanta/apply_v03.py
-      - name: Snapshot materialized source
-        run: |
-          cd vanta
-          zip -qr /tmp/ronin-vanta-v0.3-materialized-source.zip app build.gradle gradle.properties settings.gradle
+        with:
+          persist-credentials: false
+      - name: Verify and materialize reviewed source
+        run: python3 vanta/materialize_v04.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -25,34 +28,51 @@ jobs:
         with:
           gradle-version: '8.9'
       - uses: android-actions/setup-android@v3
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Build debug APK
-        run: gradle -p vanta assembleDebug --stacktrace
-      - name: Run Android lint
-        id: lint
-        continue-on-error: true
-        run: gradle -p vanta lintDebug --stacktrace
-      - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: ronin-vanta-v0.3-apk
-          path: vanta/app/build/outputs/apk/debug/app-debug.apk
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile, unit tests and lint
+        run: gradle -p vanta/reviewed --no-daemon --max-workers=2 testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 device tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 2048M
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            gradle -p vanta/reviewed --no-daemon --max-workers=2 connectedDebugAndroidTest --stacktrace
+            adb pull /sdcard/Android/data/com.ronin.vanta.preview/files qa-previews
+      - name: Collect distribution and signing verifier
+        run: |
+          mkdir -p vanta-distribution
+          cp vanta/reviewed/app/build/outputs/apk/release/app-release-unsigned.apk vanta-distribution/
+          cp vanta/reviewed/app/build/outputs/apk/debug/app-debug.apk vanta-distribution/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" vanta-distribution/
+          cd vanta/reviewed && zip -qr ../../vanta-distribution/reviewed-source.zip app/src app/build.gradle build.gradle settings.gradle gradle.properties
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ronin-vanta-0.4-verified-build
+          path: vanta-distribution/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ronin-vanta-v0.3-materialized-source
-          path: /tmp/ronin-vanta-v0.3-materialized-source.zip
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ronin-vanta-v0.3-lint
+          name: ronin-vanta-0.4-QA
           path: |
-            vanta/app/build/reports/lint-results-debug.html
-            vanta/app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            vanta/reviewed/app/build/reports/
+            vanta/reviewed/app/build/test-results/
+            vanta/reviewed/app/build/outputs/androidTest-results/
+            qa-previews/
           if-no-files-found: warn
-      - name: Enforce lint gate
-        if: steps.lint.outcome != 'success'
-        run: exit 1
