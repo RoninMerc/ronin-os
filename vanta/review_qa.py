@@ -9,7 +9,7 @@ s=s.replace(old,'''java.util.ArrayDeque<android.view.accessibility.Accessibility
             java.util.List<android.view.accessibility.AccessibilityNodeInfo> emma=root.findAccessibilityNodeInfosByText("Emma");''',1)
 assert s.endswith('}')
 s=s[:-1]+'''
-    @After public void preserveQaScreenshots()throws Exception {
+    @org.junit.After public void preserveQaScreenshots()throws Exception {
         Context ctx=InstrumentationRegistry.getInstrumentation().getTargetContext();
         String source=ctx.getExternalFilesDir(null).getAbsolutePath();
         String command="mkdir -p /sdcard/Download/Vanta-QA; cp -f '"+source+"'/*.png /sdcard/Download/Vanta-QA/ 2>/dev/null || true";
