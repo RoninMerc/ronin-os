@@ -19,7 +19,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: vanta-0.6-build
-          run-id: 34167657696
+          run-id: 34168746764
           github-token: ${{ github.token }}
           path: distribution
       - uses: actions/setup-java@v5
@@ -33,7 +33,7 @@ jobs:
           java -jar distribution/apksigner.jar sign --ks "$RUNNER_TEMP/qa.p12" --ks-pass pass:changeit --key-pass pass:changeit --out distribution/release-qa.apk distribution/fixed-release-unsigned.apk
           java -jar distribution/apksigner.jar sign --ks "$RUNNER_TEMP/qa.p12" --ks-pass pass:changeit --key-pass pass:changeit --out distribution/test-qa.apk distribution/app-debug-androidTest.apk
           java -jar distribution/apksigner.jar verify --verbose --print-certs distribution/release-qa.apk > release-qa-signature.txt
-          echo 'Release payload from source 2becb41c3736c90e0db037c6e7b7dac7b65b13af, run 34167657696. Disposable QA signature only; no owner key present.' > release-provenance.txt
+          echo 'Release payload from source 0fa385530d09462ced4dffad14ad699d462c030f, run 34168746764. Disposable QA signature only; no owner key present.' > release-provenance.txt
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -56,16 +56,21 @@ jobs:
               tree=ET.fromstring(raw)
               fields=[n for n in tree.iter('node') if n.attrib.get('class')=='android.widget.EditText' and n.attrib.get('package')=='com.ronin.vanta.fixed']
               if not fields:raise RuntimeError(name+': composer missing')
-              return fields[0]
+              return fields[0],tree
           try:
               launch();snapshot('release-normal')
-              adb('shell','settings','put','system','font_scale','1.3');launch();field=snapshot('release-large-text')
+              adb('shell','settings','put','system','font_scale','1.3');launch();field,tree=snapshot('release-large-text')
               bounds=list(map(int,re.findall(r'\d+',field.attrib['bounds'])))
               adb('shell','input','tap',str((bounds[0]+bounds[2])//2),str((bounds[1]+bounds[3])//2));time.sleep(.8)
               adb('shell','input','text','Keyboard%ssmoke%stest');time.sleep(.4);snapshot('release-keyboard')
               adb('shell','input','keyevent','4');time.sleep(.3)
               adb('shell','settings','put','system','accelerometer_rotation','0')
-              adb('shell','settings','put','system','user_rotation','1');time.sleep(2);snapshot('release-landscape')
+              adb('shell','settings','put','system','user_rotation','1');time.sleep(2);field,tree=snapshot('release-landscape')
+              scrolls=[n for n in tree.iter('node') if n.attrib.get('class')=='android.widget.ScrollView' and n.attrib.get('scrollable')=='true']
+              if scrolls:
+                  b=list(map(int,re.findall(r'\d+',scrolls[0].attrib['bounds'])))
+                  adb('shell','input','swipe',str((b[0]+b[2])//2),str(b[3]-10),str((b[0]+b[2])//2),str(b[1]+10),'350');time.sleep(.5)
+                  snapshot('release-landscape-scrolled')
               print('Release startup, 1.3x text, keyboard and landscape composer checks passed.')
           finally:
               adb('shell','settings','put','system','font_scale','1.0')
