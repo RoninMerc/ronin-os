@@ -29,4 +29,51 @@ with zipfile.ZipFile(io.BytesIO(raw)) as z:
         target = ROOT / p
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(z.read(name))
-print('Applied Ronin Vanta Prime v1 source')
+
+# Deterministic Prime quality corrections discovered by the API-36 QA gate.
+def replace_once(text, old, new, label):
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f'{label}: expected one match, found {count}')
+    return text.replace(old, new, 1)
+
+main_path = ROOT / 'app/src/main/java/com/ronin/vanta/MainActivity.java'
+main = main_path.read_text()
+main = replace_once(
+    main,
+    'items[i]=(i+1)+". ["+ModelRanker.tier(m,wantedType)+"] "+m.displayName()+"\n"+ModelRanker.capabilitySummary(m);'.replace('\\n', '\n'),
+    'items[i]=(i+1)+". ["+ModelRanker.tier(m,wantedType)+"] "+m.displayName()+"\\n"+ModelRanker.capabilitySummary(m);',
+    'model picker capability line'
+)
+main = replace_once(
+    main,
+    '"Vanta is designed to improve as providers and models change. Live discovery keeps the catalogue moving; capability metadata drives ranking; manual selection always remains yours."',
+    '"Vanta continuously adapts as providers and models change. Connected catalogues refresh automatically every 12 hours; live capability metadata drives ranking; manual selection always remains yours."',
+    'adaptive home copy'
+)
+main = replace_once(
+    main,
+    '    private void refreshRankingMetadataIfNeeded() {\n        if (prefs.getBoolean("ranking_metadata_prime_v1", false)) return;\n        io.submit(() -> {\n            boolean refreshedAny = false;',
+    '    private void refreshRankingMetadataIfNeeded() {\n        long now = System.currentTimeMillis();\n        long last = prefs.getLong("model_catalog_last_refresh", 0L);\n        if (now - last < 12L * 60L * 60L * 1000L) return;\n        io.submit(() -> {\n            boolean refreshedAny = false;',
+    'adaptive catalog schedule'
+)
+main = replace_once(
+    main,
+    'prefs.edit().putBoolean("ranking_metadata_prime_v1", true).apply();',
+    'prefs.edit().putLong("model_catalog_last_refresh", System.currentTimeMillis()).putBoolean("ranking_metadata_prime_v1", true).apply();',
+    'adaptive catalog timestamp'
+)
+main = replace_once(
+    main,
+    'modelCache.put(p.id, fresh); saveModelCache(p.id);\n                runOnUiThread(() -> { setBusy(false); toast("Synced " + fresh.size() + " models from " + p.name);',
+    'modelCache.put(p.id, fresh); saveModelCache(p.id); prefs.edit().putLong("model_catalog_last_refresh", System.currentTimeMillis()).apply();\n                runOnUiThread(() -> { setBusy(false); toast("Synced " + fresh.size() + " models from " + p.name);',
+    'manual sync timestamp'
+)
+main_path.write_text(main)
+
+gradle_props = ROOT / 'gradle.properties'
+gp = gradle_props.read_text()
+gp = replace_once(gp, 'android.useAndroidX=false', 'android.useAndroidX=true', 'AndroidX current default')
+gradle_props.write_text(gp)
+
+print('Applied Ronin Vanta Prime v1 source + deterministic QA corrections')
