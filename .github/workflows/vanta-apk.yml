@@ -53,6 +53,10 @@ jobs:
           disable-animations: true
           script: |
             gradle -p vanta/reviewed --no-daemon --max-workers=2 connectedDebugAndroidTest --stacktrace
+            adb install -r vanta/reviewed/app/build/outputs/apk/debug/app-debug.apk
+            adb install -r vanta/reviewed/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -r -e class 'com.ronin.vanta.DeviceTest#allWorkspacesOpenWithoutCredentials' com.ronin.vanta.preview.test/androidx.test.runner.AndroidJUnitRunner | tee screenshot-instrumentation.txt
+            grep -Fq 'OK (1 test)' screenshot-instrumentation.txt
             adb pull /sdcard/Android/data/com.ronin.vanta.preview/files qa-previews
       - name: Collect distribution and signing verifier
         run: |
@@ -75,4 +79,5 @@ jobs:
             vanta/reviewed/app/build/test-results/
             vanta/reviewed/app/build/outputs/androidTest-results/
             qa-previews/
+            screenshot-instrumentation.txt
           if-no-files-found: warn
