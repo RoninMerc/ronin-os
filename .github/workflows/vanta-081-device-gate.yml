@@ -1,0 +1,102 @@
+name: Vanta 0.8.1 - immutable APK final device gate
+on:
+  push:
+    branches: ['build/vanta-080-simple-forge']
+    paths: ['.github/workflows/vanta-081-device-gate.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix: {api: [29, 36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.8.1-build
+          run-id: 34191515107
+          github-token: ${{ github.token }}
+          path: distribution
+      - name: Verify exact previously compiled APK identities
+        run: |
+          cat > expected-apks.txt <<'SUMS'
+          503865a32199ee451b50c828edc02ef1d6d492d76cad23f2180aec0e226a61a5  distribution/app-debug.apk
+          f6d65f259a6f7ec20b2609aad01c09f2fd7a36d36b97710f3586b304d7e808d3  distribution/app-debug-androidTest.apk
+          5cad15aa454b645429ccc77d449b694c54f84d7013a6e77fd01e418cc129a9fa  distribution/release-qa.apk
+          c515a4e46c61d65141fd8b978dfd454fb51466a877f9d7133c30098540c68691  distribution/predecessor-qa.apk
+          SUMS
+          sha256sum -c expected-apks.txt | tee verified-apks.txt
+          printf 'Source commit: 13c49767666decdefecbf4d66d324b5122a12554\nBuild run: 34191515107\nNo APK payload is changed by this device-only workflow.\n' > source-identity.txt
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install, update, launch and run all applicable device tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini" && cp "${ANDROID_AVD_HOME}/test.avd/config.ini" emulator-config.txt
+          script: |
+            adb shell getprop | grep -E 'dalvik.vm.heap|ro.build.version.sdk' > emulator-memory.txt
+            adb install -r distribution/predecessor-qa.apk
+            adb install -r distribution/app-debug-androidTest.apk
+            adb logcat -c
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-prepare.txt
+            adb logcat -d > upgrade-prepare-logcat.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' upgrade-prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb install -r distribution/app-debug.apk
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-verify.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' upgrade-verify.txt
+            adb logcat -c
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee debug-tests.txt
+            adb logcat -d > debug-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files qa-debug || true
+            grep -Eq '^OK \([0-9]+ tests?\)' debug-tests.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee process-prepare.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' process-prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb shell am start -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity
+            sleep 3
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee process-restore.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' process-restore.txt
+            adb install -r distribution/release-qa.apk
+            adb logcat -c
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe,com.ronin.vanta.BackgroundDeviceTest com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee release-tests.txt
+            adb logcat -d > release-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files qa-release || true
+            grep -Eq '^OK \([0-9]+ tests?\)' release-tests.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee final-launch.txt
+            adb shell dumpsys package com.ronin.vanta.fixed > installed-package.txt
+            adb exec-out screencap -p > final-launch.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.8.1-final-device-${{ matrix.api }}
+          path: |
+            *tests.txt
+            *logcat.txt
+            process-*.txt
+            upgrade-*.txt
+            final-launch.*
+            installed-package.txt
+            emulator-*.txt
+            source-identity.txt
+            expected-apks.txt
+            verified-apks.txt
+            qa-debug/
+            qa-release/
+          if-no-files-found: warn
