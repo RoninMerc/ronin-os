@@ -2,7 +2,7 @@ name: Ronin Vanta 0.8.1 - release verification
 on:
   push:
     branches: ['build/vanta-080-simple-forge']
-    paths: ['vanta/v08/**', '.github/workflows/vanta-080.yml']
+    paths: ['vanta/v08/**', 'vanta/release/**', '.github/workflows/vanta-080.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,7 +45,9 @@ jobs:
           python3 vanta/v08/apply.py
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
           python3 vanta/v08/apply_release.py
-          if test -f vanta/v08/release_review.py; then python3 vanta/v08/release_review.py; fi
+          python3 vanta/v08/release_review.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/release/release_polish.py
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
           grep -q "versionCode 81" vanta/personal/app/build.gradle
           grep -q "versionName '0.8.1'" vanta/personal/app/build.gradle
