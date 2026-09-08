@@ -27,14 +27,12 @@ public final class VantaWorkService extends Service {
   private final Handler handler=new Handler(Looper.getMainLooper());
   @Override public void onCreate(){
     super.onCreate();
-    // Acknowledge Android's start contract before any encrypted-storage/registry work.
     try{startForeground(JobNotifications.FOREGROUND,JobNotifications.starting(this),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);foreground=true;}
     catch(RuntimeException denied){foreground=false;}
     engine=JobEngine.get(this);
   }
   private final Runnable tick=new Runnable(){public void run(){
     if(engine.executing()==0){
-      // Do not stop a newer startForegroundService request whose onStartCommand is still queued.
       if(stopSelfResult(latestStartId)){foreground=false;stopForeground(STOP_FOREGROUND_REMOVE);return;}
       handler.postDelayed(this,250);return;
     }
@@ -88,4 +86,23 @@ s=s[:-1]+'''
  }
 }
 ''';p.write_text(s)
-print('Foreground start acknowledgement and start-ID-safe stop; lifecycle regressions retained.')
+p=j/'PromptStrategy.java';s=p.read_text();marker='  public static boolean trivial(String s) {';assert s.count(marker)==1
+s=s.replace(marker,'''  public static String generatorAlias(String depth,String request) {
+    return alias(trivial(request)?"Quick":depth(depth));
+  }
+
+'''+marker);p.write_text(s)
+p=j/'VantaHub.java';s=p.read_text();old='prefs.getString("alias_" + PromptStrategy.alias(d), "")';assert s.count(old)==1
+s=s.replace(old,'prefs.getString("alias_" + PromptStrategy.generatorAlias(d,request), "")');p.write_text(s)
+p=root/'app/src/test/java/com/ronin/vanta/FinalContractTest.java';s=p.read_text().rstrip();assert s.endswith('}')
+s=s[:-1]+'''
+ @Test public void simpleWritingUsesFastAliasDespiteRetainedMaximumDepth(){
+   assertEquals("PROMPT_FAST",PromptStrategy.generatorAlias("Maximum","Make this paragraph more professional."));
+   assertEquals("PROMPT_FAST",PromptStrategy.generatorAlias("Deep","Write me an email."));
+ }
+ @Test public void complexEngineeringKeepsMaximumAlias(){
+   assertEquals("PROMPT_MAX",PromptStrategy.generatorAlias("Maximum","Inspect and rebuild this Android project, compile it and test it."));
+ }
+}
+''';p.write_text(s)
+print('Foreground lifecycle race fixed; trivial writing uses FAST, complex tasks retain their chosen depth.')
