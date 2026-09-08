@@ -1,0 +1,184 @@
+name: Vanta Android 0.9.0 pipeline verification
+on:
+  push:
+    branches: ['fix/vanta-090-android-pipeline']
+    paths: ['vanta/v09/**', '.github/workflows/vanta-090.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vanta-090-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Reconstruct exact Android 0.8.3 baseline
+        run: |
+          python3 vanta/v05/materialize.py
+          curl -fL --retry 3 -o /tmp/format.jar https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar
+          format() { find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace; }
+          format
+          python3 vanta/v05/final_audit.py
+          format
+          python3 vanta/v06/apply_experience.py
+          python3 vanta/v06/review_fixes.py
+          format
+          python3 vanta/v06/responsive_layout.py
+          format
+          python3 vanta/v07/apply_master.py
+          python3 vanta/v07/review.py
+          python3 vanta/v07/final_review.py
+          format
+          python3 vanta/v07/runtime_review.py
+          format
+          python3 vanta/v08/apply.py
+          format
+          python3 vanta/v08/apply_release.py
+          python3 vanta/v08/release_review.py
+          format
+          python3 vanta/release/release_polish.py
+          format
+          python3 vanta/release/network_recovery_test.py
+          format
+          base64 -d vanta/v082/vanta082-full.patch.gz.b64 | gzip -d > /tmp/082.patch
+          patch -p1 -d vanta/personal < /tmp/082.patch
+          base64 -d vanta/v083/vanta083-on-082.patch.gz.b64 | gzip -d > /tmp/083.patch
+          patch -p1 -d vanta/personal < /tmp/083.patch
+          format
+          mkdir -p distribution
+          gradle -p vanta/personal --no-daemon --max-workers=2 assembleDebug --stacktrace
+          cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/predecessor-qa.apk
+      - name: Apply audited Android fixes and preserve exact source
+        run: |
+          python3 vanta/v09/apply.py
+          if test -f vanta/v09/review.py; then python3 vanta/v09/review.py; fi
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          gradle -p vanta/personal --no-daemon --max-workers=2 wrapper --gradle-version 8.13
+          cd vanta/personal && zip -qr ../../distribution/Ronin-Vanta-0.9.0-Source.zip app/src app/build.gradle build.gradle settings.gradle gradle.properties gradle gradlew gradlew.bat
+      - name: Compile application and test APKs, run JVM tests and lint
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --stacktrace 2>&1 | tee build.log
+      - name: Prepare release-payload tests and alternate update track
+        run: |
+          cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/
+          cp vanta/personal/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" distribution/
+          gradle -p vanta/personal --no-daemon --console=plain signingReport > /tmp/signing-report.txt
+          QA_KEY=$(sed -n 's/^Store: //p' /tmp/signing-report.txt | grep -v '^null$' | head -n1)
+          test -f "$QA_KEY"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$QA_KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/release-qa.apk distribution/fixed-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs distribution/release-qa.apk > distribution/qa-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/release-qa.apk > distribution/package.txt
+          gradle -p vanta/personal -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/personal-release-unsigned.apk
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+          printf '%s\n' "$GITHUB_SHA" > distribution/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: vanta-0.9.0-build, path: distribution/, if-no-files-found: warn}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.0-reports
+          path: |
+            build.log
+            vanta/personal/app/build/reports/
+            vanta/personal/app/build/test-results/
+          if-no-files-found: warn
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix: {api: [29, 36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: vanta-0.9.0-build, path: distribution}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Upgrade, app, progress, background and real generated APK tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini" && cp "${ANDROID_AVD_HOME}/test.avd/config.ini" emulator-config.txt
+          script: |
+            adb install -r distribution/predecessor-qa.apk
+            adb install -r distribution/app-debug-androidTest.apk
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-prepare.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' upgrade-prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb install -r distribution/app-debug.apk
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-verify.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' upgrade-verify.txt
+            adb logcat -c
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee debug-tests.txt
+            adb logcat -d > debug-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files qa-debug || true
+            grep -Eq '^OK \([0-9]+ tests?\)' debug-tests.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee process-prepare.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' process-prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb shell am start -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity
+            sleep 3
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee process-restore.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' process-restore.txt
+            adb install -r distribution/release-qa.apk
+            adb logcat -c
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe,com.ronin.vanta.BackgroundDeviceTest com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee release-tests.txt
+            adb logcat -d > release-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files qa-release || true
+            grep -Eq '^OK \([0-9]+ tests?\)' release-tests.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files/generated-vanta09.apk generated-vanta09.apk
+            adb install -r generated-vanta09.apk | tee generated-install.txt
+            adb shell am start -W -n com.ronin.forge.verification/.MainActivity | tee generated-launch.txt
+            sleep 2
+            adb shell uiautomator dump /sdcard/generated.xml
+            adb pull /sdcard/generated.xml generated.xml
+            grep -q 'VANTA BUILD VERIFIED' generated.xml
+            adb exec-out screencap -p > generated-launch.png
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee final-launch.txt
+            adb shell dumpsys package com.ronin.vanta.fixed > installed-package.txt
+            adb exec-out screencap -p > final-launch.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.0-device-${{ matrix.api }}
+          path: |
+            *tests.txt
+            *logcat.txt
+            process-*.txt
+            upgrade-*.txt
+            generated-*
+            generated.xml
+            final-launch.*
+            installed-package.txt
+            emulator-*.txt
+            qa-debug/
+            qa-release/
+          if-no-files-found: warn
