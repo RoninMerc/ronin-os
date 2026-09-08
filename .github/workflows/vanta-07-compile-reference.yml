@@ -1,0 +1,54 @@
+name: Vanta 0.7 public compile reference
+on:
+  push:
+    branches: ['build/vanta-master-07']
+    paths: ['.github/workflows/vanta-07-compile-reference.yml']
+permissions:
+  contents: read
+jobs:
+  reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Reconstruct existing baseline
+        run: |
+          python3 vanta/v05/materialize.py
+          curl -fL --retry 3 -o /tmp/format.jar https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v05/final_audit.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v06/apply_experience.py
+          python3 vanta/v06/review_fixes.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v06/responsive_layout.py
+          gradle -p vanta/personal --no-daemon --max-workers=2 testDebugUnitTest assembleDebugAndroidTest
+      - name: Copy only public compile jars
+        run: |
+          mkdir reference
+          cp "$ANDROID_HOME/platforms/android-36/android.jar" reference/
+          cp /tmp/format.jar reference/
+          python3 - <<'PY'
+          import os,pathlib,zipfile,shutil
+          dest=pathlib.Path('reference'); cache=pathlib.Path.home()/'.gradle/caches/modules-2/files-2.1'
+          prefixes=('androidx.','org.jetbrains','com.android.tools.build','junit','org.hamcrest','org.json','com.google.guava','com.google.errorprone','org.jspecify')
+          for p in cache.rglob('*'):
+            if not p.is_file() or not p.relative_to(cache).parts[0].startswith(prefixes): continue
+            if p.suffix=='.jar' and not p.name.startswith(('gradle-','builder-','bundletool','aapt','manifest-merger','lint','sdk-common','common','sdklib','repository','apkzlib')): shutil.copy(p,dest/p.name)
+            if p.suffix=='.aar':
+              with zipfile.ZipFile(p) as z:
+                if 'classes.jar' in z.namelist(): (dest/(p.stem+'.jar')).write_bytes(z.read('classes.jar'))
+          for p in pathlib.Path('vanta/personal/app/build/intermediates').rglob('R.jar'):
+            if 'debug' in str(p) and 'AndroidTest' not in str(p): shutil.copy(p,dest/'R.jar');break
+          PY
+          du -sh reference
+      - uses: actions/upload-artifact@v4
+        with: {name: vanta-07-compile-reference, path: reference/, retention-days: 2, if-no-files-found: error}
