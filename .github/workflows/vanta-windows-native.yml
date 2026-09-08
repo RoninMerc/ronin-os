@@ -12,7 +12,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
@@ -26,6 +26,9 @@ jobs:
           python vanta/windows-native/apply_tests.py
           if(Test-Path vanta/windows-native/quality_review.py){python vanta/windows-native/quality_review.py}
           if(Test-Path vanta/windows-native/test_review.py){python vanta/windows-native/test_review.py}
+          python vanta/windows-native/finish.py
+          if(Test-Path vanta/windows-native/last_review.py){python vanta/windows-native/last_review.py}
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
       - name: Compile application
         shell: pwsh
         run: |
@@ -47,6 +50,11 @@ jobs:
         run: |
           dotnet publish ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release -r win-x64 --self-contained true -o artifacts/app --nologo 2>&1 | Tee-Object artifacts/publish.log
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Build and exercise installer when packaging is present
+        shell: pwsh
+        run: |
+          if(Test-Path vanta/windows-native/package.ps1){& ./vanta/windows-native/package.ps1}
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
       - name: Preserve exact source and clean isolated test data
         if: always()
         shell: pwsh
@@ -58,5 +66,9 @@ jobs:
         if: always()
         with:
           name: vanta-windows-build
-          path: artifacts/
+          path: |
+            artifacts/*.log
+            artifacts/*.zip
+            artifacts/qa/
+            artifacts/installer/
           if-no-files-found: error
