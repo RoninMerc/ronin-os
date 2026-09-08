@@ -39,6 +39,8 @@ jobs:
           if test -f vanta/v07/review.py; then python3 vanta/v07/review.py; fi
           if test -f vanta/v07/final_review.py; then python3 vanta/v07/final_review.py; fi
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v07/runtime_review.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
           gradle -p vanta/personal --no-daemon --max-workers=2 wrapper --gradle-version 8.13
           mkdir -p distribution
           cd vanta/personal && zip -qr ../../distribution/ronin-vanta-0.7-source.zip app/src app/build.gradle build.gradle settings.gradle gradle.properties gradle gradlew gradlew.bat
