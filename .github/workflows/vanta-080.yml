@@ -49,6 +49,8 @@ jobs:
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
           python3 vanta/release/release_polish.py
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/release/network_recovery_test.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
           grep -q "versionCode 81" vanta/personal/app/build.gradle
           grep -q "versionName '0.8.1'" vanta/personal/app/build.gradle
           grep -q 'forge-platform-' vanta/personal/app/src/main/java/com/ronin/vanta/VantaHub.java
@@ -116,11 +118,13 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          ram-size: 2048M
+          ram-size: '2048'
           disk-size: 4096M
           emulator-boot-timeout: 600
           disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini" && cp "${ANDROID_AVD_HOME}/test.avd/config.ini" emulator-config.txt
           script: |
+            adb shell getprop | grep -E 'dalvik.vm.heap|ro.build.version.sdk' > emulator-memory.txt
             adb install -r distribution/predecessor-qa.apk
             adb install -r distribution/app-debug-androidTest.apk
             adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-prepare.txt
@@ -162,6 +166,7 @@ jobs:
             upgrade-*.txt
             final-launch.*
             installed-package.txt
+            emulator-*.txt
             qa-debug/
             qa-release/
           if-no-files-found: warn
