@@ -1,0 +1,53 @@
+name: Vanta Windows native verification
+on:
+  push:
+    branches: ['build/vanta-windows-native-01']
+    paths: ['vanta/windows-native/**', '.github/workflows/vanta-windows-native.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vanta-windows-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - name: Materialize independent Windows codebase
+        shell: pwsh
+        run: |
+          python vanta/windows-native/materialize.py
+          if(Test-Path vanta/windows-native/review.py){python vanta/windows-native/review.py}
+          if(Test-Path vanta/windows-native/tests/Program.cs){Copy-Item vanta/windows-native/tests/Program.cs ronin-vanta-windows/tests/Vanta.Tests/Program.cs -Force}
+      - name: Compile application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          dotnet build ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile native test harness
+        shell: pwsh
+        run: |
+          dotnet build ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/test-build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Self-contained Windows publication
+        shell: pwsh
+        run: |
+          dotnet publish ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release -r win-x64 --self-contained true -o artifacts/app --nologo 2>&1 | Tee-Object artifacts/publish.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Preserve exact source
+        if: always()
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path;import zipfile;root=Path('ronin-vanta-windows');z=zipfile.ZipFile('artifacts/Ronin-Vanta-Windows-Source.zip','w',zipfile.ZIP_DEFLATED);[(z.write(p,'ronin-vanta-windows/'+str(p.relative_to(root)))) for p in root.rglob('*') if p.is_file() and not {'bin','obj'}.intersection(p.parts)];z.close()"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-windows-build
+          path: artifacts/
+          if-no-files-found: error
