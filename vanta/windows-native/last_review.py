@@ -17,3 +17,4 @@ replace('tests/Vanta.Tests/DesktopTests.cs','            await Test("Large conve
             await Test("Large conversation view recycling and scrolling",''')
 print('Final compiler contract and model-picker/video snapshot regressions applied.')
 exec(compile(Path('vanta/windows-native/release_review.py').read_text(encoding='utf-8'),'release_review.py','exec'))
+exec(compile(Path('vanta/windows-native/screen_review.py').read_text(encoding='utf-8'),'screen_review.py','exec'))
