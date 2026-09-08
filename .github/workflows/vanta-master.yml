@@ -37,6 +37,7 @@ jobs:
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
           python3 vanta/v07/apply_master.py
           if test -f vanta/v07/review.py; then python3 vanta/v07/review.py; fi
+          if test -f vanta/v07/final_review.py; then python3 vanta/v07/final_review.py; fi
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
           gradle -p vanta/personal --no-daemon --max-workers=2 wrapper --gradle-version 8.13
           mkdir -p distribution
@@ -52,7 +53,10 @@ jobs:
           cp vanta/personal/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/
           cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" distribution/
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/release-qa.apk distribution/fixed-release-unsigned.apk
+          gradle -p vanta/personal --no-daemon --console=plain signingReport > "$RUNNER_TEMP/signing-report.txt"
+          QA_KEY=$(sed -n 's/^Store: //p' "$RUNNER_TEMP/signing-report.txt" | grep -v '^null$' | head -n 1)
+          test -f "$QA_KEY"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$QA_KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/release-qa.apk distribution/fixed-release-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs distribution/release-qa.apk > distribution/release-qa-signature.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/app-debug.apk > distribution/package.txt
           gradle -p vanta/personal -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace
