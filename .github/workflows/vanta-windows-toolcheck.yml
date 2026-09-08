@@ -1,0 +1,35 @@
+name: Vanta Windows build environment
+on:
+  push:
+    branches: ['build/vanta-windows-native-01']
+    paths: ['.github/workflows/vanta-windows-toolcheck.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Verify native Windows tooling and metadata
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          dotnet --info | Out-File evidence/dotnet.txt
+          Get-ComputerInfo -Property WindowsProductName,WindowsVersion,OsBuildNumber | Format-List | Out-File evidence/windows.txt
+          Get-ChildItem 'C:/Program Files (x86)/Inno Setup*' -ErrorAction SilentlyContinue | Out-File evidence/installer-tools.txt
+          Add-Type -AssemblyName PresentationFramework
+          [System.Windows.SystemParameters]::PrimaryScreenWidth | Out-File evidence/display.txt
+          $urls=@{
+            'venice-models.json'='https://api.venice.ai/api/v1/models?type=all';
+            'featherless-default.json'='https://api.featherless.ai/v1/models?q=Huihui-Qwen3.5-27B-abliterated&per_page=1000';
+            'featherless-voices.json'='https://api.featherless.ai/v1/audio/voices';
+          }
+          foreach($name in $urls.Keys){try{Invoke-WebRequest $urls[$name] -OutFile "evidence/$name" -TimeoutSec 30}catch{$_.Exception.Message | Out-File "evidence/$name-error.txt"}}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-windows-environment
+          path: evidence/
+          if-no-files-found: error
