@@ -1,0 +1,60 @@
+name: Vanta rebuild compiler preparation
+on:
+  push:
+    branches: ['build/vanta-master-07']
+    paths: ['.github/workflows/vanta-offline-build-tools.yml']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+          cache-disabled: true
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Build existing Vanta baseline and populate isolated dependency cache
+        run: |
+          export GRADLE_USER_HOME="$RUNNER_TEMP/vanta-gradle"
+          python3 vanta/v05/materialize.py
+          curl -fL --retry 3 -o "$RUNNER_TEMP/google-java-format.jar" https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar "$RUNNER_TEMP/google-java-format.jar" --replace
+          python3 vanta/v05/final_audit.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar "$RUNNER_TEMP/google-java-format.jar" --replace
+          python3 vanta/v06/apply_experience.py
+          python3 vanta/v06/review_fixes.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar "$RUNNER_TEMP/google-java-format.jar" --replace
+          python3 vanta/v06/responsive_layout.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar "$RUNNER_TEMP/google-java-format.jar" --replace
+          gradle -p vanta/personal --no-daemon --max-workers=2 testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease
+          gradle --stop
+      - name: Archive only public compilers and dependency artifacts, no signing or credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/offline/sdk" "$RUNNER_TEMP/offline/gradle-home/caches"
+          cp -a "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/licenses" "$RUNNER_TEMP/offline/sdk/"
+          GRADLE_ROOT=$(dirname "$(dirname "$(readlink -f "$(command -v gradle)")")")
+          cp -a "$GRADLE_ROOT" "$RUNNER_TEMP/offline/gradle"
+          cp -a "$RUNNER_TEMP/vanta-gradle/caches/modules-2" "$RUNNER_TEMP/offline/gradle-home/caches/"
+          cp "$RUNNER_TEMP/google-java-format.jar" "$RUNNER_TEMP/offline/"
+          tar -C "$RUNNER_TEMP/offline" -czf "$RUNNER_TEMP/vanta-public-build-tools.tar.gz" .
+          sha256sum "$RUNNER_TEMP/vanta-public-build-tools.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-public-build-tools
+          path: ${{ runner.temp }}/vanta-public-build-tools.tar.gz
+          compression-level: 0
+          retention-days: 2
+          if-no-files-found: error
