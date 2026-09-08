@@ -1,0 +1,92 @@
+name: Ronin Vanta 0.8.3 Featherless + Forge APK
+on:
+  push:
+    branches: ['build/vanta-083-featherless-forge']
+    paths: ['vanta/v083/**', '.github/workflows/vanta-083.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: vanta-083-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Reconstruct Vanta 0.8.2 baseline
+        run: |
+          python3 vanta/v05/materialize.py
+          curl -fL --retry 3 -o /tmp/format.jar https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v05/final_audit.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v06/apply_experience.py
+          python3 vanta/v06/review_fixes.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v06/responsive_layout.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v07/apply_master.py
+          python3 vanta/v07/review.py
+          python3 vanta/v07/final_review.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v07/runtime_review.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v08/apply.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v08/apply_release.py
+          python3 vanta/v08/release_review.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/release/release_polish.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/release/network_recovery_test.py
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          base64 -d vanta/v082/vanta082-full.patch.gz.b64 | gzip -d > /tmp/vanta082.patch
+          patch -p1 -d vanta/personal < /tmp/vanta082.patch
+      - name: Apply Vanta 0.8.3 fixes
+        run: |
+          base64 -d vanta/v083/vanta083-on-082.patch.gz.b64 | gzip -d > /tmp/vanta083.patch
+          patch -p1 -d vanta/personal < /tmp/vanta083.patch
+          grep -q "versionCode 83" vanta/personal/app/build.gradle
+          grep -q "versionName '0.8.3'" vanta/personal/app/build.gradle
+          grep -q 'Achilles1089/fable-coder-35B-A3B' vanta/personal/app/src/main/java/com/ronin/vanta/ForgeRouting.java
+          grep -q 'image-generation' vanta/personal/app/src/main/java/com/ronin/vanta/ApiClient.java
+          grep -q 'never ask the user a follow-up question' vanta/personal/app/src/main/java/com/ronin/vanta/JobOperations.java
+          find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+      - name: Compile, tests, lint and release APK
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest lintDebug assembleRelease --stacktrace 2>&1 | tee build.log
+      - name: Stage Vanta 0.8.3 distribution
+        if: always()
+        run: |
+          mkdir -p distribution
+          if [ -f vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/Ronin-Vanta-0.8.3-unsigned.apk
+          fi
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" distribution/ || true
+          cd vanta/personal && zip -qr ../../distribution/Ronin-Vanta-0.8.3-Source.zip app/src app/build.gradle build.gradle settings.gradle gradle.properties
+          cd ../..
+          sha256sum distribution/* > distribution/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.8.3-build
+          path: |
+            distribution/
+            build.log
+            vanta/personal/app/build/reports/
+            vanta/personal/app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7
