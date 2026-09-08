@@ -1,0 +1,50 @@
+name: Vanta compiler bundle transfer
+on:
+  push:
+    branches: ['build/vanta-master-07']
+    paths: ['.github/workflows/vanta-tool-parts.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-public-build-tools
+          run-id: 34172027349
+          github-token: ${{ github.token }}
+          path: bundle
+      - run: |
+          mkdir -p tools
+          tar -xzf bundle/vanta-public-build-tools.tar.gz -C tools
+          find tools/sdk/platforms -mindepth 1 -maxdepth 1 ! -name android-36 -exec rm -rf {} +
+          find tools/sdk/build-tools -mindepth 1 -maxdepth 1 ! -name 35.0.0 -exec rm -rf {} +
+          tar -C tools -czf compact.tar.gz .
+          split -b 400M -d compact.tar.gz compiler.part
+          sha256sum compiler.part* > COMPILER-SHA256SUMS.txt
+          ls -lh compiler.part*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-compiler-0
+          path: |
+            compiler.part00
+            COMPILER-SHA256SUMS.txt
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-compiler-1
+          path: compiler.part01
+          compression-level: 0
+          retention-days: 2
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-compiler-2
+          path: compiler.part02
+          compression-level: 0
+          retention-days: 2
+          if-no-files-found: warn
