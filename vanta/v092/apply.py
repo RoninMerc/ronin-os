@@ -8,5 +8,6 @@ assert len(patch)==82755,'Recovery source length mismatch'
 project=root.parent/'personal'
 subprocess.run(['patch','--batch','--fuzz=0','-p1','-d',str(project)],input=patch,check=True)
 subprocess.run(['java','-jar','/tmp/format.jar','--replace']+[str(p) for p in (project/'app/src').rglob('*.java')],check=True)
+runpy.run_path(str(root/'attribution.py'),run_name='__main__')
 runpy.run_path(str(root/'compatibility.py'),run_name='__main__')
 print('Applied Vanta 0.9.2 Forge recovery, provider consent, budgets and neutral regressions.')
