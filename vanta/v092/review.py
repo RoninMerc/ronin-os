@@ -40,6 +40,12 @@ java('ForgeRecoveryController.java','''    e.store.checkpoint(j, "recovery", sta
 java('ForgeRecoveryController.java','''        e.store.checkpoint(j, "recovery", state);
         return true;''','''        e.store.recoveryCheckpoint(j,Collections.singletonMap("recovery",state),Collections.emptyList());
         return true;''')
+java('VantaHub.java','''                  EditText calls = VantaDesign.field(host, "AI requests · 10–500");''','''                  panel.addView(VantaDesign.text(host,"AI requests · 10–500",13,VantaDesign.TEXT,true),VantaDesign.gap(host,10));
+                  EditText calls = VantaDesign.field(host, "AI requests · 10–500");
+                  calls.setContentDescription("Maximum AI requests for this task");''')
+java('VantaHub.java','''                  EditText switches = VantaDesign.field(host, "Model changes · 1–8");''','''                  panel.addView(VantaDesign.text(host,"Model changes · 1–8",13,VantaDesign.TEXT,true),VantaDesign.gap(host,10));
+                  EditText switches = VantaDesign.field(host, "Model changes · 1–8");
+                  switches.setContentDescription("Maximum automatic model changes for this task");''')
 # Android must be explicitly brought to the foreground after the Home key, not just lifecycle-moved.
 test='app/src/androidTest/java/com/ronin/vanta/AutomaticHandoverDeviceTest.java'
 edit(test,'''      a.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
@@ -127,4 +133,4 @@ s=s[:-1]+'''
   }
 }
 ''';p.write_text(s)
-print('Reviewed recovery checkpoint cancellation, inference/worker boundary, structured analysis and full Forge-source handover.')
+print('Reviewed recovery checkpoint cancellation, inference/worker boundary, structured analysis, labelled limits and full Forge-source handover.')
