@@ -1,0 +1,47 @@
+name: Vanta 0.9.3 public compiler references
+on:
+  push:
+    branches: ['fix/vanta-093-build-foundation']
+    paths: ['.github/workflows/vanta-093-reference.yml']
+permissions: {contents: read, actions: read}
+jobs:
+  reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.2-client-build
+          run-id: 34307414317
+          github-token: ${{ github.token }}
+          path: baseline
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Resolve baseline and copy public compile-only references
+        run: |
+          mkdir project reference
+          unzip -q baseline/Ronin-Vanta-0.9.2-Source.zip -d project
+          gradle -p project --no-daemon --max-workers=2 testDebugUnitTest assembleDebugAndroidTest
+          cp "$ANDROID_HOME/platforms/android-36/android.jar" reference/
+          cp baseline/format.jar baseline/apksigner.jar reference/
+          python3 - <<'PY'
+          import pathlib,zipfile,shutil
+          dest=pathlib.Path('reference'); cache=pathlib.Path.home()/'.gradle/caches/modules-2/files-2.1'
+          groups=('androidx.','junit','org.hamcrest','org.json','com.android.tools.build')
+          for p in cache.rglob('*'):
+              if not p.is_file() or not p.relative_to(cache).parts[0].startswith(groups): continue
+              if p.suffix=='.aar':
+                  with zipfile.ZipFile(p) as z:
+                      if 'classes.jar' in z.namelist(): (dest/(p.stem+'.jar')).write_bytes(z.read('classes.jar'))
+              if p.suffix=='.jar' and p.name.startswith(('junit-','hamcrest-','json-','apksig-','annotation-')): shutil.copy(p,dest/p.name)
+          for p in pathlib.Path('project/app/build/intermediates').rglob('R.jar'):
+              if 'debug' in str(p) and 'AndroidTest' not in str(p): shutil.copy(p,dest/'R.jar');break
+          PY
+          du -sh reference
+      - uses: actions/upload-artifact@v4
+        with: {name: vanta-093-compile-reference, path: reference/, retention-days: 7, if-no-files-found: error}
