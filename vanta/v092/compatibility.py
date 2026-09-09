@@ -33,3 +33,60 @@ s=s[:-1]+'''
 }
 ''';p.write_text(s)
 print('Original visual-input requirements survive a review-stage model handover.')
+p=j/'JobEngine.java';s=p.read_text();old='  public synchronized void schedulePending() {';assert s.count(old)==1
+s=s.replace(old,'''  /** Short continuation of active user-initiated work, not an exact JobScheduler deadline. */
+  synchronized long foregroundContinuationDelay() {
+    if(!VantaWorkService.foreground || !online())return -1;
+    try {
+      long now=System.currentTimeMillis(), next=Long.MAX_VALUE;
+      for(VantaJob job:store.active())
+        if(job.active() && !calls.containsKey(job.id()) && !job.json.optBoolean("request_started"))
+          next=Math.min(next,job.json.optLong("next_run",0));
+      if(next==Long.MAX_VALUE || next>now+10000)return -1;
+      return Math.max(0,next-now);
+    }catch(Exception error){recoveryError=Errors.summary(error.getMessage());return -1;}
+  }
+
+'''+old);p.write_text(s)
+p=j/'VantaWorkService.java';s=p.read_text();old='''          if (engine.executing() == 0) {
+            if (stopSelfResult(latestStartId)) {''';assert s.count(old)==1
+s=s.replace(old,'''          if (engine.executing() == 0) {
+            long delay=engine.foregroundContinuationDelay();
+            if(delay>=0) {
+              if(delay==0)engine.wake(true,null);
+              // A finite, already-active workflow owns its short transition. Longer waits
+              // still release this service and use persisted Android scheduling.
+              handler.postDelayed(this,Math.max(100,Math.min(1000,delay)));
+              return;
+            }
+            if (stopSelfResult(latestStartId)) {''');p.write_text(s)
+p=root/'app/src/androidTest/java/com/ronin/vanta/AutomaticHandoverDeviceTest.java';s=p.read_text().rstrip();assert s.endswith('}')
+s=s[:-1]+'''
+  @Test public void foregroundContinuationDoesNotDependOnImmediateAndroidSchedulerDispatch() throws Exception {
+    AtomicInteger phases=new AtomicInteger();
+    e.setHandlerForTests((engine,job,in,call)->{
+      call.check();
+      int phase=phases.incrementAndGet();
+      engine.store.document(job.id(),"phase-"+phase,new JSONObject().put("saved",true));
+      if(phase<3)throw new JobEngine.Deferred(false,1200,"Saved phase; preparing the next bounded step");
+      engine.completed(job,new JSONObject().put("text","Three phases persisted without relying on an immediate system job"));
+    });
+    try(ActivityScenario<MainActivity> a=ActivityScenario.launch(MainActivity.class)) {
+      VantaJob job=h.enqueue(a,"build",new JSONObject(),null);
+      android.app.job.JobScheduler scheduler=(android.app.job.JobScheduler)h.ctx().getSystemService(Context.JOB_SCHEDULER_SERVICE);
+      long deadline=SystemClock.elapsedRealtime()+12000;
+      VantaJob current;
+      do {
+        // Deliberately withhold the fallback system job. The actual foreground service
+        // must keep the short workflow moving, not wait for an OS minimum-latency job.
+        scheduler.cancel(707001);
+        Thread.sleep(40);
+        current=e.store.get(job.id());
+      }while(current.active()&&SystemClock.elapsedRealtime()<deadline);
+      assertEquals(current.json.toString(),"COMPLETED",current.status());assertEquals(3,phases.get());
+      for(int phase=1;phase<=3;phase++)assertTrue(e.store.document(job.id(),"phase-"+phase).getBoolean("saved"));
+    }
+  }
+}
+''';p.write_text(s)
+print('Short foreground continuations no longer depend on an immediate Android scheduler dispatch.')
