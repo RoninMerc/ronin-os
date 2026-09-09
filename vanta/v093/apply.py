@@ -8,6 +8,6 @@ assert len(patch)==203499,'Unexpected Vanta source length'
 project=Path(os.environ.get('VANTA_PROJECT',str(root.parent/'personal')))
 subprocess.run(['patch','--batch','--fuzz=0','-p1','-d',str(project)],input=patch,check=True)
 os.environ['VANTA_PROJECT']=str(project)
-for script in ['review.py','runtime_followup.py','checkpoint_review.py']:
+for script in ['review.py','runtime_followup.py','checkpoint_review.py','ui_review.py']:
     runpy.run_path(str(root/script),run_name='__main__')
 print('Applied Vanta 0.9.3: tested build foundation, diagnostic-aware repair, typed output recovery and real compiler regressions.')
