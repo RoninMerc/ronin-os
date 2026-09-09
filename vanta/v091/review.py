@@ -10,4 +10,11 @@ old='"Source validation (not a build result)\\n"+validation.toString(2)'
 assert s.count(old)==1
 s=s.replace(old,'"Source validation (not a build result)\\n"+validationText')
 p.write_text(s)
-print('Preformatted diagnostic JSON off the UI thread; checked exception is handled by the existing error path.')
+p=root/'app/src/test/java/com/ronin/vanta/ForgeReliabilityTest.java'
+s=p.read_text()
+for name in ['coldRejected','loadingRejected','offlineRejected','warmSnapshotAllowsRequest']:
+ old='void '+name+'(){'
+ assert s.count(old)==1,name
+ s=s.replace(old,'void '+name+'()throws Exception{')
+p.write_text(s)
+print('Corrected diagnostic formatting and checked fixture exceptions; no production or test assertions removed.')
