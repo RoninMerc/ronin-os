@@ -1,0 +1,50 @@
+{
+  "product": "Ronin Vanta Android",
+  "version": "0.9.1",
+  "version_code": 91,
+  "tested_source_commit": "f0952c6f73fd60a9be454d61f27af9f99d9086f4",
+  "ci_run": 34296011376,
+  "ci_conclusion": "success",
+  "completed_at": "2026-09-09T00:57:11Z",
+  "builds": ["debug", "release", "instrumentation", "personal release"],
+  "jvm": {"passed": 297, "failed": 0, "errors": 0, "skipped": 0, "inherited_tests_retained_and_passed": 260, "new_tests": 37},
+  "android_29": {"debug_passed": 85, "release_payload_passed": 83, "process_prepare_passed": 1, "process_restore_passed": 1, "final_installed_launch": "ok"},
+  "android_36": {"debug_passed": 85, "release_payload_passed": 83, "process_prepare_passed": 1, "process_restore_passed": 1, "final_installed_launch": "ok"},
+  "lint": {"errors": 0, "warnings": 104},
+  "standard_apk": {
+    "package": "com.ronin.vanta.fixed",
+    "bytes": 6846462,
+    "sha256": "27bb8261670d8a1bb5d44e74c32626b650e9a366a2907df2003db0bc390999fc",
+    "certificate_sha256": "e67ead57ec87b387a898b6e804e9c5207b254e9fd1393eab5c2ee60a5115ce47",
+    "matches_090_owner_certificate": true,
+    "payload_matches_tested_release": true
+  },
+  "personal_apk": {
+    "package": "com.ronin.vanta.personal",
+    "bytes": 6846462,
+    "sha256": "c0173c6f2f24b1799a1f65b1eaf0729e6568efc29632ab4b45939e1faa810689",
+    "certificate_sha256": "113a98302e5642c6f5e2a3df1da892a848115a80f7911a37c25f9a49e21c6c94",
+    "matches_090_owner_certificate": true,
+    "independently_emulator_tested": false
+  },
+  "general_changes": [
+    "Featherless model-detail readiness before new Forge generation/repair, with identity and cache validation",
+    "Explicit unavailable-model responses pause with source/build checkpoints retained, not an endless waiting state",
+    "Read-only availability recheck; no silent provider/model switch or automatic replay of uncertain paid requests",
+    "Pre-submission XML and resolvable local launcher-resource checks with debug/release source sets, aliases, density folders and BOM support",
+    "Bounded checkpointed source-validation repair; actual compiler result remains authoritative",
+    "Clear saved-project versus current-file-pass counters, separate compiler and resume counts, paused-time wording and stale-question handling"
+  ],
+  "verification_scope": [
+    "Only the Vanta Android client was modified, compiled, installed and exercised.",
+    "Provider/model/build-worker traffic in tests used neutral isolated fixtures, not paid live accounts.",
+    "No individual user-generated project was modified, submitted or built.",
+    "No separate generated application was compiled or installed in this update run.",
+    "Standard client debug/release emulator installs used a disposable QA certificate; delivered standard payload matches tested release.",
+    "Both owner-signed APKs passed signature, manifest/DEX, archive-integrity and compiled-payload checks.",
+    "No cross-version installation test was performed; package/certificate compatibility was checked against 0.9.0 and storage/key identities were unchanged.",
+    "Home, another app, screen-off, network recovery, concurrency and force-stop/relaunch scenarios were exercised with controlled client work.",
+    "Physical phone and live model output/build-repair quality remain unverified.",
+    "External Android worker, Windows endpoint, desktop code and local inference infrastructure were not modified."
+  ]
+}
