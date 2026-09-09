@@ -32,13 +32,14 @@ jobs:
           python3 - <<'PY'
           import pathlib,zipfile,shutil
           dest=pathlib.Path('reference'); cache=pathlib.Path.home()/'.gradle/caches/modules-2/files-2.1'
-          groups=('androidx.','junit','org.hamcrest','org.json','com.android.tools.build')
+          groups=('androidx.','org.jetbrains','junit','org.hamcrest','org.json','com.android.tools.build')
           for p in cache.rglob('*'):
               if not p.is_file() or not p.relative_to(cache).parts[0].startswith(groups): continue
+              group=p.relative_to(cache).parts[0]
               if p.suffix=='.aar':
                   with zipfile.ZipFile(p) as z:
                       if 'classes.jar' in z.namelist(): (dest/(p.stem+'.jar')).write_bytes(z.read('classes.jar'))
-              if p.suffix=='.jar' and p.name.startswith(('junit-','hamcrest-','json-','apksig-','annotation-')): shutil.copy(p,dest/p.name)
+              if p.suffix=='.jar' and (group.startswith(('androidx.','org.jetbrains')) or p.name.startswith(('junit-','hamcrest-','json-','apksig-','annotation-'))): shutil.copy(p,dest/p.name)
           for p in pathlib.Path('project/app/build/intermediates').rglob('R.jar'):
               if 'debug' in str(p) and 'AndroidTest' not in str(p): shutil.copy(p,dest/'R.jar');break
           PY
