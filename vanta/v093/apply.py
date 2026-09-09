@@ -1,0 +1,12 @@
+from pathlib import Path
+import base64,hashlib,lzma,os,subprocess,runpy
+root=Path(__file__).resolve().parent
+raw=base64.b64decode(''.join((root/f'patch_{n}.txt').read_text().strip() for n in range(6)),validate=True)
+assert hashlib.sha256(raw).hexdigest()=='f9a5542a8f8793ea0b234b3f30bb538a40693c55639c123b505db221b33dd6c8','Vanta 0.9.3 patch checksum mismatch'
+patch=lzma.decompress(raw,memlimit=268435456)
+assert len(patch)==203499,'Unexpected Vanta source length'
+project=Path(os.environ.get('VANTA_PROJECT',str(root.parent/'personal')))
+subprocess.run(['patch','--batch','--fuzz=0','-p1','-d',str(project)],input=patch,check=True)
+os.environ['VANTA_PROJECT']=str(project)
+if (root/'review.py').exists():runpy.run_path(str(root/'review.py'),run_name='__main__')
+print('Applied Vanta 0.9.3: tested build foundation, diagnostic-aware repair, typed output recovery and real compiler regressions.')
