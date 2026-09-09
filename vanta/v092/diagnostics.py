@@ -1,8 +1,10 @@
 from pathlib import Path
 import os
 root=Path(os.environ.get('VANTA_PROJECT','vanta/personal'))
-p=root/'app/src/androidTest/java/com/ronin/vanta/PipelineDeviceTest.java';s=p.read_text();old='    assertEquals("COMPLETED", e.store.get(j.id()).status());';assert s.count(old)==1
-s=s.replace(old,'''    assertEquals("Saved task: "+e.store.get(j.id()).json+"\\nDiagnostic: "+e.store.document(j.id(),"diagnostics")+"\\nRecovery: "+e.store.document(j.id(),"recovery"),"COMPLETED",e.store.get(j.id()).status());''');p.write_text(s)
+p=root/'app/src/androidTest/java/com/ronin/vanta/PipelineDeviceTest.java';s=p.read_text();old='''  JSONObject assertReady(VantaJob j) throws Exception {
+    assertEquals("COMPLETED", e.store.get(j.id()).status());''';assert s.count(old)==1,(s.count(old),old)
+s=s.replace(old,'''  JSONObject assertReady(VantaJob j) throws Exception {
+    assertEquals("Saved task: "+e.store.get(j.id()).json+"\\nDiagnostic: "+e.store.document(j.id(),"diagnostics")+"\\nRecovery: "+e.store.document(j.id(),"recovery"),"COMPLETED",e.store.get(j.id()).status());''');p.write_text(s)
 p=root/'app/src/androidTest/java/com/ronin/vanta/AutomaticHandoverDeviceTest.java';s=p.read_text();old='    f.cleanup();';assert s.count(old)==1
 s=s.replace(old,'''    // Isolated fixture records only, captured before the test cleanup deletes them.
     for(VantaJob task:e.store.list())if(task.title().startsWith("QA ")&&!task.status().equals("COMPLETED")) {
