@@ -3,12 +3,10 @@ import os
 root=Path(os.environ.get('VANTA_PROJECT','vanta/personal'));j=root/'app/src/main/java/com/ronin/vanta'
 p=j/'JobEngine.java';s=p.read_text()
 changes=[
-('''  public synchronized void wake(boolean userInitiated, Runnable finished) {
-    List<Future<?>> futures = new ArrayList<>();''','''  public synchronized void wake(boolean userInitiated, Runnable finished) {
+('''  public synchronized void wake(boolean userInitiated, Runnable finished) {''','''  public synchronized void wake(boolean userInitiated, Runnable finished) {
     // An already-promoted user foreground service takes ownership of finite in-flight
     // transfers. A later stop callback for the fallback scheduler must not cancel them.
-    if (VantaWorkService.foreground) schedulerOwned.clear();
-    List<Future<?>> futures = new ArrayList<>();'''),
+    if (VantaWorkService.foreground) schedulerOwned.clear();'''),
 ('''        if (!userInitiated) schedulerOwned.add(job.id());''','''        if (!userInitiated && !VantaWorkService.foreground) schedulerOwned.add(job.id());'''),
 ('''  public void schedulerStopped() {
     for (String id : schedulerOwned) {''','''  public synchronized void schedulerStopped() {
@@ -40,8 +38,6 @@ s=s[:-1]+'''
       try {
         calls.put(id,call);owners.add(id);VantaWorkService.foreground=true;
         e.schedulerStopped();assertFalse(call.isCancelled());assertFalse(owners.contains(id));
-        // A stale callback after foreground ownership has been released still cannot
-        // claim or cancel this previously adopted request.
         VantaWorkService.foreground=false;e.schedulerStopped();assertFalse(call.isCancelled());
       } finally {calls.remove(id);owners.remove(id);VantaWorkService.foreground=foreground;}
     }
