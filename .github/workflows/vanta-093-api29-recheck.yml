@@ -16,7 +16,7 @@ jobs:
           github-token: ${{ github.token }}
           path: distribution
       - name: Verify exact candidate transport
-        run: cd distribution && sha256sum -c SHA256SUMS.txt
+        run: sha256sum -c distribution/SHA256SUMS.txt
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
