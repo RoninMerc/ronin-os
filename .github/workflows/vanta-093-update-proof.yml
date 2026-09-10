@@ -1,0 +1,107 @@
+name: Vanta 0.9.3 actual previous-version update verification
+on:
+  push:
+    branches: ['fix/vanta-093-build-foundation']
+    paths: ['.github/workflows/vanta-093-update-proof.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for this exact candidate build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          endpoint='https://api.github.com/repos/RoninMerc/ronin-os/actions/runs/34472206101/artifacts'
+          for n in range(40):
+            request=urllib.request.Request(endpoint,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+            with urllib.request.urlopen(request,timeout=30) as r: artifacts=json.load(r)['artifacts']
+            if any(a['name']=='vanta-0.9.3-build' and not a['expired'] for a in artifacts):break
+            time.sleep(20)
+          else: raise SystemExit('Exact candidate artifact did not become available; no replacement source used.')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.3-build
+          run-id: 34472206101
+          github-token: ${{ github.token }}
+          path: current
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.2-client-build
+          run-id: 34307414317
+          github-token: ${{ github.token }}
+          path: previous
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - name: Prepare disposable same-certificate update rehearsal without production keys
+        run: |
+          mkdir payload
+          grep -qx 'ae4e4f0764cde33f30e665bf29f7815890b07c8a' current/source-commit.txt
+          keytool -genkeypair -keystore "$RUNNER_TEMP/update-qa.p12" -storepass android -keypass android -alias qa -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Disposable Vanta update test'
+          for spec in previous/app-debug.apk:previous.apk previous/app-debug-androidTest.apk:previous-tests.apk current/client-release-qa.apk:current.apk current/app-debug-androidTest.apk:current-tests.apk; do
+            source=${spec%:*}; destination=${spec#*:}
+            java -jar current/apksigner.jar sign --ks "$RUNNER_TEMP/update-qa.p12" --ks-pass pass:android --key-pass pass:android --ks-key-alias qa --out "payload/$destination" "$source"
+            java -jar current/apksigner.jar verify --verbose --print-certs "payload/$destination" > "payload/$destination.verification.txt"
+          done
+          cp current/source-commit.txt payload/
+          sha256sum payload/*.apk > payload/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: vanta-093-update-test-payload, path: payload/, retention-days: 7, if-no-files-found: error}
+  upgrade:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: {api: [29, 36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: vanta-093-update-test-payload, path: payload}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Seed 0.9.2, install 0.9.3 over it, verify durable identities and launch
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: |
+            adb install payload/previous.apk
+            adb install payload/previous-tests.apk
+            adb shell dumpsys package com.ronin.vanta.fixed > update-previous-package.txt
+            grep -q 'versionCode=92' update-previous-package.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee update-prepare.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' update-prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb install -r payload/current.apk
+            adb install -r payload/current-tests.apk
+            adb shell dumpsys package com.ronin.vanta.fixed > update-current-package.txt
+            grep -q 'versionCode=93' update-current-package.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee update-verified.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' update-verified.txt
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee update-launch.txt
+            grep -q 'Status: ok' update-launch.txt
+            adb logcat -d > update-logcat.txt
+            adb exec-out screencap -p > update-launch.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-093-upgrade-${{ matrix.api }}
+          path: |
+            update-*.txt
+            update-launch.png
+          if-no-files-found: warn
