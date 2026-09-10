@@ -10,4 +10,6 @@ subprocess.run(['patch','--batch','--fuzz=0','-p1','-d',str(project)],input=patc
 os.environ['VANTA_PROJECT']=str(project)
 for script in ['review.py','runtime_followup.py','checkpoint_review.py','ui_review.py']:
     runpy.run_path(str(root/script),run_name='__main__')
-print('Applied Vanta 0.9.3: tested build foundation, diagnostic-aware repair, typed output recovery and real compiler regressions.')
+subprocess.run(['java','-jar','/tmp/format.jar','--replace']+[str(p) for p in (project/'app/src').rglob('*.java')],check=True)
+runpy.run_path(str(root/'job_publication.py'),run_name='__main__')
+print('Applied Vanta 0.9.3: tested build foundation, diagnostic-aware repair, typed output recovery, atomic job startup and real compiler regressions.')
