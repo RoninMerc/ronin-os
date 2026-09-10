@@ -1,0 +1,83 @@
+name: Vanta 0.9.3 - fresh Android 10 release verification
+on:
+  push:
+    branches: ['fix/vanta-093-build-foundation']
+    paths: ['.github/workflows/vanta-093-api29-recheck.yml']
+permissions: {contents: read, actions: read}
+jobs:
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.3-build
+          run-id: 34418280058
+          github-token: ${{ github.token }}
+          path: distribution
+      - name: Verify exact candidate transport
+        run: cd distribution && sha256sum -c SHA256SUMS.txt
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Repeat complete debug and release suites without removing tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: |
+            adb install -r distribution/app-debug.apk
+            adb install -r distribution/app-debug-androidTest.apk
+            adb logcat -c
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee client-debug-tests.txt
+            adb logcat -d > client-debug-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files client-qa-debug || true
+            grep -Eq '^OK \([0-9]+ tests?\)' client-debug-tests.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee client-process-prepare.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' client-process-prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb shell am start -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity
+            sleep 3
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee client-process-restore.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' client-process-restore.txt
+            adb install -r distribution/client-release-qa.apk
+            adb logcat -c
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe,com.ronin.vanta.BackgroundDeviceTest com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee client-release-tests.txt
+            adb logcat -d > client-release-logcat.txt
+            adb shell dumpsys dropbox --print system_server_watchdog > system-watchdog.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files client-qa-release || true
+            grep -Eq '^OK \([0-9]+ tests?\)' client-release-tests.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee client-launch.txt
+            grep -q 'Status: ok' client-launch.txt
+            adb exec-out screencap -p > client-launch.png
+            adb install -r distribution/generated-foundation-qa.apk
+            adb shell am start -W -n com.ronin.forge.foundationcheck/.MainActivity | tee generated-launch.txt
+            grep -q 'Status: ok' generated-launch.txt
+            sleep 2
+            adb shell dumpsys activity activities > generated-activity.txt
+            adb exec-out screencap -p > generated-launch.png
+            adb shell dumpsys package com.ronin.vanta.fixed > client-installed-package.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.3-android10-recheck
+          path: |
+            client-*.txt
+            client-launch.png
+            client-qa-debug/
+            client-qa-release/
+            generated-*.txt
+            generated-launch.png
+            system-watchdog.txt
+            distribution/source-commit.txt
+          if-no-files-found: error
