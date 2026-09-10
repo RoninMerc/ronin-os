@@ -14,4 +14,9 @@ subprocess.run(['java','-jar','/tmp/format.jar','--replace']+[str(p) for p in (p
 runpy.run_path(str(root/'job_publication.py'),run_name='__main__')
 runpy.run_path(str(root/'scheduler_ownership.py'),run_name='__main__')
 runpy.run_path(str(root/'network_recovery.py'),run_name='__main__')
+test=project/'app/src/androidTest/java/com/ronin/vanta/BackgroundDeviceTest.java'
+s=test.read_text();old='      reschedule(job.id());\n      waitState(job.id(), "WAITING_PROVIDER");'
+assert s.count(old)==1
+s=s.replace(old,'      // Connectivity restoration itself must resume the queued request; no manual wake.\n      waitState(job.id(), "WAITING_PROVIDER");',1)
+test.write_text(s)
 print('Applied Vanta 0.9.3: build foundation, diagnostic-aware repair, typed output recovery, atomic startup, foreground ownership, connectivity resumption and real compiler regressions.')
