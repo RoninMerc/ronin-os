@@ -13,4 +13,5 @@ for script in ['review.py','runtime_followup.py','checkpoint_review.py','ui_revi
 subprocess.run(['java','-jar','/tmp/format.jar','--replace']+[str(p) for p in (project/'app/src').rglob('*.java')],check=True)
 runpy.run_path(str(root/'job_publication.py'),run_name='__main__')
 runpy.run_path(str(root/'scheduler_ownership.py'),run_name='__main__')
-print('Applied Vanta 0.9.3: tested build foundation, diagnostic-aware repair, typed output recovery, atomic startup, foreground ownership and real compiler regressions.')
+runpy.run_path(str(root/'network_recovery.py'),run_name='__main__')
+print('Applied Vanta 0.9.3: build foundation, diagnostic-aware repair, typed output recovery, atomic startup, foreground ownership, connectivity resumption and real compiler regressions.')
