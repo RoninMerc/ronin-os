@@ -12,7 +12,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: vanta-0.9.3-build
-          run-id: 34418280058
+          run-id: 34426565176
           github-token: ${{ github.token }}
           path: candidate
       - uses: actions/setup-java@v5
@@ -25,6 +25,7 @@ jobs:
       - name: Load exact production candidate and add isolated compatibility-only exporter
         run: |
           mkdir project evidence
+          cp candidate/source-commit.txt evidence/source-commit.txt
           unzip -q candidate/Ronin-Vanta-0.9.3-Source.zip -d project
           cat > project/app/src/test/java/com/ronin/vanta/FoundationCompatibilityExportTest.java <<'JAVA'
           package com.ronin.vanta;
@@ -80,6 +81,7 @@ jobs:
             evidence/*.log
             evidence/*.json
             evidence/*.zip
+            evidence/source-commit.txt
             evidence/*/app/build/test-results/
             evidence/*/app/build/reports/
             project/app/src/test/java/com/ronin/vanta/FoundationCompatibilityExportTest.java
