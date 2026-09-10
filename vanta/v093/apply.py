@@ -6,7 +6,7 @@ assert hashlib.sha256(raw).hexdigest()=='f9a5542a8f8793ea0b234b3f30bb538a40693c5
 patch=lzma.decompress(raw,memlimit=268435456)
 assert len(patch)==203499,'Unexpected Vanta source length'
 project=Path(os.environ.get('VANTA_PROJECT',str(root.parent/'personal')))
-subprocess.run(['patch','--batch','fuzz=0','-p1','-d',str(project)],input=patch,check=True)
+subprocess.run(['patch','--batch','--fuzz=0','-p1','-d',str(project)],input=patch,check=True)
 os.environ['VANTA_PROJECT']=str(project)
 for script in ['review.py','runtime_followup.py','checkpoint_review.py','ui_review.py']:
     runpy.run_path(str(root/script),run_name='__main__')
