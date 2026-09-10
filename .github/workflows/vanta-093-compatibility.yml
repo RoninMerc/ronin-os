@@ -1,0 +1,87 @@
+name: Vanta 0.9.3 - independent build foundation compatibility
+on:
+  push:
+    branches: ['fix/vanta-093-build-foundation']
+    paths: ['.github/workflows/vanta-093-compatibility.yml']
+permissions: {contents: read, actions: read}
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.3-build
+          run-id: 34418280058
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Load exact production candidate and add isolated compatibility-only exporter
+        run: |
+          mkdir project evidence
+          unzip -q candidate/Ronin-Vanta-0.9.3-Source.zip -d project
+          cat > project/app/src/test/java/com/ronin/vanta/FoundationCompatibilityExportTest.java <<'JAVA'
+          package com.ronin.vanta;
+          import static org.junit.Assert.*;
+          import java.nio.file.*;import java.util.*;import org.json.*;import org.junit.Test;
+          public class FoundationCompatibilityExportTest {
+            @Test public void productionFoundationHandlesGroovyAndKotlinWithConfigurationCache() throws Exception {
+              Path root=Paths.get(System.getenv("GITHUB_WORKSPACE"));
+              JSONObject original=ProjectArchive.read(Files.readAllBytes(root.resolve("project/app/src/androidTest/assets/fresh-compiler/stage-5.zip")));
+              for(String variant:Arrays.asList("groovy","kotlin")) {
+                JSONObject p=new JSONObject(original.toString());JSONArray files=p.getJSONArray("files");
+                for(int n=0;n<files.length();n++) {
+                  JSONObject f=files.getJSONObject(n);String path=f.getString("path");
+                  if(path.equals("gradle.properties"))f.put("content",f.getString("content")+"\norg.gradle.configuration-cache=true\n");
+                  if(variant.equals("kotlin")&&path.equals("app/build.gradle"))
+                    f.put("path","app/build.gradle.kts").put("content","plugins { id(\"com.android.application\") }\ntasks.named(\"assembleRelease\") { dependsOn(\"testReleaseUnitTest\") }\nandroid { namespace=\"com.ronin.forge.foundationcheck\"; compileSdk=36; defaultConfig { applicationId=\"com.ronin.forge.foundationcheck\"; minSdk=29; targetSdk=36; versionCode=1; versionName=\"1.0\" }; compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 } }\ndependencies { implementation(\"androidx.lifecycle:lifecycle-viewmodel:2.6.2\"); implementation(\"androidx.lifecycle:lifecycle-livedata-core:2.6.2\"); testImplementation(\"junit:junit:4.13.2\"); testImplementation(\"androidx.arch.core:core-testing:2.2.0\") }\n");
+                }
+                AndroidBuildFoundation.Prepared prepared=AndroidBuildFoundation.prepare(p);
+                ForgeClient.validateProject(prepared.project);
+                Files.write(root.resolve("evidence/"+variant+".zip"),SourceProject.zip(prepared.project));
+              }
+            }
+          }
+          JAVA
+      - name: Execute production-source compatibility exporter
+        run: gradle -p project --no-daemon --max-workers=2 testDebugUnitTest --tests com.ronin.vanta.FoundationCompatibilityExportTest --stacktrace > evidence/export.log 2>&1
+      - name: Compile and test each build-script dialect with configuration-cache reuse
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,subprocess,zipfile,xml.etree.ElementTree as ET
+          out=Path('evidence');results=[]
+          for variant in ('groovy','kotlin'):
+            root=out/variant;root.mkdir()
+            with zipfile.ZipFile(out/(variant+'.zip')) as z:z.extractall(root)
+            for attempt in (1,2):
+              path=out/(variant+'-'+str(attempt)+'.log')
+              with path.open('w') as log:
+                r=subprocess.run(['gradle','-p',str(root),'--no-daemon','--max-workers=2','--console=plain','assembleRelease','lintRelease','--stacktrace'],stdout=log,stderr=subprocess.STDOUT,timeout=480)
+              text=path.read_text();result={'variant':variant,'pass':attempt,'exit_code':r.returncode,'configuration_cache_reused':'Configuration cache entry reused.' in text}
+              results.append(result);(out/'compatibility-results.json').write_text(json.dumps(results,indent=2));print(result,flush=True)
+              if r.returncode:raise SystemExit('Real build failed; inspect '+str(path))
+              if attempt==2 and not result['configuration_cache_reused']:raise SystemExit('Configuration cache did not reuse')
+              tests=[ET.parse(p).getroot().attrib for p in root.glob('app/build/test-results/testReleaseUnitTest/TEST-*.xml')]
+              if sum(int(t.get('tests',0)) for t in tests)!=3 or any(int(t.get('failures',0))+int(t.get('errors',0)) for t in tests):raise SystemExit('Three actual passing tests required')
+            print(variant+' real build and tests passed twice',flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.3-build-foundation-compatibility
+          path: |
+            evidence/*.log
+            evidence/*.json
+            evidence/*.zip
+            evidence/*/app/build/test-results/
+            evidence/*/app/build/reports/
+            project/app/src/test/java/com/ronin/vanta/FoundationCompatibilityExportTest.java
+            project/app/build/test-results/testDebugUnitTest/
+          if-no-files-found: error
