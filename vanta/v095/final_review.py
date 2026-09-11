@@ -1,7 +1,8 @@
 from pathlib import Path
-import os
+import os,subprocess
 root=Path(os.environ.get('VANTA_PROJECT','vanta/personal'))
 p=root/'app/src/androidTest/java/com/ronin/vanta/FieldAcceptanceDeviceTest.java'
+subprocess.run(['java','-jar',os.environ.get('VANTA_FORMATTER','/tmp/format.jar'),'--replace',str(p)],check=True)
 s=p.read_text()
 old='''          files.put(entry.getName(), Net.read(z, 16000000, new Net.Call()));'''
 assert s.count(old)==1
