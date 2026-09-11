@@ -1,0 +1,86 @@
+name: Ronin Vanta Windows 0.2 - ultimate desktop verification
+on:
+  push:
+    branches: ['build/vanta-windows-ultimate-02']
+    paths:
+      - 'vanta/windows-ultimate/**'
+      - '.github/workflows/vanta-windows-ultimate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vanta-windows-ultimate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - name: Reconstruct verified dedicated Windows baseline
+        shell: pwsh
+        run: |
+          python vanta/windows-native/materialize.py
+          python vanta/windows-native/review.py
+          python vanta/windows-native/apply_tests.py
+          if(Test-Path vanta/windows-native/quality_review.py){python vanta/windows-native/quality_review.py}
+          if(Test-Path vanta/windows-native/test_review.py){python vanta/windows-native/test_review.py}
+          python vanta/windows-native/finish.py
+          if(Test-Path vanta/windows-native/last_review.py){python vanta/windows-native/last_review.py}
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Apply Windows 0.2 product overhaul
+        shell: pwsh
+        run: |
+          python vanta/windows-ultimate/apply.py
+          python vanta/windows-ultimate/review.py
+          if(Test-Path vanta/windows-ultimate/final_review.py){python vanta/windows-ultimate/final_review.py}
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile native Windows application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          dotnet build ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile native test harness
+        shell: pwsh
+        run: |
+          dotnet build ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/test-build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Execute Windows UI, workflow, model, media, security and performance checks
+        shell: pwsh
+        run: |
+          dotnet run --project ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --no-build -- artifacts/qa 2>&1 | Tee-Object artifacts/test-run.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Self-contained Windows x64 publication
+        shell: pwsh
+        run: |
+          dotnet publish ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release -r win-x64 --self-contained true -o artifacts/app --nologo 2>&1 | Tee-Object artifacts/publish.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          if(!(Test-Path artifacts/app/RoninVanta.exe)){throw 'Published application executable is missing'}
+      - name: Build, install, launch, measure, reinstall and uninstall installer
+        shell: pwsh
+        run: |
+          & ./vanta/windows-ultimate/package.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Preserve exact final source and release checksums
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          python -c "from pathlib import Path;import zipfile;root=Path('ronin-vanta-windows');z=zipfile.ZipFile('artifacts/Ronin-Vanta-Windows-0.2.0-Source.zip','w',zipfile.ZIP_DEFLATED);[(z.write(p,'ronin-vanta-windows/'+str(p.relative_to(root)))) for p in root.rglob('*') if p.is_file() and not {'bin','obj'}.intersection(p.parts)];z.close()"
+          if(Test-Path artifacts/installer/Ronin-Vanta-Windows-0.2.0-Setup.exe){Get-FileHash artifacts/installer/Ronin-Vanta-Windows-0.2.0-Setup.exe | Format-List | Out-File artifacts/Ronin-Vanta-Windows-0.2.0-SHA256.txt}
+          if(Test-Path artifacts/qa/private-test-profiles){Remove-Item artifacts/qa/private-test-profiles -Recurse -Force}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ronin-vanta-windows-0.2.0
+          path: |
+            artifacts/*.log
+            artifacts/*.zip
+            artifacts/*.txt
+            artifacts/qa/
+            artifacts/installer/
+          if-no-files-found: error
