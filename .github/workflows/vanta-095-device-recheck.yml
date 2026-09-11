@@ -1,0 +1,82 @@
+name: Vanta 0.9.5 Android 10 observed stall investigation
+on:
+  push:
+    branches: ['fix/vanta-095-field-acceptance']
+    paths: ['.github/workflows/vanta-095-device-recheck.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.5-build
+          run-id: 34556748344
+          github-token: ${{ github.token }}
+          path: distribution
+      - name: Prepare non-invasive capture and bounded test runner
+        run: |
+          cat > observe.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          adb logcat -v threadtime > continuous-logcat.txt 2>&1 &
+          LOGGER=$!
+          (
+            index=0
+            while sleep 60; do
+              index=$((index+1)); mkdir -p observation
+              date -u > observation/time-$index.txt
+              timeout 15 adb shell pidof com.ronin.vanta.fixed >> observation/time-$index.txt 2>&1 || true
+              timeout 15 adb shell dumpsys activity activities > observation/activities-$index.txt 2>&1 || true
+              timeout 15 adb shell dumpsys activity lastanr > observation/anr-$index.txt 2>&1 || true
+              timeout 15 adb shell dumpsys cpuinfo > observation/cpu-$index.txt 2>&1 || true
+              if test "$index" -ge 6; then
+                PID=$(timeout 10 adb shell pidof com.ronin.vanta.fixed | tr -d '\r' || true)
+                if test -n "$PID"; then timeout 15 adb shell run-as com.ronin.vanta.fixed kill -3 "$PID" > observation/threads-$index.txt 2>&1 || true; fi
+              fi
+            done
+          ) &
+          WATCHER=$!
+          trap 'kill "$WATCHER" "$LOGGER" 2>/dev/null || true; timeout 15 adb logcat -d > last-logcat.txt 2>&1 || true; timeout 15 adb shell dumpsys activity lastanr > lastanr.txt 2>&1 || true; timeout 25 adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files emergency-evidence >/dev/null 2>&1 || true' EXIT
+          timeout --signal=INT --kill-after=15s 2280 bash distribution/ci_device.sh
+          SH
+          chmod +x observe.sh
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Execute the unchanged full Android 10 regression and acceptance sequence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: bash observe.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-095-android10-observed
+          path: |
+            *tests.txt
+            *logcat.txt
+            lastanr.txt
+            process-*.txt
+            *launch.txt
+            *version.txt
+            *.png
+            observation/
+            emergency-evidence/
+            client-qa-debug/
+            client-qa-release/
+            field-evidence/
+            field-demo-evidence/
+          if-no-files-found: warn
