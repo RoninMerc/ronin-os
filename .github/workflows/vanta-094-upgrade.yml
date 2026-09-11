@@ -1,0 +1,90 @@
+name: Vanta 0.9.4 actual installed-data upgrade verification
+on:
+  push:
+    branches: ['fix/vanta-094-transport-recovery']
+    paths: ['.github/workflows/vanta-094-upgrade.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: vanta-094-upgrade-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: {api: [29, 36]}
+    steps:
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - name: Download exact previous compiled release and its original data probes
+        uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.3-build
+          run-id: 34472206101
+          github-token: ${{ github.token }}
+          path: previous
+      - name: Download final 0.9.4 compiled candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.4-build
+          run-id: 34543710198
+          github-token: ${{ github.token }}
+          path: current
+      - name: Sign both compiled payloads and original tests with one disposable QA identity
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/upgrade.p12" -storetype PKCS12 -storepass android -keypass android -alias upgrade -keyalg RSA -keysize 2048 -validity 3650 -dname 'CN=Vanta isolated upgrade verification'
+          sign() { java -jar current/apksigner.jar sign --ks "$RUNNER_TEMP/upgrade.p12" --ks-pass pass:android --key-pass pass:android --ks-key-alias upgrade --out "$2" "$1"; }
+          sign previous/fixed-release-unsigned.apk old-app.apk
+          sign previous/app-debug-androidTest.apk old-tests.apk
+          sign current/fixed-release-unsigned.apk new-app.apk
+          for apk in old-app.apk old-tests.apk new-app.apk; do java -jar current/apksigner.jar verify --verbose --print-certs "$apk" > "$apk.signature.txt"; done
+          cp previous/source-commit.txt previous-source-commit.txt
+          cp current/source-commit.txt current-source-commit.txt
+          sha256sum old-app.apk old-tests.apk new-app.apk > payload-checksums.txt
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install previous release, seed private records, install update without clearing data and verify
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: |
+            adb install old-app.apk
+            adb install old-tests.apk
+            adb shell dumpsys package com.ronin.vanta.fixed > old-package.txt
+            grep -q 'versionCode=93' old-package.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee prepare.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb install -r new-app.apk
+            adb shell dumpsys package com.ronin.vanta.fixed > new-package.txt
+            grep -q 'versionCode=94' new-package.txt
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee launch.txt
+            grep -q 'Status: ok' launch.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee verify.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' verify.txt
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee relaunch.txt
+            adb exec-out screencap -p > installed-update.png
+            adb logcat -d > upgrade-logcat.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.4-upgrade-${{ matrix.api }}
+          path: |
+            *.txt
+            installed-update.png
+          if-no-files-found: warn
