@@ -1,0 +1,193 @@
+name: Vanta 0.9.5 - real field-report compiler and client acceptance
+on:
+  push:
+    branches: ['fix/vanta-095-field-acceptance']
+    paths: ['vanta/v095/**','.github/workflows/vanta-095.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: vanta-095-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Reconstruct exact delivered baseline and apply reviewed source
+        run: |
+          echo "VANTA_FIXTURES_OUT=$RUNNER_TEMP/generated-fixtures" >> "$GITHUB_ENV"
+          echo "VANTA_BUILD_EVIDENCE=$RUNNER_TEMP/generated-build-evidence" >> "$GITHUB_ENV"
+          python3 -m pip install --quiet PyYAML==6.0.2
+          python3 - <<'PY'
+          import yaml,subprocess
+          from pathlib import Path
+          workflow=yaml.safe_load(Path('.github/workflows/vanta-094.yml').read_text())
+          steps=workflow['jobs']['build']['steps']
+          selected=[s for s in steps if s.get('name')=='Reconstruct exact baseline and apply reviewed transport changes']
+          assert len(selected)==1
+          subprocess.run(['bash','-e','-o','pipefail','-c',selected[0]['run']],check=True)
+          PY
+          gradle -p vanta/personal --no-daemon --max-workers=2 assembleDebug
+          cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/baseline-094-debug.apk
+          python3 vanta/v095/apply.py
+          python3 vanta/v095/materialize_field.py
+          python3 vanta/v095/field_review.py
+          if test -f vanta/v095/review.py; then python3 vanta/v095/review.py; fi
+          find vanta/personal/app/src vanta/field-report/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+          python3 vanta/v095/capture_field.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('vanta/personal/ci/verify_generated_builds.py')
+          p.write_text(p.read_text().replace('Ronin-Vanta-0.9.4-Source.zip','Ronin-Vanta-0.9.5-Source.zip'))
+          PY
+      - name: Compile Vanta and execute all unit/provider tests and lint
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --stacktrace 2>&1 | tee client-build.log
+      - name: Actually compile and test the complete requested field-report application
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p vanta/field-report --no-daemon --max-workers=2 --continue assembleRelease lintRelease assembleDebugAndroidTest --stacktrace 2>&1 | tee field-build.log
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,zipfile,xml.etree.ElementTree as ET
+          root=Path('vanta/field-report'); tests=list(root.glob('app/build/test-results/testReleaseUnitTest/TEST-*.xml'))
+          reports=[ET.parse(p).getroot().attrib for p in tests]
+          assert sum(int(x.get('tests',0)) for x in reports)==14
+          assert not any(int(x.get('failures',0))+int(x.get('errors',0)) for x in reports)
+          apk=root/'app/build/outputs/apk/release/app-release-unsigned.apk'
+          with zipfile.ZipFile(apk) as z: assert z.testzip() is None and 'AndroidManifest.xml' in z.namelist() and 'classes.dex' in z.namelist()
+          dest=Path('vanta/personal/app/src/androidTest/assets/field-acceptance');dest.mkdir(parents=True,exist_ok=True)
+          shutil.copy(apk,dest/'app-built.apk');shutil.copy('field-build.log',dest/'build.log')
+          shutil.copy(apk,'distribution/field-release-unsigned.apk')
+          shutil.copy(root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk','distribution/field-test.apk')
+          shutil.copy('vanta/field-project-exact.json','distribution/field-project-exact.json')
+          with zipfile.ZipFile('distribution/Field-Report-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for p in root.rglob('*'):
+              if p.is_file() and not any(x in ('build','.gradle') for x in p.relative_to(root).parts): z.write(p,p.relative_to(root))
+          PY
+      - name: Reproduce actual generated-project failures and repairs and rebuild final instrumentation APK
+        run: python3 vanta/personal/ci/verify_generated_builds.py
+      - name: Collect both update tracks and sign release payloads for real emulator execution
+        run: |
+          cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
+          gradle -p vanta/personal --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          test -f "$KEY"
+          for name in fixed field; do "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out "distribution/$name-release-qa.apk" "distribution/$name-release-unsigned.apk"; done
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs distribution/fixed-release-qa.apk > distribution/client-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/fixed-release-qa.apk > distribution/client-package.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs distribution/field-release-qa.apk > distribution/field-signature.txt
+          gradle -p vanta/personal -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/personal-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/personal-release-unsigned.apk > distribution/personal-package.txt
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" distribution/
+          cp /tmp/format.jar distribution/
+          printf '%s\n' "$GITHUB_SHA" > distribution/source-commit.txt
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: vanta-0.9.5-build, path: distribution/, if-no-files-found: warn}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.5-reports
+          path: |
+            client-build.log
+            field-build.log
+            vanta/personal/app/build/reports/
+            vanta/personal/app/build/test-results/
+            vanta/field-report/app/build/reports/
+            vanta/field-report/app/build/test-results/
+            ${{ runner.temp }}/generated-fixtures/
+            ${{ runner.temp }}/generated-build-evidence/
+          if-no-files-found: warn
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix: {api: [29,36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: vanta-0.9.5-build, path: distribution}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Client regression, background/recovery and field-report acceptance
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: |
+            adb install -r distribution/baseline-094-debug.apk
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee baseline-launch.txt
+            adb install -r distribution/app-debug.apk
+            adb install -r distribution/app-debug-androidTest.apk
+            adb logcat -c
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee client-debug-tests.txt
+            adb logcat -d > client-debug-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files client-qa-debug || true
+            grep -Eq '^OK \([0-9]+ tests?\)' client-debug-tests.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee process-prepare.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' process-prepare.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb shell am start -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity
+            sleep 3
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee process-restore.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' process-restore.txt
+            adb install -r distribution/fixed-release-qa.apk
+            adb shell am instrument -w -r -e notClass com.ronin.vanta.ProcessProbe,com.ronin.vanta.BackgroundDeviceTest com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee client-release-tests.txt
+            adb logcat -d > client-release-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.vanta.fixed/files client-qa-release || true
+            grep -Eq '^OK \([0-9]+ tests?\)' client-release-tests.txt
+            adb install -r distribution/field-release-qa.apk
+            adb install -r distribution/field-test.apk
+            adb shell am instrument -w -r com.ronin.fieldreport.test/androidx.test.runner.AndroidJUnitRunner | tee field-tests.txt
+            adb pull /sdcard/Android/data/com.ronin.fieldreport/files field-evidence || true
+            grep -Eq '^OK \([0-9]+ tests?\)' field-tests.txt
+            adb uninstall com.ronin.fieldreport
+            adb install -r client-qa-release/field-report-client-signed.apk
+            adb shell am start -W -n com.ronin.fieldreport/.MainActivity | tee field-client-artifact-launch.txt
+            grep -q 'Status: ok' field-client-artifact-launch.txt
+            sleep 2
+            adb exec-out screencap -p > field-client-artifact.png
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee client-launch.txt
+            adb exec-out screencap -p > client-launch.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.5-device-${{ matrix.api }}
+          path: |
+            client-*.txt
+            process-*.txt
+            baseline-launch.txt
+            field-*.txt
+            client-launch.png
+            field-client-artifact.png
+            client-qa-debug/
+            client-qa-release/
+            field-evidence/
+          if-no-files-found: warn
