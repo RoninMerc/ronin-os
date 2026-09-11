@@ -51,10 +51,21 @@ s=s[:-1]+'''
    });
    clickNode("Recover connection & resume");node("APPROVE & RESUME");h.shot("connection-recovery-consent");
    assertEquals(0,executed.get());assertFalse(e.store.document(job.id(),"input").getJSONObject("recovery_policy").optBoolean("retry_interrupted"));
+   int previousResume=e.store.get(job.id()).json.optInt("attempt");
    clickNode("APPROVE & RESUME");
-   assertEquals("COMPLETED",h.waitDone(job.id(),15000).status());assertEquals(1,executed.get());assertEquals(17,e.store.document(job.id(),"recovery").getInt("calls"));
+   // Accessibility dispatch does not wait for the IO-backed approval/retry transaction.
+   // Observe its real persisted resume epoch before waiting for terminal state; otherwise
+   // the old ACTION_REQUIRED state can be mistaken for a newly completed execution.
+   long deadline=SystemClock.elapsedRealtime()+15000;
+   VantaJob resumed;
+   do{Thread.sleep(60);resumed=e.store.get(job.id());}
+   while(resumed.json.optInt("attempt")<=previousResume && SystemClock.elapsedRealtime()<deadline);
+   assertTrue("Approval must commit a new resume epoch: "+resumed.json,resumed.json.optInt("attempt")>previousResume);
+   VantaJob finished=h.waitDone(job.id(),15000);
+   assertEquals("Task: "+finished.json+" diagnostics: "+e.store.document(job.id(),"diagnostics"),"COMPLETED",finished.status());
+   assertEquals(1,executed.get());assertEquals(17,e.store.document(job.id(),"recovery").getInt("calls"));
   }
  }
 }
 ''';p.write_text(s)
-print('Final review: explicit whole-task connection retry limits, valid terminal reasons and actual consent/resume UI regression.')
+print('Final review: explicit whole-task connection retry limits, valid terminal reasons and state-synchronised consent/resume UI regression.')
