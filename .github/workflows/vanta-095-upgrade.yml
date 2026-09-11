@@ -1,0 +1,58 @@
+name: Vanta 0.9.5 saved-data upgrade acceptance
+on:
+  push:
+    branches: ['fix/vanta-095-field-acceptance']
+    paths: ['.github/workflows/vanta-095-upgrade.yml']
+permissions: {contents: read, actions: read}
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: {api: [29,36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.9.5-build
+          run-id: 34554494275
+          github-token: ${{ github.token }}
+          path: distribution
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Seed old version, install new version without uninstall, and verify preserved data and keys
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            adb install -r distribution/baseline-094-debug.apk
+            adb install -r distribution/app-debug-androidTest.apk
+            adb shell dumpsys package com.ronin.vanta.fixed | grep -E 'versionCode=|versionName=' | tee old-version.txt
+            grep -q 'versionName=0.9.4' old-version.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#prepare com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee old-seed.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' old-seed.txt
+            adb shell am force-stop com.ronin.vanta.fixed
+            adb install -r distribution/fixed-release-qa.apk
+            adb shell dumpsys package com.ronin.vanta.fixed | grep -E 'versionCode=|versionName=' | tee new-version.txt
+            grep -q 'versionName=0.9.5' new-version.txt
+            adb shell am start -W -n com.ronin.vanta.fixed/com.ronin.vanta.MainActivity | tee upgraded-launch.txt
+            grep -q 'Status: ok' upgraded-launch.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.ProcessProbe#verify com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-verify.txt
+            grep -Eq '^OK \([0-9]+ tests?\)' upgrade-verify.txt
+            adb logcat -d > upgrade-logcat.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-095-upgrade-${{ matrix.api }}
+          path: '*.txt'
+          if-no-files-found: warn
