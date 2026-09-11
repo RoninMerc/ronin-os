@@ -1,0 +1,108 @@
+name: Vanta field-report acceptance application
+on:
+  push:
+    branches: ['fix/vanta-095-field-acceptance']
+    paths: ['vanta/v095/field_*.txt','vanta/v095/materialize_field.py','vanta/v095/field_review.py','.github/workflows/vanta-field-acceptance.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: field-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Materialize and format the real project
+        run: |
+          python3 vanta/v095/materialize_field.py
+          if test -f vanta/v095/field_review.py; then python3 vanta/v095/field_review.py; fi
+          curl -fL --retry 3 -o /tmp/format.jar https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar
+          find vanta/field-report/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
+      - name: Build actual app, release unit tests, lint and instrumentation APK
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p vanta/field-report --no-daemon --max-workers=2 --continue testDebugUnitTest assembleRelease lintRelease assembleDebug assembleDebugAndroidTest --stacktrace 2>&1 | tee field-build.log
+      - name: Package and verify release candidate
+        run: |
+          mkdir -p distribution
+          cp vanta/field-report/app/build/outputs/apk/release/app-release-unsigned.apk distribution/field-release-unsigned.apk
+          cp vanta/field-report/app/build/outputs/apk/debug/app-debug.apk distribution/field-debug.apk
+          cp vanta/field-report/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/field-test.apk
+          gradle -p vanta/field-report --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/field-release-qa.apk distribution/field-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs distribution/field-release-qa.apk > distribution/signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/field-release-qa.apk > distribution/package.txt
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" distribution/
+          cp /tmp/format.jar distribution/
+          gradle -p vanta/field-report --no-daemon wrapper --gradle-version 8.13
+          cd vanta/field-report && zip -qr ../../distribution/Field-Report-Source.zip app/src app/build.gradle app/vanta-quality.gradle build.gradle settings.gradle gradle.properties gradle gradlew gradlew.bat README.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: field-report-build, path: distribution/, if-no-files-found: warn}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: field-report-reports
+          path: |
+            field-build.log
+            vanta/field-report/app/build/reports/
+            vanta/field-report/app/build/test-results/
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: {api: [29,36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: field-report-build, path: distribution}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install release payload and exercise report workflow
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            adb install -r distribution/field-release-qa.apk
+            adb install -r distribution/field-test.apk
+            adb logcat -c
+            adb shell am instrument -w -r com.ronin.fieldreport.test/androidx.test.runner.AndroidJUnitRunner | tee field-tests.txt
+            adb logcat -d > field-logcat.txt
+            adb pull /sdcard/Android/data/com.ronin.fieldreport/files field-evidence || true
+            grep -Eq '^OK \([0-9]+ tests?\)' field-tests.txt
+            adb shell am force-stop com.ronin.fieldreport
+            adb shell am start -W -n com.ronin.fieldreport/.MainActivity | tee field-launch.txt
+            grep -q 'Status: ok' field-launch.txt
+            sleep 2
+            adb exec-out screencap -p > field-launch.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: field-report-device-${{ matrix.api }}
+          path: |
+            field-*.txt
+            field-launch.png
+            field-evidence/
