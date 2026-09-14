@@ -1,0 +1,19 @@
+name: Vanta source and compile reference recovery
+on:
+  push:
+    branches: ['build/vanta-unified-experience']
+    paths: ['.github/workflows/vanta-recover-source.yml']
+permissions: {contents: read}
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Collect exact Windows baseline and in-progress source
+        run: |
+          mkdir recovery
+          zip -qr recovery/vanta-windows-repository.zip vanta/windows-native vanta/windows-ultimate .github/workflows/vanta-windows-native.yml .github/workflows/vanta-windows-ultimate.yml
+      - uses: actions/upload-artifact@v4
+        with: {name: vanta-source-recovery, path: recovery/, if-no-files-found: error}
