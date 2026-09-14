@@ -1,0 +1,70 @@
+name: Vanta unified Windows - compile and installed application verification
+on:
+  push:
+    branches: ['build/vanta-unified-experience']
+    paths: ['vanta/unified-windows/**','.github/workflows/vanta-unified-windows.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: vanta-unified-windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - name: Reconstruct verified native baseline and apply unified source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($s in @('materialize.py','review.py','apply_tests.py','finish.py','last_review.py')) {
+            python "vanta/windows-native/$s"
+            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          }
+          Copy-Item vanta/windows-native/installer.iss ronin-vanta-windows/installer.iss
+          python vanta/unified-windows/apply.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          if(Test-Path vanta/unified-windows/review.py){python vanta/unified-windows/review.py;if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+      - name: Compile actual Windows application
+        shell: pwsh
+        run: |
+          dotnet build ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile and run all native, workflow and protocol tests
+        shell: pwsh
+        run: |
+          dotnet build ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/test-build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          dotnet run --project ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --no-build -- artifacts/qa 2>&1 | Tee-Object artifacts/test-run.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Publish bundled runtime and exercise installer
+        shell: pwsh
+        run: |
+          dotnet publish ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release -r win-x64 --self-contained true -o artifacts/app --nologo 2>&1 | Tee-Object artifacts/publish.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $script=(Get-Content vanta/windows-native/package.ps1 -Raw).Replace('0.1.1','0.2.0').Replace("'vanta/windows-native/installer.iss'","'ronin-vanta-windows/installer.iss'").Replace('Copy-Item $installerSource ronin-vanta-windows/installer.iss','')
+          Set-Content artifacts/package-unified.ps1 $script
+          & ./artifacts/package-unified.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Preserve source, reports and actual outputs
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          python -c "from pathlib import Path;import zipfile;root=Path('ronin-vanta-windows');z=zipfile.ZipFile('artifacts/Ronin-Vanta-Windows-0.2.0-Source.zip','w',zipfile.ZIP_DEFLATED);[(z.write(p,'ronin-vanta-windows/'+str(p.relative_to(root)))) for p in root.rglob('*') if p.is_file() and not {'bin','obj','.git'}.intersection(p.parts)];z.close()"
+          if(Test-Path artifacts/qa/private-test-profiles){Remove-Item artifacts/qa/private-test-profiles -Recurse -Force}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-unified-windows
+          path: |
+            artifacts/*.log
+            artifacts/*Source.zip
+            artifacts/qa/
+            artifacts/installer/
+          if-no-files-found: error
