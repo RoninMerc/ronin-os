@@ -1,0 +1,33 @@
+name: Vanta unified Android source recovery
+on:
+  push:
+    branches: ['build/vanta-android-release-010']
+    paths: ['.github/workflows/vanta-unified-source.yml']
+permissions: {contents: read}
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Decode pending Android update without executing it
+        run: |
+          mkdir -p recovered
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,lzma,hashlib,zipfile
+          files=sorted(Path('vanta/unified-android').glob('part*.txt'))
+          raw=base64.b64decode(''.join(p.read_text().strip() for p in files),validate=True)
+          content=lzma.decompress(raw,memlimit=268435456)
+          assert len(content)<3000000
+          Path('recovered/pending-android-source.txt').write_bytes(content)
+          print('Length',len(content),'SHA256',hashlib.sha256(content).hexdigest())
+          print(content[:1000].decode())
+          with zipfile.ZipFile('recovered/baseline-reconstruction.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for p in Path('vanta').rglob('*'):
+              if p.is_file(): z.write(p)
+            for p in Path('.github/workflows').glob('vanta*.yml'):z.write(p)
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: vanta-unified-source-recovery, path: recovered/, if-no-files-found: error}
