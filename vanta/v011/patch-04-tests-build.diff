@@ -1,0 +1,155 @@
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -8,8 +8,8 @@
+         applicationId (project.findProperty('vantaApplicationId') ?: 'com.ronin.vanta.fixed')
+         minSdk 29
+         targetSdk 36
+-        versionCode 100
+-        versionName '0.10.0'
++        versionCode 110
++        versionName '0.11.0'
+         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+     }
+ 
+--- a/app/src/androidTest/java/com/ronin/vanta/TaskChoiceDeviceTest.java
++++ b/app/src/androidTest/java/com/ronin/vanta/TaskChoiceDeviceTest.java
+@@ -50,6 +50,7 @@
+         .getSharedPreferences("vanta_state", 0)
+         .edit()
+         .putBoolean("unified_actions", true)
++        .putBoolean("unified_review_before_send", true)
+         .putString("last_workspace", "chat")
+         .putString("thread_chat", threadId)
+         .putString("provider_chat", p.id)
+@@ -89,6 +90,7 @@
+           .edit()
+           .remove("unified_model_" + action)
+           .apply();
++    h.ctx().getSharedPreferences("vanta_state", 0).edit().remove("unified_review_before_send").apply();
+     h.cleanup();
+   }
+ 
+--- a/app/src/androidTest/java/com/ronin/vanta/UnifiedPolishDeviceTest.java
++++ b/app/src/androidTest/java/com/ronin/vanta/UnifiedPolishDeviceTest.java
+@@ -102,30 +102,27 @@
+   }
+ 
+   @Test
+-  public void compactToolSelectsImageInSameComposerWithoutSubmitting() throws Exception {
++  public void compactToolKeepsOneComposerInsteadOfWorkspaceCommands() throws Exception {
+     try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+       int count = e.store.list().size();
+       scenario.onActivity(
+           host -> {
+             try {
+               host.showMode("chat");
+-              ((EditText) field(host, "prompt")).setText("A silver vehicle at sunset");
++              ((EditText) field(host, "prompt")).setText("Create an image of a silver vehicle at sunset");
+               invoke(host, "composerTools", new Class[] {});
+               Dialog sheet = (Dialog) field(host, "currentSheet");
+-              View tile = description(sheet.getWindow().getDecorView(), "Image");
+-              assertNotNull(tile);
+-              tile.performClick();
++              assertNotNull(description(sheet.getWindow().getDecorView(), "Photo"));
++              assertNull(description(sheet.getWindow().getDecorView(), "Image"));
++              assertNull(description(sheet.getWindow().getDecorView(), "Build app"));
+               assertEquals("chat", field(host, "mode"));
+-              assertEquals(
+-                  "/image A silver vehicle at sunset",
+-                  ((EditText) field(host, "prompt")).getText().toString());
+-              assertEquals(0, ((JSONArray) field(host, "attachments")).length());
++              assertEquals("image", ComposerIntent.parse(((EditText) field(host, "prompt")).getText().toString(), new JSONArray()).action);
+             } catch (Exception ex) {
+               throw new AssertionError(ex);
+             }
+           });
+       assertEquals(count, e.store.list().size());
+-      h.shot("010-one-composer-image");
++      h.shot("011-one-composer-tools");
+     }
+   }
+ 
+@@ -667,4 +664,34 @@
+     }
+     e.store.remove(job.id());
+   }
++
++  @Test
++  public void oneComposerRoutesWithoutMandatoryTaskChoiceSheet() throws Exception {
++    e.setHandlerForTests(
++        (engine, job, input, call) ->
++            engine.completed(job, new JSONObject().put("text", "Automatic route fixture complete")));
++    try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
++      scenario.onActivity(
++          host -> {
++            try {
++              host.showMode("chat");
++              ((EditText) field(host, "prompt")).setText("Write a small Java parser");
++              invoke(
++                  host,
++                  "startUnified",
++                  new Class[] {ComposerIntent.class, String.class, String.class},
++                  ComposerIntent.parse("Write a small Java parser", new JSONArray()),
++                  "Write a small Java parser",
++                  "");
++              assertNull(field(host, "taskChoice"));
++            } catch (Exception ex) {
++              throw new AssertionError(ex);
++            }
++          });
++      Thread.sleep(300);
++    } finally {
++      e.setHandlerForTests(null);
++    }
++  }
++
+ }
+--- a/app/src/test/java/com/ronin/vanta/UnifiedIntentTest.java
++++ b/app/src/test/java/com/ronin/vanta/UnifiedIntentTest.java
+@@ -304,4 +304,13 @@
+     assertTrue(ModelFacts.facet(m, "Work area").contains("marketing"));
+     assertTrue(ModelFacts.facet(m, "Work area").contains("coding"));
+   }
++
++  @Test
++  public void compileOnlyFollowUpUsesSavedProjectInsteadOfReauthoring() {
++    assertTrue(ComposerIntent.compileOnly("Build the APK from this project"));
++    assertTrue(ComposerIntent.compileOnly("Compile this Android app"));
++    assertFalse(ComposerIntent.compileOnly("Create and build me a new Android APK"));
++    assertFalse(ComposerIntent.compileOnly("Fix this project and build the APK"));
++  }
++
+ }
+--- a/app/src/test/java/com/ronin/vanta/UnifiedRouting011Test.java
++++ b/app/src/test/java/com/ronin/vanta/UnifiedRouting011Test.java
+@@ -0,0 +1,30 @@
++package com.ronin.vanta;
++
++import static org.junit.Assert.*;
++import java.nio.file.*;
++import org.junit.Test;
++
++public class UnifiedRouting011Test {
++  @Test public void sourceContainsSafeAutomaticHandoverAndPortableBundle() throws Exception {
++    String engine = Files.readString(Paths.get("src/main/java/com/ronin/vanta/JobEngine.java"));
++    String recovery = Files.readString(Paths.get("src/main/java/com/ronin/vanta/UnifiedRecoveryController.java"));
++    String operations = Files.readString(Paths.get("src/main/java/com/ronin/vanta/JobOperations.java"));
++    assertTrue(engine.contains("UnifiedRecoveryController.recover"));
++    assertTrue(recovery.contains("ChatProtocol.Refused"));
++    assertTrue(recovery.contains("ForgeRecovery.refusal"));
++    assertTrue(recovery.contains("automatic_model_handover"));
++    assertTrue(operations.contains("stageSourceBundle"));
++    assertTrue(operations.contains("SourceProject.zip(project)"));
++    assertTrue(operations.contains("source_bundle"));
++  }
++
++  @Test public void unifiedComposerDoesNotStickToAnOldModelUnlessPinned() throws Exception {
++    String composer = Files.readString(Paths.get("src/main/java/com/ronin/vanta/UnifiedComposer.java"));
++    assertTrue(composer.contains("unified_pin_"));
++    assertTrue(composer.contains("task-fit now"));
++  }
++
++  @Test public void directBuildIsACompilerTaskNotAModelClaim() throws Exception {
++    assertEquals("build", UnifiedComposer.jobType(ComposerIntent.forAction("forge", "Android"), new org.json.JSONObject().put("compile_existing", true)));
++  }
++}
