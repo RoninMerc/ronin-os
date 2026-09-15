@@ -40,7 +40,7 @@ for change in json.loads(data):
  target.parent.mkdir(parents=True,exist_ok=True);target.write_text(content)
  print('Applied',relative)
 if (root/'review.py').exists():runpy.run_path(str(root/'review.py'),run_name='__main__')
-# The review replay matches formatted Java, not the unformatted transport snapshot.
 subprocess.run(['java','-jar','/tmp/format.jar','--replace']+[str(p) for p in (project/'app/src').rglob('*.java')],check=True)
 if polish.exists():runpy.run_path(str(polish),run_name='__main__')
 if (root/'task_choice.py').exists():runpy.run_path(str(root/'task_choice.py'),run_name='__main__')
+if (root/'choice_review.py').exists():runpy.run_path(str(root/'choice_review.py'),run_name='__main__')
