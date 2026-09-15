@@ -1,0 +1,113 @@
+name: Vanta 0.9.6 - Featherless routing and request compatibility
+on:
+  push:
+    branches: ['fix/vanta-096-featherless-routing']
+    paths: ['vanta/v096/**','.github/workflows/vanta-096.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: vanta-096-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Reconstruct 0.9.5, apply 0.9.6 and build both identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('vanta/v095/ci_build.sh')
+          s=p.read_text()
+          marker="if test -f vanta/v095/final_review.py; then python3 vanta/v095/final_review.py; fi\n"
+          assert s.count(marker)==1
+          s=s.replace(marker,marker+"python3 vanta/v096/apply.py\n",1)
+          s=s.replace('Ronin-Vanta-0.9.5-Source.zip','Ronin-Vanta-0.9.6-Source.zip')
+          Path('/tmp/vanta096-build.sh').write_text(s)
+          PY
+          bash /tmp/vanta096-build.sh
+          mkdir -p distribution/v096
+          cp distribution/app-debug.apk distribution/v096/Vanta-0.9.6-debug.apk
+          cp distribution/fixed-release-unsigned.apk distribution/v096/fixed-release-unsigned.apk
+          cp distribution/personal-release-unsigned.apk distribution/v096/personal-release-unsigned.apk
+          cp distribution/apksigner.jar distribution/v096/
+          cp distribution/format.jar distribution/v096/
+          cp distribution/ci_device.sh distribution/v096/
+          cp distribution/source-commit.txt distribution/v096/
+          cp distribution/SHA256SUMS.txt distribution/v096/
+          cp client-build.log distribution/v096/
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('vanta/personal')
+          out=Path('distribution/v096/Ronin-Vanta-0.9.6-Source.zip')
+          with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
+            for p in root.rglob('*'):
+              if p.is_file() and not {'build','.gradle'}.intersection(p.relative_to(root).parts): z.write(p,p.relative_to(root))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.6-build
+          path: distribution/v096/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.6-reports
+          path: |
+            client-build.log
+            vanta/personal/app/build/reports/
+            vanta/personal/app/build/test-results/
+          if-no-files-found: warn
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix: {api: [29,36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: vanta-0.9.6-build, path: distribution}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run full existing client device gate
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: bash distribution/ci_device.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.9.6-device-${{ matrix.api }}
+          path: |
+            client-*.txt
+            process-*.txt
+            baseline-launch.txt
+            client-launch.png
+            client-qa-debug/
+            client-qa-release/
+          if-no-files-found: warn
