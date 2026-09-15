@@ -36,6 +36,9 @@ jobs:
           cp -a vanta/personal/. baseline-project/
           python3 vanta/v011/apply.py
           if test -f vanta/v011/review.py; then python3 vanta/v011/review.py; fi
+          # The retained 0.11 release source was formatted after its review scripts.
+          # Recreate that exact source shape before applying the reviewed 0.12 diff.
+          java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
           base64 -d vanta/v012/patch.b64 | xz -d > /tmp/vanta-012.patch
           patch --batch --fuzz=0 -p1 -d vanta/personal < /tmp/vanta-012.patch
           java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
