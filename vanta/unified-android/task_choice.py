@@ -20,9 +20,37 @@ for change in json.loads(data):
  assert hashlib.sha256(content.encode()).hexdigest()==change['after'],f'Task review result mismatch: {relative}'
  target.parent.mkdir(parents=True,exist_ok=True);target.write_text(content)
  print('Applied',relative)
-# Read the real previous font setting rather than dereferencing a shell-drain helper returning void.
 p=project/'app/src/androidTest/java/com/ronin/vanta/TaskChoiceDeviceTest.java'
 s=p.read_text();old='String scale = MasterDeviceTest.shell("settings get system font_scale").trim();'
 assert s.count(old)==1
 s=s.replace(old,'String scale = Float.toString(android.provider.Settings.System.getFloat(h.ctx().getContentResolver(), android.provider.Settings.System.FONT_SCALE, 1f));');p.write_text(s)
+p=project/'app/src/main/java/com/ronin/vanta/ComposerIntent.java';s=p.read_text()
+old=r'(?:build|create|develop|make|fix|repair|redesign|update|improve)\\b'
+new=r'(?:build|create|develop|make|fix|repair|redesign|update|improve|write\\s+(?:and\\s+)?(?:create|build))\\b'
+assert s.count(old)==1;s=s.replace(old,new)
+a=s.index('  public static boolean existingProject(');b=s.index('\n  public String category()',a)
+s=s[:a]+r'''  public static boolean existingProject(String raw) {
+    String request=payload(raw==null?"":raw).trim();
+    request=request.replaceFirst("(?i)^(?:hey|hi|hello)(?:[,!.:]|\\s)+(?:vanta(?:[,!.:]|\\s)+)?","");
+    request=request.replaceFirst("(?i)^(?:(?:can|could|would) you(?: please)?|please|i (?:want|need) (?:you to|to))\\s+","");
+    return hit(request,"(?i)\\b(?:existing|attached|this|the|my)\\s+(?:(?:android|windows)\\s+)?(?:project|app|application|codebase)\\b")
+        || hit(request,"(?i)^(?:fix|repair|update|redesign|modify|improve)\\b");
+  }
+''' +s[b:];p.write_text(s)
+p=project/'app/src/test/java/com/ronin/vanta/TaskChoiceTest.java';s=p.read_text().rstrip();assert s.endswith('}')
+s=s[:-1]+'''
+ @Test public void exactConversationalApkRequestIsRecognised(){
+   ComposerIntent task=ComposerIntent.parse("Hey, can you please write and create me an APK",new JSONArray());
+   assertEquals("forge",task.action);assertEquals("Android",task.platform);
+ }
+ @Test public void writingCodeForApkDoesNotClaimACompilerTask(){
+   assertEquals("code",ComposerIntent.parse("Write me code for an APK",new JSONArray()).action);
+ }
+ @Test public void newAppsThatUpdateRecordsDoNotDemandAnExistingCodebase(){
+   assertFalse(ComposerIntent.existingProject("Build an Android app that can update reports and fix spelling"));
+   assertTrue(ComposerIntent.existingProject("Hey, please fix this Android project"));
+   assertTrue(ComposerIntent.existingProject("Use the attached project to add search"));
+ }
+}
+''';p.write_text(s)
 print('One conversation, task-aware review, verified low-refusal choices and explicit provider approval integrated.')
