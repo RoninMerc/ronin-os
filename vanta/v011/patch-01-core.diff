@@ -53,7 +53,17 @@
      return pool.get(0);
    }
  
-@@ -61,10 +60,15 @@
+@@ -57,14 +56,24 @@
+       case "forge":
+         if (!Arrays.asList("Android", "Windows").contains(platform))
+           throw new IOException("Choose Android or Windows.");
+-        if (project == null && ComposerIntent.existingProject(request))
++        // A compile/package follow-up may refer to code already present in this conversation.
++        // If no structured project exists yet, Forge can materialise that context into a project
++        // and then compile it. Modification requests still require the actual existing project.
++        if (project == null
++            && ComposerIntent.existingProject(request)
++            && !ComposerIntent.compileOnly(request))
            throw new IOException(
                "Attach the existing project first so Vanta can preserve its source and working"
                    + " features. No paid request was submitted.");
@@ -71,7 +81,7 @@
              .put("auto_build", true)
              .put("source_protocol", "files-v1")
              .put("documentation_required", true)
-@@ -116,7 +120,13 @@
+@@ -116,7 +125,13 @@
    }
  
    public static String jobType(ComposerIntent a) {
