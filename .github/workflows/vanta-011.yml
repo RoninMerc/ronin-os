@@ -4,14 +4,16 @@ on:
     branches: ['build/vanta-android-release-011']
     paths: ['vanta/v011/**','.github/workflows/vanta-011.yml']
   workflow_dispatch:
-permissions: {contents: read}
+permissions:
+  contents: read
+  actions: read
 concurrency:
   group: vanta-011-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
@@ -22,42 +24,32 @@ jobs:
       - uses: android-actions/setup-android@v3
         with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-      - name: Reconstruct retained 0.10 baseline and compiler fixtures
+      - name: Download exact successful Vanta 0.10 baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.10-build
+          path: baseline010
+          github-token: ${{ github.token }}
+          repository: RoninMerc/ronin-os
+          run-id: 34928321971
+      - name: Reconstruct exact 0.10 source and apply transparent 0.11 patches
         run: |
-          bash vanta/v095/ci_build.sh
-          cp distribution/app-debug.apk distribution/baseline-095-debug.apk
-          mkdir -p distribution/reference distribution/signing-tools
-          cp "$ANDROID_HOME/platforms/android-36/android.jar" distribution/reference/
-          cp /tmp/format.jar distribution/reference/
+          set -euo pipefail
+          rm -rf vanta/personal distribution
+          mkdir -p vanta/personal distribution/signing-tools
+          unzip -q baseline010/Ronin-Vanta-0.10.0-Source.zip -d vanta/personal
+          cp -a baseline010/. distribution/
+          cp baseline010/format.jar /tmp/format.jar
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" distribution/signing-tools/
-          python3 - <<'PY'
-          from pathlib import Path
-          import zipfile,shutil
-          dest=Path('distribution/reference');cache=Path.home()/'.gradle/caches/modules-2/files-2.1'
-          for p in cache.rglob('*'):
-            if not p.is_file():continue
-            group=p.relative_to(cache).parts[0]
-            if not group.startswith(('androidx.','junit','org.hamcrest','org.json')):continue
-            if p.suffix=='.jar':shutil.copy(p,dest/p.name)
-            elif p.suffix=='.aar':
-              with zipfile.ZipFile(p) as z:
-                if 'classes.jar' in z.namelist():(dest/(p.stem+'.jar')).write_bytes(z.read('classes.jar'))
-          for p in Path('vanta/personal/app/build/intermediates').rglob('R.jar'):
-            if '/debug/' in str(p):shutil.copy(p,dest/'R.jar');break
-          PY
-      - name: Apply 0.10 one-composer baseline and 0.11 adaptive routing
-        run: |
-          python3 vanta/unified-android/apply.py
           python3 vanta/v011/apply.py
           find vanta/personal/app/src -name '*.java' -print0 | xargs -0 java -jar /tmp/format.jar --replace
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
-          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=320x240:rate=12 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 4 -c:v libx264 -pix_fmt yuv420p -g 12 -c:a aac -movflags +faststart -y vanta/personal/app/src/androidTest/assets/unified-video.mp4
       - name: Compile final source and run all JVM tests and lint
         run: |
           set -o pipefail
           gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --stacktrace 2>&1 | tee unified-build.log
-      - name: Stage tested variants, signing helper and exact source
+      - name: Stage tested variants and exact source
         run: |
+          set -euo pipefail
           cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/
           cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 distribution/fixed-release-unsigned.apk distribution/fixed-release-aligned-unsigned.apk
@@ -71,7 +63,6 @@ jobs:
           cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/personal-release-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 distribution/personal-release-unsigned.apk distribution/personal-release-aligned-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/personal-release-aligned-unsigned.apk > distribution/personal-package.txt
-          sed -i 's/baseline-094-debug.apk/baseline-095-debug.apk/g' distribution/ci_device.sh
           printf '%s\n' "$GITHUB_SHA" > distribution/source-commit.txt
           sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
       - name: Preserve exact source even when compilation fails
@@ -81,9 +72,10 @@ jobs:
           from pathlib import Path
           import zipfile
           root=Path('vanta/personal');Path('distribution').mkdir(exist_ok=True)
-          with zipfile.ZipFile('distribution/Ronin-Vanta-0.11.0-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
-            for p in root.rglob('*'):
-              if p.is_file() and not {'.gradle','build'}.intersection(p.relative_to(root).parts):z.write(p,p.relative_to(root))
+          if root.exists():
+            with zipfile.ZipFile('distribution/Ronin-Vanta-0.11.0-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in root.rglob('*'):
+                if p.is_file() and not {'.gradle','build'}.intersection(p.relative_to(root).parts):z.write(p,p.relative_to(root))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -93,10 +85,9 @@ jobs:
         with:
           name: vanta-0.11-reports
           path: |
-            *build.log
+            unified-build.log
             vanta/personal/app/build/reports/
             vanta/personal/app/build/test-results/
-            ${{ runner.temp }}/generated-build-evidence/
           if-no-files-found: warn
   device:
     needs: build
@@ -113,7 +104,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Run retained and 0.11 Android scenarios
+      - name: Run retained and Vanta 0.11 Android scenarios
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
