@@ -1,0 +1,300 @@
+--- a/app/src/main/java/com/ronin/vanta/ComposerIntent.java
++++ b/app/src/main/java/com/ronin/vanta/ComposerIntent.java
+@@ -147,6 +147,16 @@
+     return make("chat", "Conversation", "");
+   }
+ 
++
++  /** A packaging follow-up should compile the saved project, not ask a model to rewrite it. */
++  public static boolean compileOnly(String raw) {
++    String s = payload(raw == null ? "" : raw).toLowerCase(Locale.ROOT).trim();
++    boolean artifact = hit(s, "\\b(apk|android app|application|project|source)\\b");
++    boolean compile = hit(s, "\\b(build|compile|package|turn|make)\\b");
++    boolean author = hit(s, "\\b(create|write|develop|design|redesign|implement|add|change|modify|fix|repair|new)\\b");
++    return artifact && compile && !author;
++  }
++
+   public static boolean existingProject(String raw) {
+     String request = payload(raw == null ? "" : raw).trim();
+     request =
+--- a/app/src/main/java/com/ronin/vanta/JobEngine.java
++++ b/app/src/main/java/com/ronin/vanta/JobEngine.java
+@@ -403,6 +403,7 @@
+           try {
+             if (ForgeTransportRecovery.recover(this, job, failure, call)) return;
+             if (ForgeRecoveryController.recover(this, job, failure, call)) return;
++            if (UnifiedRecoveryController.recover(this, job, failure, call)) return;
+           } catch (Exception recoveryFailure) {
+             if (call.isCancelled()) return;
+             diagnostic.put("recovery_error", Errors.redact(recoveryFailure.getMessage()));
+--- a/app/src/main/java/com/ronin/vanta/UnifiedComposer.java
++++ b/app/src/main/java/com/ronin/vanta/UnifiedComposer.java
+@@ -26,16 +26,15 @@
+               + action.title.toLowerCase(Locale.ROOT)
+               + (low ? " with verified low-refusal metadata" : "")
+               + ". Nothing was submitted.");
+-    String preferred =
+-        context
+-            .getSharedPreferences("vanta_state", 0)
+-            .getString("unified_model_" + action.action, "");
+-    if (preferred.isEmpty() && action.action.equals("speech")) {
+-      SharedPreferences voice = context.getSharedPreferences("vanta_state", 0);
+-      preferred = voice.getString("voice_provider", "") + "/" + voice.getString("voice_model", "");
+-    }
++    SharedPreferences prefs = context.getSharedPreferences("vanta_state", 0);
++    String preferred = "";
++    if (prefs.getBoolean("unified_pin_" + action.action, false))
++      preferred = prefs.getString("unified_model_" + action.action, "");
++    if (action.action.equals("speech"))
++      preferred = prefs.getString("voice_provider", "") + "/" + prefs.getString("voice_model", "");
+     for (VantaRouter.Candidate candidate : pool)
+       if (candidate.key().equals(preferred)) return candidate;
++    // Auto means task-fit now, not whichever model happened to answer an earlier turn.
+     return pool.get(0);
+   }
+ 
+@@ -61,10 +60,15 @@
+           throw new IOException(
+               "Attach the existing project first so Vanta can preserve its source and working"
+                   + " features. No paid request was submitted.");
++        boolean compileExisting = project != null && ComposerIntent.compileOnly(request);
++        if (!compileExisting && c == null)
++          throw new IOException("No connected coding model can author this project.");
+         input
+             .put("platform", platform.toLowerCase(Locale.ROOT))
+-            .put("depth", "Standard")
+-            .put("target", JobOperations.selection(c.provider, c.model))
++            .put("compile_existing", compileExisting)
++            .put("depth", "Standard");
++        if (c != null) input.put("target", JobOperations.selection(c.provider, c.model));
++        input
+             .put("auto_build", true)
+             .put("source_protocol", "files-v1")
+             .put("documentation_required", true)
+@@ -116,7 +120,13 @@
+   }
+ 
+   public static String jobType(ComposerIntent a) {
++    return jobType(a, null);
++  }
++
++  public static String jobType(ComposerIntent a, JSONObject input) {
+     if (a.action.equals("code")) return "chat";
++    if (a.action.equals("forge") && input != null && input.optBoolean("compile_existing"))
++      return "build";
+     return a.action.equals("forge")
+         ? "forge_source"
+         : a.action.equals("video_edit") ? "local_video_edit" : a.action;
+--- a/app/src/main/java/com/ronin/vanta/UnifiedDispatch.java
++++ b/app/src/main/java/com/ronin/vanta/UnifiedDispatch.java
+@@ -0,0 +1,115 @@
++package com.ronin.vanta;
++
++import android.content.*;
++import java.io.IOException;
++import java.util.*;
++import org.json.*;
++
++/**
++ * Prepares one-composer requests without forcing a workspace or decision dialog. This layer never
++ * performs model inference; it only resolves task, capability, local context and build state.
++ */
++final class UnifiedDispatch {
++  static final class Prepared {
++    final ComposerIntent task;
++    final VantaRouter.Candidate model;
++    final JSONObject input;
++    final boolean low;
++
++    Prepared(ComposerIntent task, VantaRouter.Candidate model, JSONObject input, boolean low) {
++      this.task = task;
++      this.model = model;
++      this.input = input;
++      this.low = low;
++    }
++  }
++
++  private UnifiedDispatch() {}
++
++  static Prepared prepare(
++      Context context,
++      ComposerIntent original,
++      String raw,
++      JSONArray attachments,
++      JSONObject thread,
++      JSONObject currentProject,
++      boolean low,
++      Net.Call call)
++      throws Exception {
++    ConversationReference reference =
++        Arrays.asList("chat", "image_edit", "video").contains(original.action)
++            ? ConversationReference.find(raw, attachments, thread)
++            : null;
++    ComposerIntent task = reference == null ? original : reference.task;
++    JSONArray files = attachments == null ? new JSONArray() : new JSONArray(attachments.toString());
++    if (reference != null) {
++      JSONObject image =
++          AttachmentReader.prepare(
++              context,
++              "Previous generated image",
++              reference.mime,
++              new JobFiles(context).read(reference.mediaId),
++              true,
++              call);
++      files = new JSONArray().put(image);
++    }
++    JSONArray eligibility = files;
++    if ((task.action.equals("chat") || task.action.equals("code")) && thread != null)
++      eligibility = TaskModels.contextInputs(files, thread.optJSONArray("messages"));
++
++    JSONObject project = currentProject == null ? null : new JSONObject(currentProject.toString());
++    if (task.action.equals("forge") && project == null && ComposerIntent.compileOnly(raw)) {
++      String saved = new SecureVault(context).getSecret("forge_project");
++      if (saved != null && !saved.isEmpty()) {
++        JSONObject candidate = new JSONObject(saved);
++        SourceProject.validate(candidate);
++        project = candidate;
++      }
++    }
++
++    boolean compileExisting = task.action.equals("forge") && project != null && ComposerIntent.compileOnly(raw);
++    VantaRouter.Candidate selected = null;
++    if (!UnifiedComposer.local(task)) {
++      try {
++        selected = UnifiedComposer.choose(context, task, raw, eligibility, low);
++      } catch (IOException noModel) {
++        // Compilation itself is a build-service capability, not an LLM capability. A coding model
++        // is optional until the compiler actually returns diagnostics that need repair.
++        if (!compileExisting) throw noModel;
++      }
++    }
++    String platform = task.platform;
++    if (task.action.equals("forge") && (platform == null || platform.isEmpty()))
++      platform = project == null ? "Android" : platform(project);
++    JSONObject input = UnifiedComposer.input(context, task, raw, files, selected, platform, project, low);
++    input.put("smart_route", true).put("low_refusal", low);
++    if (reference != null) input.put("context_reference", reference.mediaId);
++    if (thread != null && (task.action.equals("forge") || task.action.equals("prompt"))) {
++      String contextText = ThreadStore.markdown(thread);
++      if (contextText.length() > 32000)
++        contextText = "[Earlier conversation omitted]\n" + contextText.substring(contextText.length() - 32000);
++      input.put("context", contextText);
++    }
++    if (task.action.equals("forge") && input.optBoolean("compile_existing")) {
++      String repo = input.optString("worker_repo", "RoninMerc/RonisOS-BPlus");
++      String[] parts = repo.split("/", -1);
++      if (parts.length != 2) throw new IOException("Configure the Android build service as owner/name.");
++      input.put(
++          "session",
++          ForgeSession.start(
++              parts[0],
++              parts[1],
++              input.optString("worker_branch", "vanta-forge-worker"),
++              selected == null ? "" : selected.provider.id,
++              selected == null ? "" : selected.model.id,
++              project,
++              "release"));
++    }
++    return new Prepared(task, selected, input, low);
++  }
++
++  private static String platform(JSONObject project) {
++    String p = project.optString("platform", "android");
++    return p.equalsIgnoreCase("windows") ? "Windows" : "Android";
++  }
++}
+--- a/app/src/main/java/com/ronin/vanta/UnifiedRecoveryController.java
++++ b/app/src/main/java/com/ronin/vanta/UnifiedRecoveryController.java
+@@ -0,0 +1,92 @@
++package com.ronin.vanta;
++
++import java.util.*;
++import org.json.*;
++
++/** Bounded technical model handover for one-composer jobs. Never routes around policy refusals. */
++final class UnifiedRecoveryController {
++  private static final Set<String> ELIGIBLE =
++      new HashSet<>(Arrays.asList("chat", "prompt", "video_analysis", "transcribe"));
++
++  private UnifiedRecoveryController() {}
++
++  static boolean recover(JobEngine e, VantaJob job, Throwable failure, Net.Call call) throws Exception {
++    if (!ELIGIBLE.contains(job.type()) || call.isCancelled()) return false;
++    if (failure instanceof ChatProtocol.Refused || ForgeRecovery.refusal(failure.getMessage())) return false;
++    boolean unavailable =
++        failure instanceof InferenceReadiness.Unavailable
++            || failure instanceof Net.HttpError
++                && InferenceReadiness.rejected(
++                    ((Net.HttpError) failure).status, String.valueOf(failure.getMessage()));
++    if (!unavailable) return false;
++    JSONObject input = e.store.document(job.id(), "input");
++    if (input == null || !input.optBoolean("smart_route", false)) return false;
++    JSONObject state = e.store.document(job.id(), "unified_handover");
++    if (state == null)
++      state = new JSONObject().put("switches", 0).put("visited", new JSONArray());
++    int limit = Math.max(1, Math.min(6, input.optInt("handover_limit", 4)));
++    if (state.optInt("switches") >= limit) return false;
++    String current = input.optJSONObject("provider") == null || input.optJSONObject("model") == null
++        ? ""
++        : input.getJSONObject("provider").optString("id") + "/" + input.getJSONObject("model").optString("id");
++    JSONArray visited = state.optJSONArray("visited");
++    if (visited == null) { visited = new JSONArray(); state.put("visited", visited); }
++    if (!current.isEmpty() && !contains(visited, current)) visited.put(current);
++
++    ComposerIntent task = task(job, input);
++    JSONArray files = input.optJSONArray("attachments");
++    if (job.type().equals("chat") && input.has("thread")) {
++      JSONObject thread = new ThreadStore(e.vault).get(input.getString("thread"));
++      if (thread != null) files = TaskModels.contextInputs(files, thread.optJSONArray("messages"));
++    }
++    List<VantaRouter.Candidate> candidates =
++        TaskModels.load(e.context, task, input.optString("request"), files, input.optBoolean("low_refusal"));
++    VantaRouter.Candidate next = null;
++    for (VantaRouter.Candidate candidate : candidates)
++      if (!contains(visited, candidate.key())) { next = candidate; break; }
++    if (next == null) return false;
++
++    input.put("provider", next.provider.toJson()).put("model", next.model.toJson());
++    if (input.has("target") && (job.type().equals("prompt") || job.type().equals("forge_source")))
++      input.put("target", JobOperations.selection(next.provider, next.model));
++    state.put("switches", state.optInt("switches") + 1)
++        .put("last_from", current)
++        .put("last_to", next.key())
++        .put("reason", "MODEL_UNAVAILABLE");
++    visited.put(next.key());
++    job.json
++        .put("provider", next.provider.id)
++        .put("model", next.model.id)
++        .put("request_started", false)
++        .put("next_run", System.currentTimeMillis() + 500);
++    job.event(
++        "automatic_model_handover",
++        "WAITING_PROVIDER",
++        ProgressState.transition(
++            job.progress(),
++            "SWITCHING MODEL",
++            "The previous model is unavailable. Continuing this same task with "
++                + next.model.name
++                + "; conversation and saved work are preserved."));
++    Map<String, JSONObject> writes = new LinkedHashMap<>();
++    writes.put("input", input);
++    writes.put("unified_handover", state);
++    writes.put("unified_handover_" + state.getInt("switches"), new JSONObject(state.toString()));
++    e.store.recoveryCheckpoint(job, writes, Collections.emptyList());
++    e.signal(job.id());
++    return true;
++  }
++
++  private static ComposerIntent task(VantaJob job, JSONObject input) {
++    if (job.type().equals("video_analysis")) return ComposerIntent.forAction("video_analysis", "");
++    if (job.type().equals("transcribe")) return ComposerIntent.forAction("transcribe", "");
++    if (job.type().equals("prompt")) return ComposerIntent.forAction("prompt", "");
++    return ComposerIntent.forAction("code".equals(input.optString("composer_action")) ? "code" : "chat", "");
++  }
++
++  private static boolean contains(JSONArray values, String value) {
++    if (values != null)
++      for (int i = 0; i < values.length(); i++) if (value.equals(values.optString(i))) return true;
++    return false;
++  }
++}
