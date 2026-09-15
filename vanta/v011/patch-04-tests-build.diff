@@ -106,7 +106,7 @@
  }
 --- a/app/src/test/java/com/ronin/vanta/UnifiedIntentTest.java
 +++ b/app/src/test/java/com/ronin/vanta/UnifiedIntentTest.java
-@@ -304,4 +304,13 @@
+@@ -304,4 +304,14 @@
      assertTrue(ModelFacts.facet(m, "Work area").contains("marketing"));
      assertTrue(ModelFacts.facet(m, "Work area").contains("coding"));
    }
@@ -115,6 +115,7 @@
 +  public void compileOnlyFollowUpUsesSavedProjectInsteadOfReauthoring() {
 +    assertTrue(ComposerIntent.compileOnly("Build the APK from this project"));
 +    assertTrue(ComposerIntent.compileOnly("Compile this Android app"));
++    assertTrue(ComposerIntent.compileOnly("Build this app"));
 +    assertFalse(ComposerIntent.compileOnly("Create and build me a new Android APK"));
 +    assertFalse(ComposerIntent.compileOnly("Fix this project and build the APK"));
 +  }
