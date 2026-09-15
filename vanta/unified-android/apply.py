@@ -1,7 +1,21 @@
 from pathlib import Path
-import base64,hashlib,json,zlib,os,runpy
+import base64,hashlib,json,zlib,os,runpy,re
 root=Path(__file__).resolve().parent
 project=Path(os.environ.get('VANTA_PROJECT',str(root.parent/'personal')))
+# Repair three known transcription duplications in the encoded transport only.
+# The exact decoded source length and SHA-256 remain mandatory.
+polish=root/'polish.py'
+if polish.exists():
+ text=polish.read_text()
+ for old,new in [('LQbQbQEP','LQbQEP'),('MPSK4A4YR','MPSK4YR'),('FysS01qi','Fys01qi')]:
+  assert text.count(old)<=1,'Ambiguous transport correction'
+  text=text.replace(old,new)
+ match=re.search(r"payload='''(.*?)'''",text,re.S)
+ if match:
+  decoded=zlib.decompress(base64.b64decode(match.group(1),validate=True))
+  assert len(decoded)==34354
+  assert hashlib.sha256(decoded).hexdigest()=='8af742a44e3cfa1392247a5e2bbef80d1a968f37f1e20765ac185853f4f6c4b9'
+ polish.write_text(text)
 raw=base64.b64decode(''.join((root/f'part{i:02d}.txt').read_text().strip() for i in range(2)),validate=True)
 assert hashlib.sha256(raw).hexdigest()=='71d39a5a1321fd8e8ccabcc87f4846f67ea7a32330edf0aa871157286a3b626e','Pending source checksum mismatch'
 data=zlib.decompress(raw)
