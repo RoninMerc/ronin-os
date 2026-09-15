@@ -1,0 +1,297 @@
+--- a/app/src/main/java/com/ronin/vanta/MainActivity.java
++++ b/app/src/main/java/com/ronin/vanta/MainActivity.java
+@@ -561,7 +561,11 @@
+         hubChooseModel(
+             action.category(),
+             candidate -> {
+-              prefs.edit().putString("unified_model_" + action.action, candidate.key()).apply();
++              prefs
++                  .edit()
++                  .putString("unified_model_" + action.action, candidate.key())
++                  .putBoolean("unified_pin_" + action.action, true)
++                  .apply();
+               closeSheet();
+               previewComposer();
+             });
+@@ -3286,7 +3290,7 @@
+     modeControl.setBackgroundColor(Color.TRANSPARENT);
+     modeControl.setOnClickListener(
+         v -> {
+-          if (mode.equals("chat")) composerTools();
++          if (mode.equals("chat")) composerPreferences();
+           else modeSheet();
+         });
+     controls.addView(modeControl, new LinearLayout.LayoutParams(-2, dp(48)));
+@@ -3477,30 +3481,31 @@
+     addToolTile(inputs, "image", "Photo", () -> pickAttachment(true));
+     addToolTile(inputs, "file", "File", () -> pickAttachment(false));
+     addToolTile(inputs, "camera", "Camera", this::takePhoto);
+-    box.addView(inputs, space(4));
+-    box.addView(text("CREATE WITH VANTA", 11, MUTED, true), space(24));
+-    LinearLayout first = row();
+-    addToolTile(first, "image", "Image", () -> prepareCommand("/image "));
+-    addToolTile(first, "video", "Video", () -> prepareCommand("/video "));
+-    box.addView(first, space(10));
+-    LinearLayout second = row();
+-    addToolTile(second, "forge", "Build app", () -> prepareCommand("/build "));
+-    addToolTile(second, "auto", "Prompt", () -> prepareCommand("/prompt "));
+-    box.addView(second, space(8));
++    box.addView(inputs, space(8));
++    box.addView(
++        text(
++            "Just ask Vanta for an image, video, code or an APK in this conversation. No workspace"
++                + " selection is required.",
++            12,
++            MUTED,
++            false),
++        space(12));
+     box.addView(
+         VantaDesign.option(
+             this,
+             "forge",
+-            "Existing project",
+-            "Attach a source ZIP; describe the change",
++            "Attach an existing project",
++            "Source ZIP or JSON · then describe the change here",
+             this::hubImport),
+-        space(12));
++        space(8));
+     box.addView(
+         VantaDesign.option(
+             this,
+             "settings",
+-            "Model & tools",
+-            "Routing, low-refusal, voice and advanced controls",
++            "Model routing",
++            prefs.getBoolean("unified_low", false)
++                ? "Automatic · verified low-refusal preference on"
++                : "Automatic · normal models",
+             this::composerPreferences));
+     showSheet("Add to your request", box);
+   }
+@@ -3544,9 +3549,34 @@
+             MUTED,
+             false),
+         space(4));
++    ComposerIntent currentTask =
++        ComposerIntent.parse(prompt == null ? "" : prompt.getText().toString(), attachments);
++    boolean pinned = prefs.getBoolean("unified_pin_" + currentTask.action, false);
+     box.addView(
+         VantaDesign.option(
+-            this, "model", "Choose model", "Select a model for the current task", this::pickModel),
++            this,
++            "auto",
++            "Automatic model selection",
++            pinned
++                ? "Manual preference set · tap to return to automatic routing"
++                : "On · Vanta chooses for each request",
++            () -> {
++              prefs
++                  .edit()
++                  .remove("unified_model_" + currentTask.action)
++                  .putBoolean("unified_pin_" + currentTask.action, false)
++                  .apply();
++              closeSheet();
++              previewComposer();
++            }),
++        space(8));
++    box.addView(
++        VantaDesign.option(
++            this,
++            "model",
++            "Prefer a model",
++            "Set a preference for this task; technical recovery can still hand off if unavailable",
++            this::pickModel),
+         space(12));
+     if (ModelPolicy.webSearch(provider, model)) {
+       Switch web = new Switch(this);
+@@ -3580,13 +3610,6 @@
+             "Conversation controls",
+             "Instructions and output limits",
+             this::chatSettings));
+-    box.addView(
+-        VantaDesign.option(
+-            this,
+-            "more",
+-            "Specialist workspaces",
+-            "Manual image, video and Forge controls",
+-            this::modeSheet));
+     showSheet("Model & tools", box);
+   }
+ 
+@@ -5673,23 +5696,25 @@
+       return;
+     }
+     ComposerIntent action = ComposerIntent.parse(prompt.getText().toString(), attachments);
+-    modeControl.setText((action.action.equals("chat") ? "Auto" : action.title) + "  ▾");
++    boolean low = prefs.getBoolean("unified_low", false);
++    modeControl.setText((low ? "Low-refusal" : "Auto") + "  ▾");
+     modeControl.setMaxWidth(dp(150));
+     modeControl.setEllipsize(TextUtils.TruncateAt.END);
+     preparedActionModel = null;
+     preparedAction = action.action;
+     modelButton.setText(
+         "Ronin Vanta\n"
+-            + (prompt.length() == 0 ? "One conversation" : action.title + " · choose on send"));
++            + (prompt.length() == 0 ? "One conversation" : action.title + " · automatic routing"));
+     modelButton.setContentDescription(
+-        "Ronin Vanta. Review the task and choose a model when sending. Open models for manual"
+-            + " control.");
++        "Ronin Vanta. "
++            + action.title
++            + ". Automatic model routing is active. Open models for manual control.");
+   }
+ 
+   private TaskChoice taskChoice;
+ 
+   private void startUnified(ComposerIntent action, String raw, String selectedPlatform) {
+-    if (running || launchingJob || taskChoice != null) return;
++    if (running || launchingJob || taskChoice != null || unifiedPreparation != null) return;
+     final int epoch = screenRevision;
+     try {
+       closeSheet();
+@@ -5699,53 +5724,97 @@
+         keyboard.hideSoftInputFromWindow(prompt.getWindowToken(), 0);
+       saveDraft();
+       launchingJob = true;
+-      status.setText("");
++      refreshSend();
++      status.setText("Vanta is choosing the right capability for this request…");
+       ComposerIntent selected =
+           selectedPlatform.isEmpty()
+               ? action
+               : ComposerIntent.forAction(action.action, selectedPlatform);
+-      taskChoice =
+-          new TaskChoice(
+-              this,
+-              io,
+-              selected,
+-              raw,
+-              attachments,
+-              thread,
+-              project,
+-              new TaskChoice.Listener() {
+-                public void approved(
+-                    ComposerIntent choice,
+-                    VantaRouter.Candidate model,
+-                    JSONObject input,
+-                    boolean low) {
+-                  if (isDestroyed() || !foreground || epoch != screenRevision) return;
+-                  // Selection explicitly approves the displayed provider and request, not an
+-                  // invisible global route.
+-                  if (model != null)
+-                    prefs
+-                        .edit()
+-                        .putString("unified_model_" + choice.action, model.key())
+-                        .putLong("recent_" + model.key(), System.currentTimeMillis())
+-                        .apply();
+-                  commitUnified(choice, raw, input, model);
+-                }
++      // A paid video request keeps a compact quote confirmation. Other tasks route immediately.
++      if (selected.action.equals("video")
++          || prefs.getBoolean("unified_review_before_send", false)) {
++        taskChoice =
++            new TaskChoice(
++                this,
++                io,
++                selected,
++                raw,
++                attachments,
++                thread,
++                project,
++                new TaskChoice.Listener() {
++                  public void approved(
++                      ComposerIntent choice,
++                      VantaRouter.Candidate model,
++                      JSONObject input,
++                      boolean low) {
++                    if (isDestroyed() || !foreground || epoch != screenRevision) return;
++                    try {
++                      input.put("composer_action", choice.action);
++                    } catch (Exception impossible) {
++                      throw new IllegalStateException(impossible);
++                    }
++                    commitUnified(choice, raw, input, model);
++                  }
+ 
+-                public void dismissed() {
+-                  taskChoice = null;
+-                  currentSheet = null;
+-                  launchingJob = false;
+-                  refreshSend();
+-                }
++                  public void dismissed() {
++                    taskChoice = null;
++                    currentSheet = null;
++                    launchingJob = false;
++                    refreshSend();
++                  }
+ 
+-                public void configure() {
+-                  if (!isDestroyed() && foreground) showMode("setup");
+-                }
+-              });
+-      currentSheet = taskChoice.show();
++                  public void configure() {
++                    if (!isDestroyed() && foreground) showMode("setup");
++                  }
++                });
++        currentSheet = taskChoice.show();
++        return;
++      }
++      final boolean low = prefs.getBoolean("unified_low", false);
++      Net.Call preparationCall = new Net.Call();
++      preparationCall.transport = jobs.testTransport;
++      unifiedPreparation = preparationCall;
++      io.submit(
++          () -> {
++            try {
++              UnifiedDispatch.Prepared prepared =
++                  UnifiedDispatch.prepare(
++                      this,
++                      selected,
++                      raw,
++                      new JSONArray(attachments.toString()),
++                      thread == null ? null : new JSONObject(thread.toString()),
++                      project == null ? null : new JSONObject(project.toString()),
++                      low,
++                      preparationCall);
++              prepared.input.put("composer_action", prepared.task.action);
++              ui.post(
++                  () -> {
++                    if (isDestroyed()
++                        || !foreground
++                        || epoch != screenRevision
++                        || preparationCall.isCancelled()) return;
++                    unifiedPreparation = null;
++                    launchingJob = false;
++                    commitUnified(prepared.task, raw, prepared.input, prepared.model);
++                  });
++            } catch (Exception failure) {
++              ui.post(
++                  () -> {
++                    if (epoch != screenRevision || isDestroyed()) return;
++                    unifiedPreparation = null;
++                    launchingJob = false;
++                    refreshSend();
++                    error(Errors.summary(failure.getMessage()));
++                  });
++            }
++          });
+     } catch (Exception failure) {
+       taskChoice = null;
++      unifiedPreparation = null;
+       launchingJob = false;
++      refreshSend();
+       error(Errors.summary(failure.getMessage()));
+     }
+   }
+@@ -5809,7 +5878,7 @@
+                     && prefs.getBoolean("web_search_chat", false));
+         updateHeader();
+       } else input.put("conversation", threadId);
+-      String type = UnifiedComposer.jobType(action);
++      String type = UnifiedComposer.jobType(action, input);
+       startDurable(
+           type,
+           raw,
