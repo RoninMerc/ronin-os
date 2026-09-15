@@ -1,0 +1,178 @@
+--- a/app/src/main/java/com/ronin/vanta/JobOperations.java
++++ b/app/src/main/java/com/ronin/vanta/JobOperations.java
+@@ -445,25 +445,36 @@
+           j,
+           "build_preflight",
+           "CHECKING CONNECTION",
+-          "Checking your private Android build connection before paid code generation.");
++          "Checking the Android compiler connection. If it is unavailable, Vanta will still write"
++              + " and save a portable source ZIP.");
++      boolean ready = true;
++      String issue = "";
+       String token = e.vault.getSecret("github_forge_pat");
+-      if (token == null || token.trim().isEmpty())
+-        throw new Blocked(
+-            "Build connection is missing. Open Settings → Forge build worker and connect your"
+-                + " private repository. No code-generation charge was made.");
+       String[] repo = in.optString("worker_repo", "RoninMerc/RonisOS-BPlus").split("/", -1);
+-      if (repo.length != 2)
+-        throw new Blocked("Build connection: enter a repository as owner/name.");
+-      try {
+-        ForgeClient.validateWorker(
+-            repo[0], repo[1], in.optString("worker_branch", "vanta-forge-worker"), token, c);
+-      } catch (Net.HttpError failure) {
+-        throw new Blocked(
+-            "Build connection: HTTP "
+-                + failure.status
+-                + ". Check the repository, branch and token permissions. This is not an AI model"
+-                + " error; no code generation was purchased.");
++      if (token == null || token.trim().isEmpty()) {
++        ready = false;
++        issue = "Build connection is missing. Source generation will continue and a ZIP will be saved.";
++      } else if (repo.length != 2) {
++        ready = false;
++        issue = "Build connection must be owner/name. Source generation will continue and a ZIP will be saved.";
++      } else {
++        try {
++          ForgeClient.validateWorker(
++              repo[0], repo[1], in.optString("worker_branch", "vanta-forge-worker"), token, c);
++        } catch (Net.HttpError failure) {
++          ready = false;
++          issue =
++              "Build connection returned HTTP "
++                  + failure.status
++                  + ". Source generation will continue and a ZIP will be saved.";
++        }
+       }
++      in.put("build_connection_ready", ready).put("build_connection_error", issue);
++      e.store.document(j.id(), "input", in);
++      e.store.document(
++          j.id(),
++          "build_preflight",
++          new JSONObject().put("ready", ready).put("issue", issue));
+     }
+     ModelInfo generator = model(in);
+     compatible(p, generator, "text");
+@@ -784,6 +795,7 @@
+     SourceProject.validate(project);
+     e.store.document(j.id(), "project", project);
+     e.vault.putSecret("forge_project", project.toString());
++    JSONObject sourceBundle = stageSourceBundle(e, j, project, c);
+     JSONObject result =
+         new JSONObject()
+             .put("project", project)
+@@ -791,13 +803,18 @@
+             .put("target", chosen)
+             .put("platform", platform)
+             .put("build_result", "Not run — source ready")
+-            .put("test_result", "Not run");
++            .put("test_result", "Not run")
++            .put("source_zip", sourceBundle);
+     if (in.optBoolean("auto_build")) {
+       e.store.document(j.id(), "result", result);
+       if (!platform.equals("android"))
+         throw new Blocked(
+             "Windows source is saved. A Windows compiler service is not configured; no EXE has been"
+                 + " created.");
++      if (in.has("build_connection_ready") && !in.optBoolean("build_connection_ready"))
++        throw new Blocked(
++            in.optString("build_connection_error")
++                + " The complete source ZIP is already saved in Downloads / Ronin Vanta.");
+       String repo = in.optString("worker_repo", "RoninMerc/RonisOS-BPlus");
+       String[] parts = repo.split("/", -1);
+       if (parts.length != 2)
+@@ -1240,16 +1257,17 @@
+       publishApk(e, j, session, c);
+       return;
+     }
++    JSONObject project = session.getJSONObject("project");
++    stageSourceBundle(e, j, project, c);
+     String token = e.vault.getSecret("github_forge_pat");
+     if (token == null || token.trim().isEmpty())
+       throw new Blocked(
+-          "Build connection is missing. Open Settings → Forge build worker. Your source and build"
+-              + " checkpoint are retained.");
++          "Build connection is missing. The complete source ZIP is already saved in Downloads /"
++              + " Ronin Vanta; connect the Forge worker to compile the APK.");
+     String owner = session.getString("owner"),
+         repo = session.getString("repo"),
+         branch = session.getString("branch"),
+         rid = session.getString("id");
+-    JSONObject project = session.getJSONObject("project");
+     j.json
+         .put("project_files", project.getJSONArray("files").length())
+         .put("build_attempt", session.optInt("attempt", 1));
+@@ -1406,6 +1424,7 @@
+     }
+     j.json.put("forge_inference", false);
+     e.store.save(j);
++    stageSourceBundle(e, j, project, c);
+     try {
+       if (session.optString("sha").isEmpty()) {
+         e.event(
+@@ -1564,6 +1583,55 @@
+     }
+   }
+ 
++  private static JSONObject stageSourceBundle(
++      JobEngine e, VantaJob j, JSONObject project, Net.Call call) throws Exception {
++    SourceProject.validate(project);
++    String fingerprint = ProjectArchive.fingerprint(project);
++    JSONObject previous = e.store.document(j.id(), "source_bundle");
++    if (previous != null && fingerprint.equals(previous.optString("fingerprint"))) return previous;
++    byte[] bytes = SourceProject.zip(project);
++    call.check();
++    String mediaId = j.id() + "-source";
++    new JobFiles(e.context).save(mediaId, bytes);
++    String name = "Forge-" + j.id() + "-source.zip";
++    Uri uri = null;
++    if (previous != null && !previous.optString("uri").isEmpty()) {
++      try {
++        uri = Uri.parse(previous.getString("uri"));
++        try (OutputStream out = e.context.getContentResolver().openOutputStream(uri, "rwt")) {
++          if (out == null) throw new IOException("Saved source destination is unavailable");
++          out.write(bytes);
++          out.flush();
++        }
++      } catch (Exception unavailable) {
++        uri = null;
++      }
++    }
++    if (uri == null) {
++      uri = saveShared(e.context, bytes, name, "application/zip");
++      new OutputLibrary(e.context)
++          .add(uri, name, "application/zip", bytes.length, "Forge source");
++    }
++    JSONObject bundle =
++        new JSONObject()
++            .put("uri", uri.toString())
++            .put("name", name)
++            .put("mime", "application/zip")
++            .put("bytes", bytes.length)
++            .put("media_id", mediaId)
++            .put("fingerprint", fingerprint);
++    j.json.put("source_bundle_uri", uri.toString()).put("source_bundle_name", name);
++    e.store.checkpoint(j, "source_bundle", bundle);
++    e.event(
++        j,
++        "source_bundle_ready",
++        "RUNNING",
++        ProgressState.transition(
++            j.progress(), "SOURCE READY", "Source ZIP saved. APK compilation continues separately."));
++    e.store.save(j);
++    return bundle;
++  }
++
+   private static void publishApk(JobEngine e, VantaJob j, JSONObject session, Net.Call call)
+       throws Exception {
+     byte[] bytes = new JobFiles(e.context).read(j.id());
+@@ -1597,7 +1665,8 @@
+             .put("build_result", "Passed — compiled APK, signature verified")
+             .put("test_result", BuildDiagnostics.testSummary(session.optJSONObject("build_report")))
+             .put("run_id", session.optLong("run_id"))
+-            .put("package", session.optString("package_name")));
++            .put("package", session.optString("package_name"))
++            .put("source_zip", e.store.document(j.id(), "source_bundle")));
+   }
+ 
+   public static Uri saveShared(Context c, byte[] bytes, String name, String mime) throws Exception {
