@@ -3,13 +3,17 @@ import subprocess,os,json,shutil,zipfile,hashlib,xml.etree.ElementTree as ET
 root=Path('vanta/personal').resolve();evidence=Path('acceptance-evidence').resolve();evidence.mkdir(exist_ok=True)
 classes=root/'app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes'
 references=Path('baseline/reference').resolve()
-cp=os.pathsep.join([str(classes)]+[str(p) for p in references.glob('*.jar')])
+# The real JSON implementation must precede android.jar's host-side API stubs.
+json_jars=sorted(references.glob('json-*.jar'))
+assert json_jars,'Public host JSON implementation missing'
+cp=os.pathsep.join([str(classes)]+[str(p) for p in json_jars]+[str(p) for p in sorted(references.glob('*.jar')) if p not in json_jars])
 helper=evidence/'helper-classes';helper.mkdir(exist_ok=True)
 subprocess.run(['javac','--release','17','-encoding','UTF-8','-cp',cp,'-d',str(helper),str(root/'ci/ContinuityAcceptance.java')],check=True)
 command=['java','-cp',str(helper)+os.pathsep+cp,'com.ronin.vanta.ContinuityAcceptance',str(root/'app/src/main/assets/forge-examples/field-report.json'),str(evidence/'source')]
 with (evidence/'extraction.log').open('w') as log: subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
 assets=root/'app/src/androidTest/assets/continuity-acceptance';assets.mkdir(parents=True,exist_ok=True)
 shutil.copy(evidence/'source/conversation.json',assets/'conversation.json')
+shutil.copy(evidence/'source/source.zip',assets/'source.zip')
 results=[]
 for track in ('original','archive'):
  project=evidence/'source'/track/'project';logpath=evidence/(track+'-build.log')
