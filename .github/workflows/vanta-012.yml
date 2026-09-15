@@ -41,6 +41,7 @@ jobs:
           java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
           base64 -d vanta/v012/patch.b64 | xz -d > /tmp/vanta-012.patch
           patch --batch --fuzz=0 -p1 -d vanta/personal < /tmp/vanta-012.patch
+          if test -f vanta/v012/review.py; then python3 vanta/v012/review.py; fi
           java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
           for name in field-release-qa.apk field-test.apk field-demo-qa.apk field-demo-test.apk; do cp baseline/$name distribution/; done
           cp baseline/apksigner.jar distribution/
