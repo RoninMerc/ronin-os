@@ -1,12 +1,12 @@
-name: Vanta 0.12 - adaptive one-chat orchestration
+name: Vanta 0.13 - Vanta Orchestrator verification
 on:
   push:
     branches: ['fix/vanta-012-adaptive-orchestration']
-    paths: ['vanta/v012/**','.github/workflows/vanta-012.yml']
+    paths: ['vanta/v012/**','vanta/v013/**','.github/workflows/vanta-012.yml']
   workflow_dispatch:
 permissions: {contents: read, actions: read}
 concurrency:
-  group: vanta-012-${{ github.ref }}
+  group: vanta-013-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -28,7 +28,7 @@ jobs:
           run-id: 34928321971
           github-token: ${{ github.token }}
           path: baseline
-      - name: Materialize reviewed 0.11 base and apply 0.12 adaptive orchestration
+      - name: Materialize reviewed Android baseline and apply Vanta Orchestrator
         run: |
           set -euo pipefail
           mkdir -p vanta/personal baseline-project distribution
@@ -36,8 +36,6 @@ jobs:
           cp -a vanta/personal/. baseline-project/
           python3 vanta/v011/apply.py
           if test -f vanta/v011/review.py; then python3 vanta/v011/review.py; fi
-          # The retained 0.11 release source was formatted after its review scripts.
-          # Recreate that exact source shape before applying the reviewed 0.12 diff.
           java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
           base64 -d vanta/v012/patch.b64 | xz -d > /tmp/vanta-012.patch
           patch --batch --fuzz=0 -p1 -d vanta/personal < /tmp/vanta-012.patch
@@ -88,17 +86,17 @@ jobs:
           from pathlib import Path
           import zipfile
           root=Path('vanta/personal');Path('distribution').mkdir(exist_ok=True)
-          with zipfile.ZipFile('distribution/Ronin-Vanta-0.12.0-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
+          with zipfile.ZipFile('distribution/Ronin-Vanta-0.13.0-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
             for p in root.rglob('*'):
               if p.is_file() and not {'.gradle','build'}.intersection(p.relative_to(root).parts):z.write(p,p.relative_to(root))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: vanta-0.12-build, path: distribution/, if-no-files-found: warn}
+        with: {name: vanta-0.13-build, path: distribution/, if-no-files-found: warn}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: vanta-0.12-reports
+          name: vanta-0.13-reports
           path: |
             *build.log
             vanta/personal/app/build/reports/
@@ -114,7 +112,7 @@ jobs:
       matrix: {api: [29,36]}
     steps:
       - uses: actions/download-artifact@v4
-        with: {name: vanta-0.12-build, path: distribution}
+        with: {name: vanta-0.13-build, path: distribution}
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -136,7 +134,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: vanta-0.12-device-${{ matrix.api }}
+          name: vanta-0.13-device-${{ matrix.api }}
           path: |
             client-*.txt
             process-*.txt
