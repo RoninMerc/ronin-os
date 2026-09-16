@@ -2,7 +2,13 @@ from pathlib import Path
 import base64, hashlib, lzma, subprocess
 
 root = Path(__file__).resolve().parent
-encoded = ''.join((root / f'patch_{i:02d}.txt').read_text().strip() for i in range(5))
+# The patch was uploaded as independently padded Base64 chunks. Padding is only
+# valid at the end of the complete stream, so normalise the stored chunks before
+# decoding. The packed SHA-256 below prevents a corrupted reconstruction from
+# ever reaching git apply.
+parts = [(root / f'patch_{i:02d}.txt').read_text().strip() for i in range(5)]
+encoded = ''.join(parts).replace('=', '')
+encoded += '=' * ((-len(encoded)) % 4)
 packed = base64.b64decode(encoded, validate=True)
 expected = 'f97a4d264af650f24ae574c1becdc308d0ca8ab607830850599bb882840ca4fa'
 actual = hashlib.sha256(packed).hexdigest()
