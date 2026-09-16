@@ -50,7 +50,7 @@ replacement='''  @Test
   }
 
 '''
-s,n=re.subn(pat,replacement,s,count=1,flags=re.S)
+s,n=re.subn(pat,lambda _m: replacement,s,count=1,flags=re.S)
 assert n==1,(p,'missing-build test replacement',n)
 pat=r'''  @Test\n  public void workerAuthenticationErrorDoesNotBecomeAnAiModelError\(\) throws Exception \{.*?\n  \}\n\n(?=  byte\[\] image\()'''
 replacement='''  @Test
@@ -94,7 +94,7 @@ replacement='''  @Test
   }
 
 '''
-s,n=re.subn(pat,replacement,s,count=1,flags=re.S)
+s,n=re.subn(pat,lambda _m: replacement,s,count=1,flags=re.S)
 assert n==1,(p,'worker-auth test replacement',n)
 p.write_text(s)
 
@@ -158,7 +158,7 @@ replacement='''  @Test
   }
 
 '''
-s,n=re.subn(pat,replacement,s,count=1,flags=re.S)
+s,n=re.subn(pat,lambda _m: replacement,s,count=1,flags=re.S)
 assert n==1,(p,'durable-restart test replacement',n)
 p.write_text(s)
 
