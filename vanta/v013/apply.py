@@ -11,7 +11,9 @@ expected = '1c1f5860b9dfde696e517736ebec8464d8f0b4dac7e69018208b1b6220551614'
 actual = hashlib.sha256(packed).hexdigest()
 if actual != expected:
     raise SystemExit(f'Android 0.13 patch checksum mismatch: {actual}')
-patch = lzma.decompress(packed, memlimit=64 * 1024 * 1024)
+# Python's liblzma can require substantially more memory than the compressed payload
+# size when a high-compression dictionary was used. 512 MiB is a bounded CI-safe cap.
+patch = lzma.decompress(packed, memlimit=512 * 1024 * 1024)
 subprocess.run(
     ['patch', '--batch', '--fuzz=0', '-p1', '-d', 'vanta/personal'],
     input=patch,
