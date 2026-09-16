@@ -12,6 +12,7 @@ subprocess.run(
     ['java', '-jar', 'baseline/reference/format.jar', '--replace', *java_files],
     check=True,
 )
+# Vanta 0.13 application is checksum-verified by its installer before this call.
 subprocess.run(['python3', 'vanta/v013/apply.py'], check=True)
 
 # The retained upgrade probe must now validate the installed 0.13 package.
