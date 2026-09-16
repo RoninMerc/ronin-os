@@ -19,4 +19,33 @@ subprocess.run(
     input=patch,
     check=True,
 )
-print(f'Applied Android 0.13 Vanta Orchestrator patch ({len(patch)} bytes).')
+
+# A terminal job can become visible before an older UI refresh clears the in-memory
+# running flag on slower Android releases. Reconcile the durable job record at the
+# user's next Send press so a completed turn can never silently swallow a follow-up.
+main = Path('vanta/personal/app/src/main/java/com/ronin/vanta/MainActivity.java')
+text = main.read_text(encoding='utf-8')
+old = '''  private void startUnifiedProject(
+      ComposerIntent action, String raw, String selectedPlatform, JSONObject explicitProject) {
+    if (running || launchingJob || taskChoice != null) return;
+    final int epoch = screenRevision;'''
+new = '''  private void startUnifiedProject(
+      ComposerIntent action, String raw, String selectedPlatform, JSONObject explicitProject) {
+    if (running && jobs != null && currentJob != null && !currentJob.isEmpty()) {
+      try {
+        VantaJob durable = jobs.store.get(currentJob);
+        if (durable != null && !durable.active()) {
+          running = false;
+          refreshSend();
+        }
+      } catch (Exception ignored) {
+        // Keep the conservative in-memory state when durable status cannot be confirmed.
+      }
+    }
+    if (running || launchingJob || taskChoice != null) return;
+    final int epoch = screenRevision;'''
+if old not in text:
+    raise SystemExit('Android 0.13 stale-running reconciliation insertion point not found')
+main.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+print(f'Applied Android 0.13 Vanta Orchestrator patch ({len(patch)} bytes) plus durable follow-up reconciliation.')
