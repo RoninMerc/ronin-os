@@ -1,0 +1,153 @@
+name: Vanta 0.14 - Agentic Forge Build Center
+on:
+  push:
+    branches: ['build/vanta-android-014-forge-center']
+    paths: ['vanta/v012/**','vanta/v013/**','vanta/v014/**','.github/workflows/vanta-014.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+concurrency:
+  group: vanta-014-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.10-build
+          run-id: 34928321971
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Materialize reviewed Android baseline and apply Agentic Forge Build Center
+        run: |
+          set -euo pipefail
+          mkdir -p vanta/personal baseline-project distribution
+          unzip -q baseline/Ronin-Vanta-0.10.0-Source.zip -d vanta/personal
+          cp -a vanta/personal/. baseline-project/
+          python3 vanta/v011/apply.py
+          if test -f vanta/v011/review.py; then python3 vanta/v011/review.py; fi
+          java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
+          base64 -d vanta/v012/patch.b64 | xz -d > /tmp/vanta-012.patch
+          patch --batch --fuzz=0 -p1 -d vanta/personal < /tmp/vanta-012.patch
+          if test -f vanta/v012/review.py; then python3 vanta/v012/review.py; fi
+          java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
+          python3 vanta/v014/apply.py
+          java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
+          for name in field-release-qa.apk field-test.apk field-demo-qa.apk field-demo-test.apk; do cp baseline/$name distribution/; done
+          cp baseline/apksigner.jar distribution/
+      - name: Compile baseline for real install-over rehearsal
+        run: |
+          set -o pipefail
+          gradle -p baseline-project --no-daemon --max-workers=2 assembleDebug --stacktrace 2>&1 | tee baseline-build.log
+          cp baseline-project/app/build/outputs/apk/debug/app-debug.apk distribution/baseline-010-debug.apk
+      - name: Compile Vanta, execute all unit tests and lint
+        run: |
+          set -o pipefail
+          gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest testReleaseUnitTest lintDebug assembleDebug assembleRelease --stacktrace 2>&1 | tee vanta-build.log
+      - name: Run retained conversation source/export/reimport/compiler acceptance
+        run: python3 vanta/v011/acceptance.py
+      - name: Compile instrumentation and stage both package tracks
+        run: |
+          set -euo pipefail
+          gradle -p vanta/personal --no-daemon --max-workers=2 assembleDebugAndroidTest --stacktrace 2>&1 | tee native-build.log
+          cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/
+          cp vanta/personal/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
+          gradle -p vanta/personal --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/fixed-release-qa.apk distribution/fixed-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs distribution/fixed-release-qa.apk > distribution/fixed-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/fixed-release-qa.apk > distribution/fixed-package.txt
+          gradle -p vanta/personal -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace 2>&1 | tee personal-build.log
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/personal-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/personal-release-unsigned.apk > distribution/personal-package.txt
+          sed 's/baseline-095-debug.apk/baseline-010-debug.apk/g' baseline/ci_device.sh > distribution/ci_device.sh
+          cat >> distribution/ci_device.sh <<'SH'
+          adb install -r client-qa-release/continuity-client-signed.apk
+          adb shell am start -W -n com.ronin.fieldreport/com.ronin.fieldreport.MainActivity | tee continuity-artifact-launch.txt
+          grep -q 'Status: ok' continuity-artifact-launch.txt
+          sleep 2
+          adb exec-out screencap -p > continuity-artifact.png
+          SH
+          printf '%s\n' "$GITHUB_SHA" > distribution/source-commit.txt
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+      - name: Preserve exact source even when a check fails
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('vanta/personal');Path('distribution').mkdir(exist_ok=True)
+          with zipfile.ZipFile('distribution/Ronin-Vanta-0.14.0-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for p in root.rglob('*'):
+              if p.is_file() and not {'.gradle','build'}.intersection(p.relative_to(root).parts):z.write(p,p.relative_to(root))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: vanta-0.14-build, path: distribution/, if-no-files-found: warn}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.14-reports
+          path: |
+            *build.log
+            vanta/personal/app/build/reports/
+            vanta/personal/app/build/test-results/
+            acceptance-evidence/
+          if-no-files-found: warn
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix: {api: [29,36]}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: vanta-0.14-build, path: distribution}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise retained suite, adaptive routing, build/ZIP fallback, upgrade and process restore
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '2048'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: bash distribution/ci_device.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.14-device-${{ matrix.api }}
+          path: |
+            client-*.txt
+            process-*.txt
+            baseline-launch.txt
+            field-*.txt
+            continuity-*.txt
+            continuity-artifact.png
+            client-launch.png
+            field-client-artifact.png
+            client-qa-debug/
+            client-qa-release/
+            field-evidence/
+            field-demo-evidence/
+          if-no-files-found: warn
