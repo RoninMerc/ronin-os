@@ -45,11 +45,11 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p=Path('/tmp/patrol-v114/app/build.gradle')
-          s=p.read_text().replace('versionCode 110','versionCode 114').replace("versionName '1.1.0'","versionName '1.1.3'")
+          s=p.read_text().replace('versionCode 110','versionCode 114').replace("versionName '1.1.0'","versionName '1.1.4'")
           p.write_text(s)
           PY
           grep -q "versionCode 114" /tmp/patrol-v114/app/build.gradle
-          grep -q "versionName '1.1.3'" /tmp/patrol-v114/app/build.gradle
+          grep -q "versionName '1.1.4'" /tmp/patrol-v114/app/build.gradle
           grep -q 'signed-session full reload every 30 seconds' /tmp/patrol-v114/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java
           grep -q 'Reloading the signed-in Issue Monitor' /tmp/patrol-v114/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java
           node --check /tmp/patrol-v114/app/src/main/assets/extract.js
