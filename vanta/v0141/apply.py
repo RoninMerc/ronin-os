@@ -15,4 +15,14 @@ raw_actual=hashlib.sha256(patch).hexdigest()
 if raw_actual != raw_expected:
     raise SystemExit(f'Android 0.14.1 raw patch checksum mismatch: {raw_actual}')
 subprocess.run(['patch','--batch','--fuzz=0','-p4','-d','vanta/personal'], input=patch, check=True)
-print('Applied Android 0.14.1 native tool dispatch and artifact completion gate.')
+
+probe=Path('vanta/personal/app/src/androidTest/java/com/ronin/vanta/UnifiedUpgradeProbe.java')
+probe_text=probe.read_text(encoding='utf-8')
+old_probe='''    assertEquals(
+        130, c.getPackageManager().getPackageInfo(c.getPackageName(), 0).getLongVersionCode());'''
+new_probe='''    assertEquals(
+        141, c.getPackageManager().getPackageInfo(c.getPackageName(), 0).getLongVersionCode());'''
+if probe_text.count(old_probe) != 1:
+    raise SystemExit('Android 0.14.1 upgrade-probe assertion insertion point mismatch')
+probe.write_text(probe_text.replace(old_probe,new_probe,1),encoding='utf-8')
+print('Applied Android 0.14.1 native tool dispatch, artifact completion gate and upgrade probe.')
