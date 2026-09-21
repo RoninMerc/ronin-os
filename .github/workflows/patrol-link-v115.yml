@@ -21,6 +21,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
+          cache-read-only: false
       - name: Reconstruct and patch
         shell: bash
         run: |
@@ -35,6 +36,7 @@ jobs:
           python3 .patrolbuild/v115-patch.py /tmp/patrol-v115
           mkdir -p /tmp/patrol-v115/app/src/androidTest/java/au/com/roningroup/patrollink
           cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v115/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v115
           grep -q 'versionCode 115' /tmp/patrol-v115/app/build.gradle
           grep -q "versionName '1.1.5'" /tmp/patrol-v115/app/build.gradle
           node --check /tmp/patrol-v115/app/src/main/assets/extract.js
