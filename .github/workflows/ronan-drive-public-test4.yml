@@ -1,0 +1,115 @@
+name: Ronan Drive Public Test4 Build
+on:
+  push:
+    branches: [ronan-drive-build-test4]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ronan-drive-public-test4
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NO_GS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Fetch pinned Fermata and apply Ronan test4 changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/AndreyPavlenko/Fermata.git project
+          cd project
+          git checkout a81307383cfbd7740990eba41166c968f0d9fe73
+          git submodule update --init --recursive
+          git rev-parse HEAD > ../UPSTREAM-COMMIT.txt
+          git submodule status --recursive >> ../UPSTREAM-COMMIT.txt
+          cd ..
+          python3 ronan-drive-build/patch.py project
+          cp ronan-drive-build/patch.py project/RONAN-PATCH.py
+          python3 ronan-drive-build/harden.py project
+          cp ronan-drive-build/harden.py project/RONAN-HARDEN.py
+          python3 ronan-drive-build/launcher_fix.py project
+          cp ronan-drive-build/launcher_fix.py project/RONAN-LAUNCHER-FIX.py
+          mkdir -p ronan-drive-build/ronan-v3
+          python3 ronan-drive-build/refresh_v3.py project
+          cp ronan-drive-build/refresh_v3.py project/RONAN-V3-PATCH.py
+          python3 ronan-drive-build/refresh_v4.py project
+          cp ronan-drive-build/refresh_v4.py project/RONAN-V4-PATCH.py
+          chmod +x project/gradlew
+          bash project/ronan-tests/run.sh
+      - name: Create disposable build signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .temp-signing dist
+          openssl rand -hex 24 > .temp-signing/password.txt
+          keytool -genkeypair -noprompt -keystore .temp-signing/temp.p12 -storetype PKCS12 -storepass:file .temp-signing/password.txt -keypass:file .temp-signing/password.txt -alias temp -keyalg RSA -keysize 3072 -validity 7 -dname 'CN=Disposable CI signer,O=Ronan Drive test4,C=AU'
+          printf 'storeFile=%s/.temp-signing/temp.p12\nkeyAlias=temp\nstorePassword=%s\nkeyPassword=%s\n' "$GITHUB_WORKSPACE" "$(cat .temp-signing/password.txt)" "$(cat .temp-signing/password.txt)" > project/local.properties
+      - name: Compile full Android Auto APK
+        working-directory: project
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --build-cache :fermata:packageAutoReleaseUniversalApk -PABI=arm64-v8a -PAPP_NAME='Ronan Drive' -PAPP_ID=au.com.ronin.drive 2>&1 | tee ../build.log
+      - name: Verify temporary APK and package source
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find project/fermata/build/outputs/apk_from_bundle/autoRelease -name '*.apk' -print -quit)
+          test -n "$APK"
+          cp "$APK" dist/Ronan-Drive-1.2.0-test4-TEMP-SIGNED-arm64.apk
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs dist/Ronan-Drive-1.2.0-test4-TEMP-SIGNED-arm64.apk > dist/TEMP-APK-VERIFICATION.txt
+          "$BT/aapt2" dump badging dist/Ronan-Drive-1.2.0-test4-TEMP-SIGNED-arm64.apk > dist/APK-METADATA.txt
+          "$BT/aapt2" dump xmltree dist/Ronan-Drive-1.2.0-test4-TEMP-SIGNED-arm64.apk --file AndroidManifest.xml > dist/APK-MANIFEST.txt
+          "$BT/aapt2" dump xmltree dist/Ronan-Drive-1.2.0-test4-TEMP-SIGNED-arm64.apk --file res/xml/automotive_app_desc.xml > dist/APK-AUTOMOTIVE-DESCRIPTOR.txt
+          grep -Fq "name='au.com.ronin.drive.auto'" dist/APK-METADATA.txt
+          grep -Fq "versionCode='4'" dist/APK-METADATA.txt
+          grep -Fq "versionName='1.2.0-test4'" dist/APK-METADATA.txt
+          grep -Fq 'me.aap.fermata.auto.MirrorService"' dist/APK-MANIFEST.txt
+          grep -Fq 'me.aap.fermata.auto.MirrorServiceFS"' dist/APK-MANIFEST.txt
+          if grep -Fq 'me.aap.fermata.auto.MediaServiceStarter' dist/APK-MANIFEST.txt; then echo 'Auto-start receiver regression'; exit 1; fi
+          if grep -Eq 'android.permission.REQUEST_INSTALL_PACKAGES|android.permission.REQUEST_DELETE_PACKAGES' dist/APK-MANIFEST.txt; then echo 'Permission regression'; exit 1; fi
+          cp UPSTREAM-COMMIT.txt dist/
+          cp project/RONAN-V4-SOURCE-CHECKS.txt project/RONAN-TEST-RESULTS.txt dist/
+          cat > dist/Ronan-Drive-1.2.0-test4-Notes.txt <<'TXT'
+          Ronan Drive 1.2.0-test4
+          - Connecting Android Auto alone no longer starts Ronan Drive or requests screen sharing.
+          - Mirroring is initiated only when a Ronan mirror interface is opened.
+          - The projection request targets the whole display directly on Android 14+; Android may still require its system Start-now consent.
+          - Phone navigation controls are trimmed from the mirrored image by default in adaptive modes, with Auto and manual 3/5/7/10-percent crop options.
+          - Optional phone status-bar trimming is available and disabled by default.
+          - Touch coordinates are remapped after crop.
+          - Optional Ronan Desktop provides a DeX-style fullscreen app-launcher layout. It is not Samsung DeX.
+          - Android Auto's own host/navigation bar cannot be removed by Ronan Drive.
+          - No root, Shizuku, helper installer or new package-management permissions.
+          - This build does not claim to eliminate the current Fermata/AAAD priming behaviour observed on the user's Android Auto host.
+          TXT
+          (cd project && zip -qr ../dist/Ronan-Drive-1.2.0-test4-source.zip . -x '.git/*' '*/.git/*' '*/.git' '.git' '.gradle/*' '*/build/*' 'build/*' '*/.cxx/*' 'local.properties' '*.jks' '*.p12')
+      - name: Upload temporary APK and source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ronan-Drive-1.2.0-test4-public-build
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ronan-Drive-test4-public-build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
