@@ -188,8 +188,15 @@ public final class PatrolEngine {
     public void loadMonitor() { refreshMonitor(); }
     public void refreshMonitor() {
         if (!running) return;
-        if (!online()) { status("OFFLINE", "No network connection. Retrying automatically."); nextCheckElapsed = SystemClock.elapsedRealtime() + INTERVAL; return; }
-        if (web == null) { openMonitor(); return; }
+        if (!online()) {
+            status("OFFLINE", "No network connection. Retrying automatically.");
+            nextCheckElapsed = SystemClock.elapsedRealtime() + INTERVAL;
+            return;
+        }
+        if (web == null) {
+            openMonitor();
+            return;
+        }
         if (navigating && SystemClock.elapsedRealtime() - startedElapsed < 25_000L) return;
         if (!monitorPage(web.getUrl())) {
             status("SIGN_IN_REQUIRED", "Open Silvertracker and sign in once. Automatic refresh is paused until Issue Monitor returns.");
@@ -197,70 +204,17 @@ public final class PatrolEngine {
             return;
         }
         final long attempt = ++refreshAttempt;
-        status("CHECKING", "Requesting a fresh Issue Monitor update…");
-        String js = "(function(){" +
-                "window.__roninRefresh=window.__roninRefresh||{done:0,hooked:false};" +
-                "try{if(!window.__roninRefresh.hooked&&window.Sys&&Sys.WebForms&&Sys.WebForms.PageRequestManager){" +
-                "var prm=Sys.WebForms.PageRequestManager.getInstance();prm.add_endRequest(function(){window.__roninRefresh.done++;});window.__roninRefresh.hooked=true;}}catch(e){}" +
-                "function vis(e){if(!e)return false;var s=getComputedStyle(e);return s.display!=='none'&&s.visibility!=='hidden'&&e.offsetParent!==null;}" +
-                "var before=window.__roninRefresh.done||0;" +
-                "var a=document.querySelectorAll('button,input[type=button],input[type=submit],a');" +
-                "for(var i=0;i<a.length;i++){var e=a[i];if(!vis(e))continue;var t=((e.innerText||e.textContent||e.value||'')+'').replace(/\\s+/g,' ').trim();var id=((e.id||'')+' '+(e.name||'')).toLowerCase();" +
-                "if(/^update$/i.test(t)||id.indexOf('update')>=0){" +
-                "try{if(e.form&&typeof e.form.requestSubmit==='function'&&(e.type==='submit'||e.tagName==='INPUT'))e.form.requestSubmit(e);else e.click();}" +
-                "catch(x){try{e.click();}catch(y){}}" +
-                "return JSON.stringify({clicked:true,before:before});}}" +
-                "return JSON.stringify({clicked:false,before:before});})();";
-        web.evaluateJavascript(js, result -> {
-            if (!running || web == null || attempt != refreshAttempt) return;
-            long before = parseRefreshCounter(result);
-            if (result == null || !result.contains("\\\"clicked\\\":true")) {
-                forceVerifiedReload(attempt);
-                return;
-            }
-            waitForRefreshCompletion(attempt, before, 0);
-        });
-        nextCheckElapsed = SystemClock.elapsedRealtime() + INTERVAL;
-    }
-    private long parseRefreshCounter(String encoded) {
-        try {
-            Object outer = new JSONTokener(encoded).nextValue();
-            if (!(outer instanceof String)) return 0;
-            JSONObject o = new JSONObject((String)outer);
-            return o.optLong("before",0);
-        } catch(Exception e) { return 0; }
-    }
-    private void waitForRefreshCompletion(long attempt, long before, int checks) {
-        if (!running || web == null || attempt != refreshAttempt) return;
-        if (navigating) {
-            handler.postDelayed(() -> waitForRefreshCompletion(attempt,before,checks+1), 700);
-            return;
-        }
-        String js = "(function(){var r=window.__roninRefresh||{done:0};return String(r.done||0);})();";
-        web.evaluateJavascript(js, value -> {
-            if (!running || web == null || attempt != refreshAttempt) return;
-            long done = 0;
-            try { done = Long.parseLong(String.valueOf(value).replace("\\\"","").trim()); } catch(Exception ignored) {}
-            if (done > before) {
-                handler.postDelayed(() -> {
-                    if (!running || web == null || attempt != refreshAttempt) return;
-                    acceptedThisNavigation = false;
-                    inspect(navigationToken, true);
-                }, 500);
-                return;
-            }
-            if (checks >= 10) {
-                forceVerifiedReload(attempt);
-            } else {
-                handler.postDelayed(() -> waitForRefreshCompletion(attempt,before,checks+1), 800);
-            }
-        });
-    }
-    private void forceVerifiedReload(long attempt) {
-        if (!running || web == null || attempt != refreshAttempt) return;
-        status("CHECKING", "Silvertracker did not confirm the in-page update. Reloading the signed-in monitor…");
+        status("CHECKING", "Reloading the signed-in Issue Monitor for a fresh feed…");
         acceptedThisNavigation = false;
         web.reload();
+        handler.postDelayed(() -> {
+            if (!running || web == null || attempt != refreshAttempt) return;
+            if (!navigating && monitorPage(web.getUrl()) && !"READ_OK".equals(state)) {
+                acceptedThisNavigation = false;
+                inspect(navigationToken, true);
+            }
+        }, 12_000L);
+        nextCheckElapsed = SystemClock.elapsedRealtime() + INTERVAL;
     }
     private void scheduleCurrentInspection(long delay) {
         handler.postDelayed(() -> {
@@ -377,7 +331,7 @@ public final class PatrolEngine {
                 "\nReader schema: 3\nWebView: " + (pkg == null ? "unavailable" : pkg.versionName) +
                 "\nState: " + state + "\nMonitoring: " + running + "\nNetwork available: " + online() +
                 "\nSource: " + HOST + "\nAt monitor page: " + (web != null && monitorPage(web.getUrl())) +
-                "\nRefresh method: confirmed in-page Update + signed-session reload fallback" +
+                "\nRefresh method: signed-session full reload every 30 seconds" +
                 "\nTable rows found: " + rowsFound + "\nMatched guards: " + selectedCount + "\nRecent activity cache: " + recentById.size() +
                 "\nLast HTTP error: " + lastHttp + "\nLast read: " + (lastRead == 0 ? "none" : TimeParser.age(lastRead, System.currentTimeMillis())) +
                 "\nCar host connected: " + carConnected + "\nOffline voice ready: " + voiceReady +
