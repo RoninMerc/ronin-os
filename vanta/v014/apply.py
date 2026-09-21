@@ -1,6 +1,5 @@
 from pathlib import Path
-import base64, subprocess
-subprocess.run(['python3','vanta/v013/apply.py'], check=True)
+import base64
 root=Path('vanta/personal')
 ops=[
 ('app/build.gradle', 'ICAgICAgICB2ZXJzaW9uQ29kZSAxMzAKICAgICAgICB2ZXJzaW9uTmFtZSAnMC4xMy4wJwo=', 'ICAgICAgICB2ZXJzaW9uQ29kZSAxNDAKICAgICAgICB2ZXJzaW9uTmFtZSAnMC4xNC4wJwo=', 'version'),
