@@ -1,0 +1,83 @@
+name: Build Patrol Link v1.1.3 APK
+
+on:
+  push:
+    branches: ['patrol-link-v113-build']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Reconstruct Patrol Link source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .patrolbuild/base.part00 .patrolbuild/base.part01 .patrolbuild/base.part02 .patrolbuild/base.part03 .patrolbuild/base.part04 .patrolbuild/base.part05 | base64 -d > /tmp/patrol-base.zip
+          rm -rf /tmp/patrol-v113
+          mkdir -p /tmp/patrol-v113
+          unzip -q /tmp/patrol-base.zip -d /tmp/patrol-v113
+          cat .patrolbuild/overlay.part00 .patrolbuild/overlay.part01 .patrolbuild/overlay.part02 | base64 -d > /tmp/patrol-overlay.tgz
+          tar -xzf /tmp/patrol-overlay.tgz -C /tmp/patrol-v113
+          cp .patrolbuild/PatrolEngine.java /tmp/patrol-v113/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java
+          cp .patrolbuild/MainActivity.java /tmp/patrol-v113/app/src/main/java/au/com/roningroup/patrollink/MainActivity.java
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v113/app/build.gradle')
+          s=p.read_text().replace('versionCode 110','versionCode 113').replace("versionName '1.1.0'","versionName '1.1.3'")
+          p.write_text(s)
+          PY
+          grep -q "versionCode 113" /tmp/patrol-v113/app/build.gradle
+          grep -q "versionName '1.1.3'" /tmp/patrol-v113/app/build.gradle
+          grep -q 'waitForRefreshCompletion' /tmp/patrol-v113/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java
+          grep -q 'forceVerifiedReload' /tmp/patrol-v113/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java
+          node --check /tmp/patrol-v113/app/src/main/assets/extract.js
+
+      - name: Install Android platform
+        shell: bash
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Unit tests and release build
+        working-directory: /tmp/patrol-v113
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+
+      - name: Verify APK
+        working-directory: /tmp/patrol-v113
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/deliver
+          cp app/build/outputs/apk/release/app-release.apk /tmp/deliver/Ronin-Patrol-Link-v1.1.3-refresh-fix.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs /tmp/deliver/Ronin-Patrol-Link-v1.1.3-refresh-fix.apk | tee /tmp/deliver/APK-VERIFICATION.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/deliver/APK-VERIFICATION.txt
+          sha256sum /tmp/deliver/Ronin-Patrol-Link-v1.1.3-refresh-fix.apk > /tmp/deliver/SHA256SUMS.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.3-refresh-fix
+          path: /tmp/deliver/*
+          retention-days: 7
