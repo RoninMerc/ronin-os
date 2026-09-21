@@ -214,7 +214,7 @@ public final class PatrolEngine {
         web.evaluateJavascript(js, result -> {
             if (!running || web == null || attempt != refreshAttempt) return;
             long before = parseRefreshCounter(result);
-            if (result == null || !result.contains("\\"clicked\\":true")) {
+            if (result == null || !result.contains("\\\"clicked\\\":true")) {
                 forceVerifiedReload(attempt);
                 return;
             }
@@ -240,7 +240,7 @@ public final class PatrolEngine {
         web.evaluateJavascript(js, value -> {
             if (!running || web == null || attempt != refreshAttempt) return;
             long done = 0;
-            try { done = Long.parseLong(String.valueOf(value).replace("\\"","").trim()); } catch(Exception ignored) {}
+            try { done = Long.parseLong(String.valueOf(value).replace("\\\"","").trim()); } catch(Exception ignored) {}
             if (done > before) {
                 handler.postDelayed(() -> {
                     if (!running || web == null || attempt != refreshAttempt) return;
