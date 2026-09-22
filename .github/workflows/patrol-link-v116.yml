@@ -102,7 +102,7 @@ jobs:
                       seen+=int(info['tests'])
                       lines.append(suite.attrib.get('name',p.name)+': '+str(info))
           assert seen>=18, ('expected unit and emulator results',seen)
-          lines+=['All recorded tests passed.', 'Test scope: Android 16 emulator; controlled monitor feed; real rejected self-signed TLS connections on loopback; synthetic ERROR_FAILED_SSL_HANDSHAKE callback.', 'No authenticated live Silvertracker or physical-phone/whole-shift certification.', 'Signing certificate matches v1.1.5 for in-place personal update; previously disclosed test-key exposure is not remediated by this build.']
+          lines+=['All recorded tests passed.', 'Test scope: Android 16 emulator; controlled monitor feed; real rejected self-signed TLS connections and intentionally invalid TLS-handshake transport on loopback.', 'No authenticated live Silvertracker or physical-phone/whole-shift certification.', 'Signing certificate matches v1.1.5 for in-place personal update; previously disclosed test-key exposure is not remediated by this build.']
           Path('/tmp/deliver116/TEST-SUMMARY.txt').write_text('\n'.join(lines)+'\n')
           PY
       - name: Public endpoint certificate probe (no account session)
