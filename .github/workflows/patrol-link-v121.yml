@@ -23,14 +23,26 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.13', cache-read-only: false}
       - name: Prepare and verify offline speech build
-        run: bash .patrolbuild/v121-prepare.sh
+        run: |
+          bash .patrolbuild/v121-prepare.sh
+          python3 .patrolbuild/v121-native-fix.py /tmp/patrol-v121
+          cp .patrolbuild/VoicePlaybackTest.java /tmp/patrol-v121/app/src/androidTest/java/au/com/roningroup/patrollink/
       - name: Upload local finalisation tools without plaintext secrets
         if: always()
         uses: actions/upload-artifact@v4
         with: {name: Patrol-v121-local-tools, path: /tmp/tools121/, retention-days: 3}
       - name: Unit tests and APK compilation
         working-directory: /tmp/patrol-v121
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+        run: |
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+          mkdir -p /tmp/candidate121
+          cp app/build/outputs/apk/release/app-release.apk /tmp/candidate121/Patrol-v121-compiled-candidate.apk
+          sha256sum /tmp/candidate121/*.apk > /tmp/candidate121/SHA256.txt
+          javap -classpath app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes 'au.com.roningroup.patrollink.LocalVoiceService$GenerationCallback' | tee /tmp/candidate121/JNI-CALLBACK.txt
+          grep -F 'java.lang.Integer invoke(float[])' /tmp/candidate121/JNI-CALLBACK.txt
+      - name: Upload compiled candidate for independent local voice verification
+        uses: actions/upload-artifact@v4
+        with: {name: Patrol-v121-compiled-candidate, path: /tmp/candidate121/, retention-days: 3, compression-level: 0}
       - name: DOM parser regression
         run: |
           python3 -m venv /tmp/domvenv
@@ -42,7 +54,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 16 actual offline synthesis and monitor regression
+      - name: Android 16 actual offline synthesis and playback and monitor regression
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -74,8 +86,8 @@ jobs:
                   for s in ET.parse(p).getroot().iter('testsuite'):
                       row=dict(s.attrib);row['file']=str(p);rows.append(row)
                       assert all(int(row.get(k,0))==0 for k in ['failures','errors','skipped']),row
-          assert sum(int(r.get('tests',0)) for r in rows)>=30,rows
-          out={'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'suites':rows,'scope':'Android 16 x86_64 emulator; actual offline model generation; controlled Silvertracker fixture. CI default voice reference is the previous public Felicity samples. The final original-WAV voice reference is inserted and checked locally, not uploaded to this public repository.'}
+          assert sum(int(r.get('tests',0)) for r in rows)>=31,rows
+          out={'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'suites':rows,'scope':'Android 16 x86_64 emulator; actual offline model generation, production voice queue and Android MediaPlayer playback completion, local WAV import; controlled Silvertracker fixture. CI default voice reference is the previous public Felicity samples. The final original-WAV voice reference is inserted and checked locally, not uploaded to this public repository.'}
           Path('/tmp/deliver121/CI-TEST-SUMMARY.json').write_text(json.dumps(out,indent=2))
           PY
       - uses: actions/upload-artifact@v4
