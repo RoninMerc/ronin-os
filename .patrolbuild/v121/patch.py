@@ -80,7 +80,7 @@ s=s[:start]+'''    private void voiceLibrary() {
 s=replace(s,'Voice settings include the built-in Felicity voice and local import of additional training-script recordings. Voice playback is isolated from the 30-second monitor loop, so an audio failure does not stop feed refreshes.','A bundled on-device speech model generates the complete guard, activity and property announcement using the selected local voice reference. Connection state is shown visually; the app does not repeatedly play connection-warning clips. Speech generation runs in a separate process from the 30-second monitor. The selected recording guides the voice; synthesis is not guaranteed to be identical to the original voice website.')
 p.write_text(s)
 
-# Keep existing refresh/TLS tests focused; the new separate test exercises real local speech.
+# Keep existing refresh/TLS tests focused; the separate test exercises real local speech.
 for p in (root/'app/src/androidTest/java/au/com/roningroup/patrollink').glob('*.java'):
     s=p.read_text();s=re.sub(r'(@Test\s+public void \w+\([^)]*\)(?: throws [^{]+)?\s*\{)',r'\1\n        InstrumentationRegistry.getInstrumentation().getTargetContext().getSharedPreferences("patrol_settings", android.content.Context.MODE_PRIVATE).edit().putBoolean("voice",false).commit();',s)
     p.write_text(s)
@@ -88,5 +88,22 @@ for f in ['VoicePipelineTest.java']:
     shutil.copyfile(payload/f,root/'app/src/androidTest/java/au/com/roningroup/patrollink'/f)
 for f in ['AnnouncementTextTest.java','VoiceReferenceTest.java']:
     shutil.copyfile(payload/f,root/'app/src/test/java/au/com/roningroup/patrollink'/f)
+
+# Retry a failed local model load, without substituting a voice or retrying on the UI thread.
+p=java/'VoiceManager.java';s=p.read_text()
+s=replace(s,'private Messenger remote; private boolean bound, modelLoaded; private Item current;','private Messenger remote; private boolean bound, modelLoaded, warming; private Item current;')
+s=replace(s,'remote = new Messenger(binder); status = "Loading on-device voice model"; send(LocalVoiceService.WARM, null, null);','remote = new Messenger(binder); status = "Loading on-device voice model"; warming = true; send(LocalVoiceService.WARM, null, null);')
+s=replace(s,'if(bound)return;','if(bound){if(remote!=null&&!modelLoaded&&!warming){warming=true;send(LocalVoiceService.WARM,null,null);}return;}')
+s=replace(s,'modelLoaded=true;status="Ready: complete updates use "+activeName();dispatch();return true;','modelLoaded=true;warming=false;status="Ready: complete updates use "+activeName();dispatch();return true;')
+s=replace(s,'status=lastError;modelLoaded=false;return true;','status=lastError;modelLoaded=false;warming=false;return true;')
+s=replace(s,'catch(Exception e){main.post(()->failCurrent(safe(e)));}});','catch(Exception e){main.post(()->{if(current==sending)failCurrent(safe(e));});}});')
+s=replace(s,'public void test(){main.post(()->enqueue(AnnouncementText.format(','public void test(){main.post(()->enqueue("Voice test. " + AnnouncementText.format(')
+p.write_text(s)
+
+# Preserve full monitor-row matter strings beyond the legacy 240-character display limit.
+p=root/'app/src/main/assets/extract.js';s=p.read_text()
+s=s.replace('issue:issue.slice(0,240)','issue:issue.slice(0,8000)').replace('issue: issue.slice(0,240)','issue: issue.slice(0,8000)')
+p.write_text(s)
+
 for p in java.glob('*.java'):
     if 'android.speech.tts' in p.read_text() or 'api.elevenlabs.io' in p.read_text():raise RuntimeError('Forbidden voice fallback/client in '+str(p))
