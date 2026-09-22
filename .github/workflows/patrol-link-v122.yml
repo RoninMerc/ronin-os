@@ -1,0 +1,111 @@
+name: Patrol Link 1.1.12 editable spoken wording
+on:
+  push:
+    branches: [patrol-link-v122-speech-wording]
+    paths: ['.patrolbuild/v122/**', '.github/workflows/patrol-link-v122.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: patrol-v122-wording
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13', cache-read-only: false}
+      - name: Prepare existing offline engine and apply speech-only customisation
+        run: |
+          cp .patrolbuild/v122/v122-transfer.crt .patrolbuild/local-transfer.crt
+          bash .patrolbuild/v121-prepare.sh
+          python3 .patrolbuild/v121-native-fix.py /tmp/patrol-v121
+          cp .patrolbuild/VoicePlaybackTest.java /tmp/patrol-v121/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v122/v122-patch.py /tmp/patrol-v121
+          python3 .patrolbuild/v122/v122-tests.py /tmp/patrol-v121
+      - name: Unit tests and both APK variants
+        working-directory: /tmp/patrol-v121
+        run: |
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+          mkdir -p /tmp/candidate122
+          cp app/build/outputs/apk/release/app-release.apk /tmp/candidate122/Patrol-v122-compiled-candidate.apk
+          cp CORE-PRESERVATION.json /tmp/candidate122/
+          sha256sum /tmp/candidate122/*.apk > /tmp/candidate122/SHA256.txt
+          find "$HOME/.gradle/caches" -name 'junit-4.13.2.jar' -exec cp '{}' /tmp/tools121/ \;
+          find "$HOME/.gradle/caches" -name 'hamcrest-core-1.3.jar' -exec cp '{}' /tmp/tools121/ \;
+          find "$HOME/.gradle/caches" -name 'kotlin-stdlib-2.1.20.jar' -exec cp '{}' /tmp/tools121/ \;
+      - name: Upload candidate and encrypted local tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-v122-candidate-and-tools
+          path: |
+            /tmp/candidate122/
+            /tmp/tools121/
+          retention-days: 3
+          compression-level: 0
+      - name: Existing DOM regression
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          sed -i "s/shutil.which('chromium') or None/shutil.which('chromium') or shutil.which('google-chrome') or None/" /tmp/patrol-v121/tests/test_dom.py
+          /tmp/domvenv/bin/python /tmp/patrol-v121/tests/test_dom.py | tee /tmp/deliver121/DOM-TESTS.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 UI, persistence, actual offline readout and monitor regression
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v121 && gradle --no-daemon :app:connectedDebugAndroidTest
+      - name: Verify release signature and test counts
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs /tmp/candidate122/Patrol-v122-compiled-candidate.apk | tee /tmp/deliver121/CI-APK-SIGNATURE.txt
+          grep -q 'ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver121/CI-APK-SIGNATURE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,xml.etree.ElementTree as ET
+          suites=[]
+          for folder in ['app/build/test-results','app/build/outputs/androidTest-results']:
+              for path in (Path('/tmp/patrol-v121')/folder).rglob('TEST-*.xml'):
+                  for s in ET.parse(path).getroot().iter('testsuite'):
+                      row=dict(s.attrib);suites.append(row)
+                      assert all(int(row.get(k,0))==0 for k in ['failures','errors','skipped']),row
+          assert sum(int(s.get('tests',0)) for s in suites)>=52,suites
+          report={'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'suites':suites,'scope':'Android 16 x86_64 emulator: exact and phrase speech rules, settings persistence and restore, UI saves and attached WebView preservation, actual offline synthesis and full modified-announcement playback, imported reference selection, original TLS and refresh fixture tests. Provisional CI voice reference only; original uploaded Felicity reference and personal default nicknames are inserted locally. No authenticated Silvertracker, physical Samsung or whole-shift certification.'}
+          Path('/tmp/deliver121/CI-TEST-SUMMARY.json').write_text(json.dumps(report,indent=2))
+          PY
+      - name: Upload test evidence and updated source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-v122-evidence
+          path: |
+            /tmp/deliver121/
+            /tmp/patrol-v121/CORE-PRESERVATION.json
+            /tmp/patrol-v121/app/build/reports/
+            /tmp/patrol-v121/app/build/test-results/
+            /tmp/patrol-v121/app/build/outputs/androidTest-results/
+            /tmp/patrol-v121/app/src/main/java/
+            /tmp/patrol-v121/app/src/main/res/
+            /tmp/patrol-v121/app/src/main/AndroidManifest.xml
+            /tmp/patrol-v121/app/src/main/assets/extract.js
+            /tmp/patrol-v121/app/src/test/java/
+            /tmp/patrol-v121/app/src/androidTest/java/
+            /tmp/patrol-v121/app/build.gradle
+          retention-days: 3
