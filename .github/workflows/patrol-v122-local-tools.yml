@@ -1,0 +1,18 @@
+name: Patrol v122 local APK verification dependency
+on:
+  push:
+    branches: [patrol-link-v122-speech-wording]
+    paths: [.github/workflows/patrol-v122-local-tools.yml]
+permissions: {contents: read}
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Package host C++ library for zipalign and aapt
+        run: |
+          mkdir -p /tmp/align-tools
+          cp /usr/local/lib/android/sdk/build-tools/36.0.0/lib64/libc++.so /tmp/align-tools/
+          sha256sum /tmp/align-tools/libc++.so > /tmp/align-tools/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: Patrol-v122-alignment-lib, path: /tmp/align-tools/, retention-days: 3}
