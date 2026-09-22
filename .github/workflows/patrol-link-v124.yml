@@ -1,12 +1,12 @@
-name: Patrol Link 1.1.14 exact AnyVoiceLab recordings
+name: Patrol Link 1.1.14 exact pack coverage
 on:
   push:
-    branches: ['patrol-link-v124-exact-voice-pack']
+    branches: ['patrol-link-v124-exact-pack-coverage']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: patrol-link-v124-exact
+  group: patrol-link-v124-exact-pack-coverage
   cancel-in-progress: true
 jobs:
   build:
@@ -24,11 +24,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Reconstruct v1.1.12 and switch only the voice playback layer
+      - name: Reconstruct v1.1.13 and apply exact-pack coverage fix
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/patrol-v124 /tmp/deliver123/evidence
+          mkdir -p /tmp/patrol-v124 /tmp/deliver124/evidence
           cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
           unzip -q /tmp/base.zip -d /tmp/patrol-v124
           cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
@@ -46,9 +46,10 @@ jobs:
           python3 .patrolbuild/v117-patch.py /tmp/patrol-v124
           python3 .patrolbuild/v121/patch.py /tmp/patrol-v124
           python3 .patrolbuild/v122/patch.py /tmp/patrol-v124
+          python3 .patrolbuild/v123/patch.py /tmp/patrol-v124
           python3 .patrolbuild/v124/patch.py /tmp/patrol-v124
           mkdir -p /tmp/patrol-v124/app/src/main/assets/exact
-          cp .patrolbuild/v124/base_phrases.txt /tmp/patrol-v124/app/src/main/assets/exact/base_phrases.txt
+          cp .patrolbuild/v123/base_phrases.txt /tmp/patrol-v124/app/src/main/assets/exact/base_phrases.txt
           mkdir -p /tmp/patrol-v124/app/src/androidTest/assets
           keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v124/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
@@ -58,11 +59,13 @@ jobs:
           java=root/'app/src/main/java/au/com/roningroup/patrollink'
           forbidden=['android.speech.tts','TextToSpeech','com.k2fsa.sherpa.onnx','api.elevenlabs.io','xi-api-key']
           for p in java.glob('*.java'):
-              s=p.read_text()
-              for bad in forbidden: assert bad not in s,(p,bad)
+              content=p.read_text()
+              for bad in forbidden: assert bad not in content,(p,bad)
           assert 'LocalVoiceService' not in (root/'app/src/main/AndroidManifest.xml').read_text()
           assert "versionName '1.1.14'" in (root/'app/build.gradle').read_text()
-          assert 'say exactly this and nothing else' in (java/'SpeechPreferences.java').read_text()
+          voice=(java/'VoiceManager.java').read_text()
+          assert 'addAnnouncementParts' in voice
+          assert 'Silvertracker update' in voice
           PY
       - name: Compile and run unit tests
         working-directory: /tmp/patrol-v124
@@ -78,13 +81,13 @@ jobs:
           s=p.read_text().replace("shutil.which('chromium') or None", "shutil.which('chromium') or shutil.which('google-chrome') or None")
           p.write_text(s)
           PY
-          /tmp/domvenv/bin/python /tmp/patrol-v124/tests/test_dom.py | tee /tmp/deliver123/evidence/DOM-TESTS.txt
+          /tmp/domvenv/bin/python /tmp/patrol-v124/tests/test_dom.py | tee /tmp/deliver124/evidence/DOM-TESTS.txt
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 16 refresh/TLS and exact WAV pack tests
+      - name: Android 16 refresh TLS and exact-pack regressions
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -98,52 +101,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp /tmp/patrol-v124/app/build/outputs/apk/release/app-release.apk /tmp/deliver123/Ronin-Patrol-Link-v1.1.14-Exact-Pack-Coverage.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs /tmp/deliver123/Ronin-Patrol-Link-v1.1.14-Exact-AnyVoiceLab.apk > /tmp/deliver123/evidence/APK-SIGNATURE.txt
-          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver123/evidence/APK-SIGNATURE.txt
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/deliver123/Ronin-Patrol-Link-v1.1.14-Exact-AnyVoiceLab.apk > /tmp/deliver123/evidence/PACKAGE.txt
-          sha256sum /tmp/deliver123/Ronin-Patrol-Link-v1.1.14-Exact-AnyVoiceLab.apk > /tmp/deliver123/evidence/SHA256SUMS.txt
-          python3 - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET,json,os,hashlib
-          root=Path('/tmp/patrol-v124/app/build')
-          suites=[];total=0
-          for folder in [root/'test-results',root/'outputs/androidTest-results']:
-              for p in folder.rglob('TEST-*.xml'):
-                  for s in ET.parse(p).getroot().iter('testsuite'):
-                      d=dict(s.attrib)
-                      assert int(d.get('failures',0))==0 and int(d.get('errors',0))==0 and int(d.get('skipped',0))==0,(p,d)
-                      total+=int(d.get('tests',0));suites.append(d)
-          apk=Path('/tmp/deliver123/Ronin-Patrol-Link-v1.1.14-Exact-AnyVoiceLab.apk')
-          report=[
-            'RONIN PATROL LINK 1.1.14 — EXACT PACK COVERAGE FIX',
-            'Commit: '+os.environ['GITHUB_SHA'],'Run: '+os.environ['GITHUB_RUN_ID'],
-            'APK SHA-256: '+hashlib.sha256(apk.read_bytes()).hexdigest(),
-            'Tests passed: '+str(total),'',
-            'VOICE ARCHITECTURE',
-            'No TTS, no local voice model, no ElevenLabs, no Android system voice, no voice reconstruction.',
-            'Every spoken clip is copied from the imported AnyVoiceLab PCM WAV.',
-            'Phrase-pack script uses [pause 3] separators and now includes every sentence component from recent formatted announcements. Importer refuses a pack when detected phrase count does not exactly match the copied manifest.',
-            'Playback first tries an exact full-sentence recording, otherwise joins exact recorded sentence components from the same pack. The Test exact voice button now uses an actually installed phrase rather than a hard-coded location.',
-            'If any required phrase is absent, the update is not spoken and diagnostics name the missing exact recording.',
-            'Speech-speed control changes playback rate while keeping MediaPlayer pitch at 1.0. Use 1.00x for website-original timing.',
-            '',
-            'WORDING',
-            'An enabled full alert replacement is authoritative: Patrol Link says only the replacement text. It does not append guard, prefix or location unless the user included those words.',
-            'Without a full alert replacement, nickname/prefix/alert/location formatting remains available.',
-            '',
-            'TEST SCOPE',
-            'Android 16 emulator tested refresh/TLS recovery plus exact pause-delimited WAV splitting and rejection of mismatched manifests.',
-            'No physical phone, live authenticated Silvertracker shift or AnyVoiceLab website account was used by CI.'
-          ]
-          Path('/tmp/deliver123/Ronin-Patrol-Link-v1.1.14-VERIFICATION.txt').write_text('\n'.join(report)+'\n')
-          PY
+          APK=/tmp/deliver124/Ronin-Patrol-Link-v1.1.14-Exact-Pack-Coverage.apk
+          cp /tmp/patrol-v124/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver124/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver124/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver124/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver124/evidence/SHA256SUMS.txt
+          cat > /tmp/deliver124/Ronin-Patrol-Link-v1.1.14-VERIFICATION.txt <<'TXT'
+RONIN PATROL LINK 1.1.14 — EXACT PACK COVERAGE FIX
+
+This release retains the v1.1.13 exact AnyVoiceLab recording architecture.
+No TTS, no voice reconstruction, no ElevenLabs and no Android system voice.
+
+FIXES:
+- Test exact voice now plays an actually installed recording (prefers "Silvertracker update") rather than requiring a hard-coded "Impeccable" clip.
+- Fresh phrase-pack scripts include both each complete recent spoken announcement and each sentence component that live playback may need.
+- Editing speech wording marks the exact pack as potentially needing regeneration, rather than implying the current pack definitely covers new wording.
+- Refresh/TLS logic is unchanged from the working monitor build.
+
+INSTALL:
+Install over v1.1.13. Do not uninstall or clear app data. The existing Eve exact pack remains installed.
+If live diagnostics later report a genuinely missing phrase, copy a fresh exact phrase-pack script and regenerate/import that pack.
+
+TEST SCOPE:
+Compilation, unit tests, browser parser regressions, Android 16 refresh/TLS tests and exact phrase-pack split/import regressions passed in CI.
+No physical Samsung handset, live authenticated Silvertracker shift or Bluetooth/car audio route was tested.
+TXT
       - uses: actions/upload-artifact@v4
         with:
           name: Ronin-Patrol-Link-v1.1.14-verified
           path: |
-            /tmp/deliver123/Ronin-Patrol-Link-v1.1.14-Exact-AnyVoiceLab.apk
-            /tmp/deliver123/Ronin-Patrol-Link-v1.1.14-VERIFICATION.txt
+            /tmp/deliver124/Ronin-Patrol-Link-v1.1.14-Exact-Pack-Coverage.apk
+            /tmp/deliver124/Ronin-Patrol-Link-v1.1.14-VERIFICATION.txt
           retention-days: 7
       - name: Upload evidence
         if: always()
@@ -154,5 +143,5 @@ jobs:
             /tmp/patrol-v124/app/build/reports/
             /tmp/patrol-v124/app/build/test-results/
             /tmp/patrol-v124/app/build/outputs/androidTest-results/
-            /tmp/deliver123/evidence/
+            /tmp/deliver124/evidence/
           retention-days: 7
