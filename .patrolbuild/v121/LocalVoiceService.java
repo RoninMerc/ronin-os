@@ -21,6 +21,23 @@ public final class LocalVoiceService extends Service {
     });
     private OfflineTts model;
     private Messenger endpoint;
+
+    /**
+     * JNI resolves invoke(float[]) returning Integer, not the erased Function1.invoke(Object).
+     * An explicitly typed method is required: a Java lambda only supplies the erased method.
+     */
+    public static final class GenerationCallback implements kotlin.jvm.functions.Function1<float[], Integer> {
+        private final AtomicLong epoch;
+        private final long generation;
+        public GenerationCallback(AtomicLong epoch, long generation) {
+            this.epoch = epoch;
+            this.generation = generation;
+        }
+        @Override public Integer invoke(float[] samples) {
+            return Integer.valueOf(generation == epoch.get() ? 1 : 0);
+        }
+    }
+
     @Override public void onCreate() {
         super.onCreate();
         endpoint = new Messenger(new Handler(Looper.getMainLooper(), m -> {
@@ -66,7 +83,7 @@ public final class LocalVoiceService extends Service {
                 send(reply, PROGRESS, token, profile, "Generating complete announcement locally", "", 0);
                 GenerationConfig gc = new GenerationConfig(); gc.setReferenceAudio(VoiceReference.read(reference)); gc.setReferenceSampleRate(VoiceReference.RATE);
                 gc.setNumSteps(5); gc.setSpeed(1f); gc.setSilenceScale(.15f);
-                GeneratedAudio generated = model.generateWithConfigAndCallback(text, gc, samples -> generation == epoch.get() ? 1 : 0);
+                GeneratedAudio generated = model.generateWithConfigAndCallback(text, gc, new GenerationCallback(epoch, generation));
                 if (generation != epoch.get()) return;
                 if (generated.getSamples() == null || generated.getSamples().length < generated.getSampleRate() / 2) throw new IOException("The local model returned no usable speech.");
                 File temporary = new File(dir, audio.getName() + ".tmp");
