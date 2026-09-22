@@ -107,26 +107,30 @@ jobs:
           grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver124/evidence/APK-SIGNATURE.txt
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver124/evidence/PACKAGE.txt
           sha256sum "$APK" > /tmp/deliver124/evidence/SHA256SUMS.txt
-          cat > /tmp/deliver124/Ronin-Patrol-Link-v1.1.14-VERIFICATION.txt <<'TXT'
-RONIN PATROL LINK 1.1.14 — EXACT PACK COVERAGE FIX
-
-This release retains the v1.1.13 exact AnyVoiceLab recording architecture.
-No TTS, no voice reconstruction, no ElevenLabs and no Android system voice.
-
-FIXES:
-- Test exact voice now plays an actually installed recording (prefers "Silvertracker update") rather than requiring a hard-coded "Impeccable" clip.
-- Fresh phrase-pack scripts include both each complete recent spoken announcement and each sentence component that live playback may need.
-- Editing speech wording marks the exact pack as potentially needing regeneration, rather than implying the current pack definitely covers new wording.
-- Refresh/TLS logic is unchanged from the working monitor build.
-
-INSTALL:
-Install over v1.1.13. Do not uninstall or clear app data. The existing Eve exact pack remains installed.
-If live diagnostics later report a genuinely missing phrase, copy a fresh exact phrase-pack script and regenerate/import that pack.
-
-TEST SCOPE:
-Compilation, unit tests, browser parser regressions, Android 16 refresh/TLS tests and exact phrase-pack split/import regressions passed in CI.
-No physical Samsung handset, live authenticated Silvertracker shift or Bluetooth/car audio route was tested.
-TXT
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = [
+              'RONIN PATROL LINK 1.1.14 — EXACT PACK COVERAGE FIX',
+              '',
+              'This release retains the v1.1.13 exact AnyVoiceLab recording architecture.',
+              'No TTS, no voice reconstruction, no ElevenLabs and no Android system voice.',
+              '',
+              'FIXES:',
+              '- Test exact voice now plays an actually installed recording (prefers "Silvertracker update") rather than requiring a hard-coded "Impeccable" clip.',
+              '- Fresh phrase-pack scripts include both each complete recent spoken announcement and each sentence component that live playback may need.',
+              '- Editing speech wording marks the exact pack as potentially needing regeneration, rather than implying the current pack definitely covers new wording.',
+              '- Refresh/TLS logic is unchanged from the working monitor build.',
+              '',
+              'INSTALL:',
+              'Install over v1.1.13. Do not uninstall or clear app data. The existing Eve exact pack remains installed.',
+              'If live diagnostics later report a genuinely missing phrase, copy a fresh exact phrase-pack script and regenerate/import that pack.',
+              '',
+              'TEST SCOPE:',
+              'Compilation, unit tests, browser parser regressions, Android 16 refresh/TLS tests and exact phrase-pack split/import regressions passed in CI.',
+              'No physical Samsung handset, live authenticated Silvertracker shift or Bluetooth/car audio route was tested.'
+          ]
+          Path('/tmp/deliver124/Ronin-Patrol-Link-v1.1.14-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: Ronin-Patrol-Link-v1.1.14-verified
