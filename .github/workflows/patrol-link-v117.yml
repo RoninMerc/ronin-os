@@ -48,7 +48,14 @@ jobs:
           cp .patrolbuild/VoiceManager.java /tmp/patrol-v117/app/src/main/java/au/com/roningroup/patrollink/VoiceManager.java
           python3 .patrolbuild/v117-patch.py /tmp/patrol-v117
           mkdir -p /tmp/patrol-v117/app/src/main/res/raw
-          for f in scan breach incident generic; do base64 -d .patrolbuild/felicity_\${f}.ogg.b64 > /tmp/patrol-v117/app/src/main/res/raw/felicity_\${f}.ogg; done
+          base64 -d .patrolbuild/felicity_scan.ogg.b64 > /tmp/patrol-v117/app/src/main/res/raw/felicity_scan.ogg
+          base64 -d .patrolbuild/felicity_breach.ogg.b64 > /tmp/patrol-v117/app/src/main/res/raw/felicity_breach.ogg
+          cat .patrolbuild/felicity_incident.ogg.b64.part* | base64 -d > /tmp/patrol-v117/app/src/main/res/raw/felicity_incident.ogg
+          cat .patrolbuild/felicity_generic.ogg.b64.part* | base64 -d > /tmp/patrol-v117/app/src/main/res/raw/felicity_generic.ogg
+          test "$(wc -c < /tmp/patrol-v117/app/src/main/res/raw/felicity_scan.ogg)" -gt 5000
+          test "$(wc -c < /tmp/patrol-v117/app/src/main/res/raw/felicity_breach.ogg)" -gt 5000
+          test "$(wc -c < /tmp/patrol-v117/app/src/main/res/raw/felicity_incident.ogg)" -gt 10000
+          test "$(wc -c < /tmp/patrol-v117/app/src/main/res/raw/felicity_generic.ogg)" -gt 10000
           grep -q 'versionCode 117' /tmp/patrol-v117/app/build.gradle
           grep -q "versionName '1.1.7'" /tmp/patrol-v117/app/build.gradle
           grep -q 'class VoiceManager' /tmp/patrol-v117/app/src/main/java/au/com/roningroup/patrollink/VoiceManager.java
