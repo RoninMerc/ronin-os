@@ -5,17 +5,20 @@ import android.content.res.AssetFileDescriptor;
 import android.media.*;
 import android.net.Uri;
 import android.os.*;
+import android.speech.tts.*;
 import org.json.*;
 import java.io.*;
 import java.util.*;
 
 /**
- * Lightweight Patrol Link voice-pack player.
+ * Patrol Link voice layer.
  *
- * Felicity is bundled as clean pre-recorded alert clips. Imported profiles use the exact
- * Patrol Link training-script recording: the app stores the audio locally and replays the
- * event-type phrases from their known positions. This deliberately does not run a large
- * voice-cloning model on the patrol phone, so monitoring remains independent and responsive.
+ * A selected voice pack (Felicity by default) supplies the recognisable event alert.
+ * The complete live activity is then spoken by Android's best available offline English
+ * TTS voice so arbitrary Silvertracker issue text and property/location names are never
+ * reduced to a generic "update available" message.
+ *
+ * Voice playback is intentionally isolated from the Silvertracker refresh loop.
  */
 public final class VoiceManager {
     public static final String DEFAULT_ID = "felicity";
@@ -25,7 +28,6 @@ public final class VoiceManager {
     private static final long BASE_DURATION_MS = 308_290L;
     private static final long MAX_IMPORT_BYTES = 120L * 1024L * 1024L;
 
-    // Positions in the exact training script supplied for Patrol Link.
     private static final long SCAN_START = 44_100L, SCAN_END = 45_320L;
     private static final long BREACH_START = 45_530L, BREACH_END = 46_880L;
     private static final long INCIDENT_START = 47_070L, INCIDENT_END = 48_590L;
@@ -40,12 +42,25 @@ public final class VoiceManager {
         }
     }
 
+    private static final class Announcement {
+        final String token, kind, detail;
+        Announcement(String kind, String detail) {
+            this.token=UUID.randomUUID().toString();
+            this.kind=kind;
+            this.detail=detail;
+        }
+    }
+
     private final Context context;
     private final SharedPreferences prefs;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ArrayDeque<String> queue = new ArrayDeque<>();
+    private final ArrayDeque<Announcement> queue = new ArrayDeque<>();
     private MediaPlayer player;
     private Runnable stopRunnable;
+    private Announcement current;
+    private TextToSpeech tts;
+    private boolean ttsReady;
+    private String ttsVoiceName="initialising";
 
     public VoiceManager(Context context, SharedPreferences prefs) {
         this.context=context.getApplicationContext(); this.prefs=prefs;
@@ -53,10 +68,63 @@ public final class VoiceManager {
         if (!prefs.contains(PREF_ACTIVE)) init.putString(PREF_ACTIVE, DEFAULT_ID);
         if (!prefs.getBoolean("voice_v117_migrated",false)) init.putBoolean("voice",true).putBoolean("voice_v117_migrated",true);
         init.apply();
+        initTts();
+    }
+
+    private void initTts() {
+        try {
+            tts=new TextToSpeech(context,status->{
+                if(status!=TextToSpeech.SUCCESS||tts==null) { ttsReady=false; ttsVoiceName="unavailable"; return; }
+                try {
+                    Voice chosen=chooseVoice(tts.getVoices());
+                    if(chosen!=null) {
+                        tts.setVoice(chosen);
+                        ttsVoiceName=chosen.getName();
+                    } else {
+                        tts.setLanguage(Locale.UK);
+                        Voice v=tts.getVoice();
+                        ttsVoiceName=v==null?"default English":v.getName();
+                    }
+                    tts.setSpeechRate(0.96f);
+                    tts.setPitch(1.0f);
+                    tts.setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+                    tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                        @Override public void onStart(String utteranceId) {}
+                        @Override public void onDone(String utteranceId) { handler.post(()->ttsFinished(utteranceId)); }
+                        @Override public void onError(String utteranceId) { handler.post(()->ttsFinished(utteranceId)); }
+                        @Override public void onError(String utteranceId,int errorCode) { handler.post(()->ttsFinished(utteranceId)); }
+                    });
+                    ttsReady=true;
+                } catch(Exception e) { ttsReady=false; ttsVoiceName="unavailable"; }
+            });
+        } catch(Exception e) { ttsReady=false; ttsVoiceName="unavailable"; }
+    }
+
+    private static Voice chooseVoice(Set<Voice> voices) {
+        if(voices==null||voices.isEmpty()) return null;
+        Voice best=null; int bestScore=Integer.MIN_VALUE;
+        for(Voice v:voices) {
+            if(v==null||v.getLocale()==null||!"en".equalsIgnoreCase(v.getLocale().getLanguage())) continue;
+            int score=0;
+            if(!v.isNetworkConnectionRequired()) score+=100;
+            String country=v.getLocale().getCountry();
+            if("GB".equalsIgnoreCase(country)) score+=35;
+            else if("AU".equalsIgnoreCase(country)) score+=30;
+            else if("NZ".equalsIgnoreCase(country)) score+=25;
+            String n=v.getName()==null?"":v.getName().toLowerCase(Locale.ROOT);
+            if(n.contains("en-gb-x-gba")||n.contains("en-au-x-aua")) score+=20;
+            if(n.contains("local")) score+=10;
+            if(v.getQuality()>=Voice.QUALITY_HIGH) score+=5;
+            if(score>bestScore){best=v;bestScore=score;}
+        }
+        return best;
     }
 
     public String activeName() { return activeProfile().name; }
-    public boolean ready() { return activeProfile()!=null; }
+    public boolean ready() { return activeProfile()!=null && ttsReady; }
+    public String dynamicVoiceName() { return ttsVoiceName; }
 
     public List<Profile> profiles() {
         ArrayList<Profile> out=new ArrayList<>();
@@ -127,51 +195,138 @@ public final class VoiceManager {
     }
 
     public void speak(Observation o) {
-        if(o==null) return; String a=o.activity()==null?"":o.activity().toLowerCase(Locale.ROOT);
-        if(a.contains("breach")||a.contains("parking")) enqueue("breach");
-        else if(a.contains("scan")) enqueue("scan");
-        else if(a.contains("incident")||a.contains("report")||a.contains("suspicious")||a.contains("alarm")) enqueue("incident");
-        else enqueue("generic");
+        if(o==null) return;
+        String activity=clean(o.activity()), location=clean(o.locationLine()), guard=clean(o.guard);
+        String lower=activity.toLowerCase(Locale.ROOT);
+        String kind=(lower.contains("breach")||lower.contains("parking"))?"breach":
+                lower.contains("scan")?"scan":
+                (lower.contains("incident")||lower.contains("report")||lower.contains("suspicious")||lower.contains("alarm"))?"incident":"generic";
+        String detail=fullReadout(activity,location,guard);
+        enqueue(new Announcement(kind,detail));
     }
-    public void test() { enqueue("generic"); }
 
-    private synchronized void enqueue(String kind) {
-        if(queue.size()>8) queue.pollFirst(); queue.addLast(kind); if(player==null) playNext();
+    private static String fullReadout(String activity,String location,String guard) {
+        StringBuilder b=new StringBuilder();
+        if(!activity.isEmpty()) b.append(activity);
+        if(!location.isEmpty()&&!containsNormalised(activity,location)) {
+            if(b.length()>0) b.append(". ");
+            b.append(location);
+        }
+        if(!guard.isEmpty()) {
+            if(b.length()>0) b.append(". ");
+            b.append("Guard ").append(spokenGuard(guard));
+        }
+        if(b.length()==0) b.append("New patrol activity");
+        b.append(".");
+        return b.toString().replace("..",".");
     }
+
+    private static boolean containsNormalised(String a,String b) {
+        String aa=a.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+","");
+        String bb=b.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+","");
+        return !bb.isEmpty()&&aa.contains(bb);
+    }
+
+    private static String spokenGuard(String s) {
+        return s.replace('.', ' ').replace('_',' ').replaceAll("\\s+"," ").trim();
+    }
+
+    private static String clean(String s) {
+        if(s==null) return "";
+        return s.replace('\n',' ').replace('\r',' ').replaceAll("\\s+"," ").trim();
+    }
+
+    public void test() {
+        enqueue(new Announcement("generic","Voice test. Full activity and location readout are working."));
+    }
+
+    private synchronized void enqueue(Announcement item) {
+        if(queue.size()>10) queue.pollFirst();
+        queue.addLast(item);
+        if(current==null) playNext();
+    }
+
     private synchronized void playNext() {
-        String kind=queue.pollFirst(); if(kind==null) return;
+        if(current!=null) return;
+        current=queue.pollFirst();
+        if(current==null) return;
+        playPrefix(current);
+    }
+
+    private void playPrefix(Announcement item) {
         Profile p=activeProfile();
         try {
             MediaPlayer mp=new MediaPlayer(); player=mp;
             mp.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
             if(p.builtIn) {
-                int res=kind.equals("scan")?R.raw.felicity_scan:kind.equals("breach")?R.raw.felicity_breach:kind.equals("incident")?R.raw.felicity_incident:R.raw.felicity_generic;
+                int res=item.kind.equals("scan")?R.raw.felicity_scan:item.kind.equals("breach")?R.raw.felicity_breach:item.kind.equals("incident")?R.raw.felicity_incident:R.raw.felicity_generic;
                 AssetFileDescriptor afd=context.getResources().openRawResourceFd(res);
                 mp.setDataSource(afd.getFileDescriptor(),afd.getStartOffset(),afd.getLength()); afd.close();
-                mp.setOnCompletionListener(x->finishCurrent()); mp.prepare(); mp.start();
+                mp.setOnCompletionListener(x->handler.post(()->prefixFinished(item.token)));
+                mp.setOnErrorListener((x,what,extra)->{handler.post(()->prefixFinished(item.token));return true;});
+                mp.prepare(); mp.start();
             } else {
-                long[] seg=segment(kind,p.durationMs); int start=(int)Math.max(0,Math.min(Integer.MAX_VALUE,seg[0])); long length=Math.max(300,seg[1]-seg[0]);
-                mp.setDataSource(p.path); mp.setOnErrorListener((x,what,extra)->{finishCurrent();return true;});
-                mp.setOnPreparedListener(x->{ try { x.seekTo(start,MediaPlayer.SEEK_CLOSEST); x.start(); scheduleStop(length); } catch(Exception e){finishCurrent();} });
+                long[] seg=segment(item.kind,p.durationMs); int start=(int)Math.max(0,Math.min(Integer.MAX_VALUE,seg[0])); long length=Math.max(300,seg[1]-seg[0]);
+                mp.setDataSource(p.path);
+                mp.setOnErrorListener((x,what,extra)->{handler.post(()->prefixFinished(item.token));return true;});
+                mp.setOnPreparedListener(x->{ try { x.seekTo(start,MediaPlayer.SEEK_CLOSEST); x.start(); scheduleStop(item.token,length); } catch(Exception e){handler.post(()->prefixFinished(item.token));} });
                 mp.prepareAsync();
             }
-        } catch(Exception e) { finishCurrent(); }
+        } catch(Exception e) { handler.post(()->prefixFinished(item.token)); }
     }
+
+    private synchronized void prefixFinished(String token) {
+        if(current==null||!current.token.equals(token)) return;
+        if(stopRunnable!=null){handler.removeCallbacks(stopRunnable);stopRunnable=null;}
+        if(player!=null){try{player.stop();}catch(Exception ignored){} try{player.release();}catch(Exception ignored){} player=null;}
+        speakDetail(token,0);
+    }
+
+    private void speakDetail(String token,int attempt) {
+        Announcement item;
+        synchronized(this){ if(current==null||!current.token.equals(token)) return; item=current; }
+        if(!ttsReady||tts==null) {
+            if(attempt<12) { handler.postDelayed(()->speakDetail(token,attempt+1),250); return; }
+            finishAnnouncement(token);
+            return;
+        }
+        try {
+            int result=tts.speak(item.detail,TextToSpeech.QUEUE_FLUSH,null,"patrol-detail-"+token);
+            if(result==TextToSpeech.ERROR) finishAnnouncement(token);
+        } catch(Exception e) { finishAnnouncement(token); }
+    }
+
+    private void ttsFinished(String utteranceId) {
+        if(utteranceId==null||!utteranceId.startsWith("patrol-detail-")) return;
+        finishAnnouncement(utteranceId.substring("patrol-detail-".length()));
+    }
+
     private long[] segment(String kind,long duration) {
         long s=GENERIC_START,e=GENERIC_END;
         if(kind.equals("scan")){s=SCAN_START;e=SCAN_END;} else if(kind.equals("breach")){s=BREACH_START;e=BREACH_END;} else if(kind.equals("incident")){s=INCIDENT_START;e=INCIDENT_END;}
         double scale=(double)duration/(double)BASE_DURATION_MS;
         return new long[]{Math.round(s*scale),Math.round(e*scale)};
     }
-    private synchronized void scheduleStop(long ms) {
+
+    private synchronized void scheduleStop(String token,long ms) {
         if(stopRunnable!=null) handler.removeCallbacks(stopRunnable);
-        stopRunnable=()->finishCurrent(); handler.postDelayed(stopRunnable,ms);
+        stopRunnable=()->prefixFinished(token); handler.postDelayed(stopRunnable,ms);
     }
-    private synchronized void finishCurrent() {
+
+    private synchronized void finishAnnouncement(String token) {
+        if(current==null||!current.token.equals(token)) return;
         if(stopRunnable!=null){handler.removeCallbacks(stopRunnable);stopRunnable=null;}
         if(player!=null){try{player.stop();}catch(Exception ignored){} try{player.release();}catch(Exception ignored){} player=null;}
+        current=null;
         handler.post(this::playNext);
     }
-    public synchronized void stop() { queue.clear(); if(stopRunnable!=null){handler.removeCallbacks(stopRunnable);stopRunnable=null;} if(player!=null){try{player.stop();}catch(Exception ignored){} try{player.release();}catch(Exception ignored){} player=null;} }
+
+    public synchronized void stop() {
+        queue.clear();
+        if(stopRunnable!=null){handler.removeCallbacks(stopRunnable);stopRunnable=null;}
+        if(player!=null){try{player.stop();}catch(Exception ignored){} try{player.release();}catch(Exception ignored){} player=null;}
+        if(tts!=null) { try{tts.stop();}catch(Exception ignored){} }
+        current=null;
+    }
 }
