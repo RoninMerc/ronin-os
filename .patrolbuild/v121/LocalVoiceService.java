@@ -48,11 +48,12 @@ public final class LocalVoiceService extends Service {
         String token = data.getString("token", ""); String profile = data.getString("profile", "");
         long started = SystemClock.elapsedRealtime();
         try {
-            if (generation != epoch.get()) return;
+            // Model readiness survives speech cancellation and voice switching during load.
+            if (!warm && generation != epoch.get()) return;
             send(reply, PROGRESS, token, profile, "Loading local voice model", "", 0);
             loadModel();
-            if (generation != epoch.get()) return;
             if (warm) { send(reply, READY, token, profile, "Local model loaded", "", SystemClock.elapsedRealtime() - started); return; }
+            if (generation != epoch.get()) return;
             String text = data.getString("text", "");
             if (text.trim().isEmpty() || text.length() > 12000) throw new IOException("The activity text is empty or too long to speak safely.");
             File reference = new File(data.getString("reference", ""));
@@ -77,7 +78,8 @@ public final class LocalVoiceService extends Service {
             prune(dir, audio);
             send(reply, AUDIO, token, profile, "Complete announcement generated", audio.getAbsolutePath(), SystemClock.elapsedRealtime() - started);
         } catch (Exception | LinkageError e) {
-            if (generation == epoch.get()) send(reply, ERROR, token, profile, "Local voice generation failed: " + e.getClass().getSimpleName(), "", SystemClock.elapsedRealtime() - started);
+            android.util.Log.e("PatrolLocalVoice", "Offline voice request failed", e);
+            if (warm || generation == epoch.get()) send(reply, ERROR, token, profile, "Local voice generation failed: " + e.getClass().getSimpleName(), "", SystemClock.elapsedRealtime() - started);
         }
     }
     private static void send(Messenger target, int type, String token, String profile, String status, String path, long ms) {
