@@ -95,6 +95,12 @@ public class TlsRecoveryTest {
             scenario.onActivity(a->{
                 PatrolEngine e=((PatrolApp)a.getApplication()).engine();
                 e.stopRuntime("TEST_SETUP","Controlled TLS fixture setup");
+                // ActivityScenario shares the Application between tests. Remove the preceding
+                // lifecycle test's interceptor rather than wrapping a stale test WebViewClient.
+                try {
+                    java.lang.reflect.Method reset=PatrolEngine.class.getDeclaredMethod("resetRenderer");
+                    reset.setAccessible(true);reset.invoke(e);
+                } catch(Exception ex) { throw new AssertionError("Could not isolate production browser client",ex); }
                 e.prefs.edit().putString("guard0","D.DEO").putString("guard1","D.ROGERS1").putString("guard2","T.MURD").apply();
                 WebView w=e.webView();
                 w.clearSslPreferences();
@@ -131,7 +137,7 @@ public class TlsRecoveryTest {
             await(scenario,"real resource certificate rejected but monitor rows accepted",20000,e->sslCallbacks.get()>0&&e.healthy()&&e.rowsFound==3&&e.selectedCount==3);
             AtomicLong baseline=new AtomicLong(); AtomicInteger before=new AtomicInteger();
             scenario.onActivity(a->{PatrolEngine e=((PatrolApp)a.getApplication()).engine();
-                assertTrue(e.diagnostics().contains("page resource (blocked)"));
+                assertTrue(e.diagnostics(),e.diagnostics().contains("page resource (blocked)"));
                 assertFalse(e.state.equals("TLS_ERROR"));baseline.set(e.lastRead);before.set(requests.get());
             });
             await(scenario,"automatic 30-second cycle after asset certificate rejection",45000,e->requests.get()>before.get()&&e.healthy()&&e.lastRead>baseline.get());
@@ -141,7 +147,7 @@ public class TlsRecoveryTest {
             await(scenario,"main-document TLS failure surfaced",15000,e->e.state.equals("TLS_ERROR"));
             scenario.onActivity(a->{PatrolEngine e=((PatrolApp)a.getApplication()).engine();
                 assertEquals(baseline.get(),e.lastRead);assertFalse(e.healthy());
-                assertTrue(e.diagnostics().contains("Last TLS scope: main document"));
+                assertTrue(e.diagnostics(),e.diagnostics().contains("Last TLS scope: main document"));
                 assertTrue(e.sourceStatus().contains("RETRYING"));before.set(requests.get());
             });
             // No tap, inspectNow, openMonitor or timer override: wait for the actual scheduler.
@@ -155,7 +161,7 @@ public class TlsRecoveryTest {
             await(scenario,"non-recoverable TLS handshake failure surfaced",15000,e->e.state.equals("TLS_ERROR"));
             scenario.onActivity(a->{PatrolEngine e=((PatrolApp)a.getApplication()).engine();
                 assertEquals(baseline.get(),e.lastRead);assertFalse(e.healthy());
-                assertTrue(e.diagnostics().contains("Last network error code: -11"));
+                assertTrue(e.diagnostics(),e.diagnostics().contains("Last network error code: -11"));
             });
             await(scenario,"automatic recovery after non-recoverable-handshake callback",45000,e->requests.get()>before.get()&&e.healthy()&&e.lastRead>baseline.get());
             scenario.onActivity(a->{PatrolEngine e=((PatrolApp)a.getApplication()).engine();
