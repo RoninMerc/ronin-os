@@ -1,0 +1,164 @@
+Silvertracker update
+New Silvertracker update
+New activity
+New patrol activity
+Tristan
+Dylan
+Dean
+T Murd
+D Deo
+D Rogers 1
+General Patrol
+Guard Patrol
+General Patrol - Impeccable
+General Patrol - Impeccable BC
+General Patrol - Impeccable body corporate
+Guard Patrol - Impeccable
+Guard Patrol - Impeccable body corporate
+General Patrol - Solo
+Guard Patrol - Solo
+General Patrol - Serenade
+General Patrol - Serenade BC
+General Patrol - Serenade body corporate
+Guard Patrol - Serenade
+General Patrol - Western Bay
+General Patrol - Western Bay BC
+General Patrol - Western Bay body corporate
+Guard Patrol - Western Bay
+General Patrol - Slipstream
+General Patrol - Slipstream BC
+General Patrol - Slipstream body corporate
+Guard Patrol - Slipstream
+General Patrol - Balmara Place
+General Patrol - Balmara BC
+General Patrol - Balmara body corporate
+Guard Patrol - Balmara Place
+General Patrol - Eolo
+General Patrol - Eolo BC
+General Patrol - Eolo body corporate
+Guard Patrol - Eolo
+General Patrol - Christina RBC
+General Patrol - Christina
+Guard Patrol - Christina RBC
+General Patrol - Tradition Place
+General Patrol - Tradition BC
+General Patrol - Tradition body corporate
+Guard Patrol - Tradition Place
+General Patrol - Quest
+Guard Patrol - Quest
+Scan point
+Patrol scan point
+Scan point recorded
+Patrol scan recorded
+General patrol scan point
+Patrol check completed
+Area check completed
+Parking breach
+Parking breach one
+Parking breach two
+Parking breach three
+First warning parking breach
+Second warning parking breach
+Third warning parking breach
+Parking breach - first warning
+Parking breach - second warning
+Parking breach - third warning
+First breach
+Second breach
+Third breach
+Visitor parking breach
+Resident parking breach
+Vehicle breach
+Parking breach recorded
+New parking breach
+Suspicious vehicle
+Suspicious vehicle report
+Suspicious vehicle observed
+Incident report
+New incident report
+Security incident
+Activity report
+General report
+Recreation centre locked
+Recreation centre unlocked
+Rec centre locked
+Rec centre unlocked
+Recreation centre check completed
+Gate locked
+Gate unlocked
+Gate check completed
+Building locked
+Building unlocked
+Facility locked
+Facility unlocked
+Vehicle observed
+Vehicle check completed
+No issues observed
+Nothing further to report
+Zero
+One
+Two
+Three
+Four
+Five
+Six
+Seven
+Eight
+Nine
+First
+Second
+Third
+Warning
+First warning
+Second warning
+Third warning
+Registration
+Vehicle registration
+Number plate
+Alpha
+Bravo
+Charlie
+Delta
+Echo
+Foxtrot
+Golf
+Hotel
+India
+Juliet
+Kilo
+Lima
+Mike
+November
+Oscar
+Papa
+Quebec
+Romeo
+Sierra
+Tango
+Uniform
+Victor
+Whiskey
+X-ray
+Yankee
+Zulu
+Body corporate
+BC
+RBC
+Visitor car park
+Visitor parking
+Resident parking
+Common property
+Recreation centre
+Entrance
+Exit
+Gate
+Driveway
+Car park
+Western entrance
+Eastern entrance
+Northern boundary
+Southern boundary
+No further action required
+Monitoring continues
+Patrol continues
+End of update
