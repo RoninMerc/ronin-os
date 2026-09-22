@@ -1,7 +1,7 @@
 name: Vanta 0.16 - Output Limit Resilience
 on:
   push:
-    branches: ['build/vanta-android-016-output-resume']
+    branches: ['build/vanta-android-016-final']
     paths: ['vanta/v012/**','vanta/v013/**','vanta/v014/**','vanta/v015/**','vanta/v016/**','.github/workflows/vanta-016.yml']
   workflow_dispatch:
 permissions: {contents: read, actions: read}
