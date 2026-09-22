@@ -50,6 +50,7 @@ jobs:
           python3 vanta/v016/review.py
           java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
           python3 vanta/v017/apply.py
+          python3 vanta/v017/review.py
           java -jar baseline/reference/format.jar --replace $(find vanta/personal/app/src -name '*.java')
           for name in field-release-qa.apk field-test.apk field-demo-qa.apk field-demo-test.apk; do cp baseline/$name distribution/; done
           cp baseline/apksigner.jar distribution/
