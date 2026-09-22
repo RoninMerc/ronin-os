@@ -15,6 +15,10 @@ p.write_text(s)
 for name in ['VoiceManager.java','ExactPhrasePack.java']:
     shutil.copyfile(payload/name,java/name)
 
+# Remove the prior synthesis worker entirely; exact mode has no voice model.
+old_worker=java/'LocalVoiceService.java'
+if old_worker.exists(): old_worker.unlink()
+
 # Exact website recording is authoritative: a full alert override is the complete spoken sentence.
 p=java/'SpeechPreferences.java';s=p.read_text()
 old='''    public synchronized String format(Observation row) {
