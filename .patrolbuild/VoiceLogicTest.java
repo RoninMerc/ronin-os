@@ -3,10 +3,10 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 import java.io.*;
 public class VoiceLogicTest {
- @Test public void breachIncludesGuardMatterAndLocation(){assertEquals("T MURD. Third warning parking breach. Impeccable.",VoiceReadout.format("T.MURD","Third warning parking breach","Impeccable"));}
- @Test public void scanKeepsSite(){assertEquals("D DEO. Patrol scan point. Christina RBC.",VoiceReadout.format("D.DEO","Patrol scan point","Christina RBC"));}
- @Test public void doesNotInventWarningLevel(){String s=VoiceReadout.format("D.ROGERS1","Parking Breach 3","Solo");assertTrue(s.contains("Parking Breach 3"));assertFalse(s.contains("third warning"));assertTrue(s.endsWith("Solo."));}
- @Test public void locationAlreadyPresentOnce(){assertEquals("D DEO. General Patrol - Serenade BC.",VoiceReadout.format("D.DEO","General Patrol - Serenade BC","Serenade BC"));}
+ @Test public void breachIncludesGuardMatterAndLocation(){assertEquals("Guard T dot Murd recorded Third warning parking breach at Impeccable.",VoiceReadout.format("T.MURD","Third warning parking breach","Impeccable"));}
+ @Test public void scanKeepsSite(){assertEquals("Guard D dot Deo recorded Patrol scan point at Christina RBC.",VoiceReadout.format("D.DEO","Patrol scan point","Christina RBC"));}
+ @Test public void doesNotInventWarningLevel(){String s=VoiceReadout.format("D.ROGERS1","Parking Breach 3","Solo");assertTrue(s.contains("Parking Breach 3"));assertFalse(s.contains("third warning"));assertTrue(s.contains("D dot Rogers 1"));assertTrue(s.endsWith("Solo."));}
+ @Test public void locationAlreadyPresentOnce(){assertEquals("Guard D dot Deo recorded General Patrol - Serenade BC.",VoiceReadout.format("D.DEO","General Patrol - Serenade BC","Serenade BC"));}
  @Test public void substringCannotHideDifferentSite(){assertTrue(VoiceReadout.format("T.MURD","Patrol at Solomon","Solo").endsWith("Solo."));}
  @Test public void missingDataNotGuessed(){assertEquals("Guard not supplied. Activity details not supplied. Location not supplied.",VoiceReadout.format("","",""));}
  @Test public void longMatterIsNotTruncated(){String s="Detailed issue "+"additional details ".repeat(120);String out=VoiceReadout.format("T.MURD",s,"Western Bay");assertTrue(out.contains(s.trim()));assertTrue(out.endsWith("Western Bay."));}
