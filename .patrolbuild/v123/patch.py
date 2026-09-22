@@ -8,11 +8,9 @@ before={n:hashlib.sha256((j/n).read_bytes()).hexdigest() for n in protected}
 rep(root/'app/build.gradle','versionCode 122','versionCode 123');rep(root/'app/build.gradle',"versionName '1.1.12'","versionName '1.1.13'")
 p=root/'app/build.gradle';s=p.read_text();s=s.replace("    implementation files('libs/local-speech.aar')\n",'').replace("    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.20'\n",'');p.write_text(s)
 for name in ['ExactWav.java','RecordedSpeechStore.java','RecordingSettingsUi.java','SpeechRules.java','VoiceManager.java']:shutil.copyfile(payload/name,j/name)
-# Preparation timeout must not interrupt a longer recording.
-p=j/'VoiceManager.java';rep(p,'stage="Playing "+activeName()+" recording";deadline=', 'stage="Playing "+activeName()+" recording";if(deadline!=null)handler.removeCallbacks(deadline);deadline=')
+p=j/'VoiceManager.java'
+rep(p,'stage="Playing "+activeName()+" recording";deadline=', 'stage="Playing "+activeName()+" recording";if(deadline!=null)handler.removeCallbacks(deadline);deadline=')
 rep(p,'private Runnable listener,deadline;private int completed,failed,missing;', 'private Runnable listener,deadline;private volatile int completed,failed,missing;')
-rep(p,'        queue.addLast(new Entry(text,activeProfile(),o,preview));pump();','        queue.addLast(new Entry(text,activeProfile(),o,preview));pump();')
-# Unambiguous modern clipboard class, even with the text watcher imports.
 rep(j/'RecordingSettingsUi.java','((ClipboardManager)activity.getSystemService','((android.content.ClipboardManager)activity.getSystemService')
 (j/'LocalVoiceService.java').unlink()
 p=root/'app/src/main/AndroidManifest.xml';s=p.read_text();s=re.sub(r'<service\s+android:name="\.LocalVoiceService"[^>]*/>','',s);p.write_text(s)
@@ -34,6 +32,7 @@ u=j/'SpeechSettingsUi.java'
 rep(u,'"Replace this phrase inside longer alerts"','"Also match this wording inside longer alerts"')
 rep(u,'"Whole-alert matching ignores case and extra spaces. Phrase matching preserves the remaining words; the longest overlapping phrase wins. The property/location is still included."','"When enabled, SAY THIS INSTEAD is the entire announcement. No guard, location, introduction or unedited remainder is added. The checkbox above changes matching only, not what is spoken."')
 rep(u,'"PREVIEW — EXAMPLE ONLY"','"COMPLETE ANNOUNCEMENT — EXACT WORDS"')
+rep(u,'preview.setText(prefs.preview(id,f,s,phrase.isChecked(),enabled.isChecked(),example(item,f)));','preview.setText(enabled.isChecked()?SpeechRules.clean(s):prefs.preview(id,f,s,phrase.isChecked(),false,example(item,f)));')
 rep(u,'"Preview queued in "+engine.voices.activeName()+"."','"Plays the assigned original recording only. Missing recordings are shown in voice status."')
 rep(u,'        row(root,add,button("Refresh list",()->{prefs.remember(engine.recent());render();}));','        row(root,add,button("Refresh list",()->{prefs.remember(engine.recent());render();}));\n        root.addView(button("Record these exact phrases",()->((MainActivity)activity).recordedAnnouncements()));')
 p=u;s=p.read_text().replace('" · phrase replacement"','" · match inside longer alerts"').replace('" · whole-alert replacement"','" · complete spoken replacement"');p.write_text(s)
@@ -43,7 +42,7 @@ for p in a.glob('*.java'):
 shutil.copyfile(payload/'ExactRecordingAndroidTest.java',a/'ExactRecordingAndroidTest.java')
 t=root/'app/src/test/java/au/com/roningroup/patrollink';t.mkdir(parents=True,exist_ok=True)
 for p in t.glob('*.java'):
- if p.name not in ['CoreTest.java','SnapshotPolicyTest.java','TlsPolicyTest.java']:p.unlink()
+ if p.name not in ['CoreTest.java','CoreChecks.java','SnapshotPolicyTest.java','TlsPolicyTest.java']:p.unlink()
 shutil.copyfile(payload/'ExactSpeechTest.java',t/'ExactSpeechTest.java')
 for name,sha in before.items():assert hashlib.sha256((j/name).read_bytes()).hexdigest()==sha,(name,'unexpected monitor change')
 for p in j.glob('*.java'):
