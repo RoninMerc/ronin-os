@@ -100,4 +100,47 @@ repl('app/src/androidTest/java/com/ronin/vanta/ConnectionRecoveryDeviceTest.java
 synthetic2,
 'connection synthetic receipt')
 
+
+repl('app/src/main/java/com/ronin/vanta/MainActivity.java',
+'''    active = new Net.Call();
+    progress.setVisibility(View.VISIBLE);''',
+'''    active = new Net.Call();
+    // Production leaves this null; deterministic device tests provide the same protocol seam used
+    // by background jobs so UI preflight can exercise the real flow without reaching the network.
+    active.transport = JobEngine.get(this).testTransport;
+    progress.setVisibility(View.VISIBLE);''',
+'ui network test seam')
+
+repl('app/src/main/java/com/ronin/vanta/JobEngine.java',
+'''    } catch (Exception failure) {
+      if (job != null)''',
+'''    } catch (Exception failure) {
+      // cancel() persists CANCELLED immediately. A worker can observe the cancelled Call before that
+      // store write becomes visible; never let its cancellation exception overwrite the user's state.
+      if (call.isCancelled()) return;
+      if (job != null)''',
+'cancel state race')
+
+repl('app/src/androidTest/java/com/ronin/vanta/ProjectContinuityDeviceTest.java',
+'''      h.h.awaitText(a, "int value=1");
+      compose(a, "Write code to add date formatting", gateway);''',
+'''      h.h.awaitText(a, "int value=1");
+      long sendReadyUntil = SystemClock.elapsedRealtime() + 15000;
+      AtomicBoolean sendReady = new AtomicBoolean();
+      do {
+        a.onActivity(
+            host -> {
+              try {
+                View send = (View) TaskChoiceDeviceTest.field(host, "sendControl");
+                sendReady.set(send != null && send.isEnabled());
+              } catch (Exception x) {
+                throw new AssertionError(x);
+              }
+            });
+        if (!sendReady.get()) Thread.sleep(60);
+      } while (!sendReady.get() && SystemClock.elapsedRealtime() < sendReadyUntil);
+      assertTrue("Send control becomes ready before the next turn", sendReady.get());
+      compose(a, "Write code to add date formatting", gateway);''',
+'api29 conversation readiness')
+
 print('Applied Vanta 0.15 QA compatibility review.')
