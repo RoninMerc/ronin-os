@@ -1,0 +1,145 @@
+name: Patrol Link 1.1.13 exact recorded phrases
+on:
+  push:
+    branches: ['patrol-link-v123-exact-recordings']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-v123-exact-recordings
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct current reader and install recorded-only speech
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=/tmp/patrol-v123
+          mkdir -p "$P" /tmp/deliver123
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d >/tmp/base123.zip
+          unzip -q /tmp/base123.zip -d "$P"
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d >/tmp/overlay123.tgz
+          tar -xzf /tmp/overlay123.tgz -C "$P"
+          J="$P/app/src/main/java/au/com/roningroup/patrollink"
+          T="$P/app/src/androidTest/java/au/com/roningroup/patrollink"
+          U="$P/app/src/test/java/au/com/roningroup/patrollink"
+          mkdir -p "$T" "$U" "$P/app/src/androidTest/assets"
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py "$P"
+          cp .patrolbuild/RefreshLifecycleTest.java "$T/"
+          python3 .patrolbuild/v115-finalize.py "$P"
+          python3 .patrolbuild/v116-patch.py "$P"
+          cp .patrolbuild/TlsPolicy.java .patrolbuild/VoiceManager.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java "$U/"
+          cp .patrolbuild/TlsRecoveryTest.java "$T/"
+          python3 .patrolbuild/v117-patch.py "$P"
+          python3 .patrolbuild/v120-patch.py "$P"
+          python3 .patrolbuild/v121-patch.py "$P"
+          cp .patrolbuild/LocalSpeechTest.java "$T/"
+          python3 .patrolbuild/v121-native-fix.py "$P"
+          python3 .patrolbuild/v122/v122-patch.py "$P"
+          python3 .patrolbuild/v123/patch.py "$P"
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore "$P/app/src/androidTest/assets/tls-fixture.p12" -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+          node --check "$P/app/src/main/assets/extract.js"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Unit tests and APK compilation
+        working-directory: /tmp/patrol-v123
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Browser parser regressions
+        run: |
+          python3 -m venv /tmp/check123
+          /tmp/check123/bin/pip -q install playwright
+          /tmp/check123/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v123/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None", "shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/check123/bin/python /tmp/patrol-v123/tests/test_dom.py | tee /tmp/deliver123/DOM-TESTS.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 recorded playback and monitoring regressions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v123 && gradle --no-daemon :app:connectedDebugAndroidTest
+      - name: Verify installable update and report exact scope
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver123/Ronin-Patrol-Link-v1.1.13-Exact-Recorded-Announcements.apk
+          cp /tmp/patrol-v123/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver123/APK-VERIFICATION.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver123/APK-VERIFICATION.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver123/PACKAGE.txt
+          cp /tmp/patrol-v123/v123-core-preservation.json /tmp/deliver123/CORE-PRESERVATION.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET,json,os,hashlib
+          out=Path('/tmp/deliver123'); rows=[];unit=android=0
+          for folder,kind in [('/tmp/patrol-v123/app/build/test-results','unit'),('/tmp/patrol-v123/app/build/outputs/androidTest-results','android')]:
+              for p in Path(folder).rglob('TEST-*.xml'):
+                  for s in ET.parse(p).getroot().iter('testsuite'):
+                      d=dict(s.attrib);assert int(d.get('failures',0))==0 and int(d.get('errors',0))==0 and int(d.get('skipped',0))==0,(p,d)
+                      count=int(d.get('tests',0));unit+=count if kind=='unit' else 0;android+=count if kind=='android' else 0;rows.append(d)
+          assert unit>=29 and android>=5,(unit,android)
+          apk=next(out.glob('*.apk'));sha=hashlib.sha256(apk.read_bytes()).hexdigest()
+          report=['RONIN PATROL LINK 1.1.13 — EXACT RECORDED ANNOUNCEMENTS',
+          'Commit: '+os.environ['GITHUB_SHA'],'Run: '+os.environ['GITHUB_RUN_ID'],
+          'APK: '+apk.name,'Bytes: '+str(apk.stat().st_size),'SHA-256: '+sha,
+          'Unit tests: '+str(unit)+'; Android 16 tests: '+str(android),
+          '',
+          'Enabled replacements are the ENTIRE final message. No guard, location, recorded, introduction or unedited remainder is appended. The contains-phrase checkbox changes matching only.',
+          'Speech is direct PCM16 WAV playback of an explicitly assigned section. At 1x the selected PCM samples are copied without gain, resampling, cloning or voice reconstruction.',
+          'Each mapping is scoped to selected voice ID and exact final phrase. A different voice cannot reuse its recording. Changed text needs a corresponding new recording.',
+          'Recording script is generated from saved overrides and received issue/property entries for currently selected guards. It is not an exhaustive list of unseen Silvertracker alerts.',
+          'Original source WAV is stored unchanged. Pause detection only suggests section boundaries; the user must listen and confirm exact words before assignment.',
+          'Speech speed setting: 0.75x–1.50x; 1.00x is original timing. Other rates use Android pitch-preserving playback, not speech generation.',
+          'IMPORTANT: This is a recording-setup build. It does not contain a completed Felicity site-vocabulary pack. Import the website-generated WAV and assign the actual alert phrases before relying on spoken live updates.',
+          'No missing phrase is replaced by a generic alert, generated approximation, cloud voice or Android TTS. Missing audio is shown visibly as Recording needed.',
+          'The working PatrolEngine, Observation, FeedReducer, TimeParser and TLS policy source hashes are unchanged from reconstructed 1.1.12.',
+          'Tests use synthetic PCM fixtures for playback/byte integrity and controlled monitor feeds. They do not verify the words or voice identity in the user recording, a physical Samsung, or a whole shift.',
+          'No user voice recording was uploaded to the repository or a voice provider by this build.',
+          'Compatibility signing certificate matches the existing sideloaded update; previous disclosure of the legacy test key is not remediated by this build.']
+          (out/'VERIFICATION.txt').write_text('\n'.join(report)+'\n')
+          (out/'TEST-RESULTS.json').write_text(json.dumps(rows,indent=2))
+          (out/'INSTALL.txt').write_text('Recording-setup update: install the APK over 1.1.12 without clearing data.\nOpen Exact recorded announcements, save final wording, copy the real recording script, generate it in the selected website voice, import the PCM16 WAV and review/assign sections.\nUntil a phrase has a recording, its live event is shown on the dashboard but no speech is generated. There is no fallback voice.\nAn existing general training sample is not a completed recording of unspoken site-specific phrases.\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v123-exact-recordings-tested
+          path: /tmp/deliver123/*
+          retention-days: 7
+      - name: Retain test evidence and changed source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v123-evidence
+          path: |
+            /tmp/patrol-v123/app/build/reports/
+            /tmp/patrol-v123/app/build/test-results/
+            /tmp/patrol-v123/app/build/outputs/androidTest-results/
+            /tmp/patrol-v123/app/src/main/java/
+            /tmp/patrol-v123/app/src/main/AndroidManifest.xml
+            /tmp/patrol-v123/app/build.gradle
+          retention-days: 7
