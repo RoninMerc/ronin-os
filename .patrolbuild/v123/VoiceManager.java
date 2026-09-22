@@ -149,7 +149,9 @@ public final class VoiceManager {
             add(unique,e.original);if(e.edited())add(unique,e.replacement);
         }
         if(recent!=null)for(Observation o:recent){
-            add(unique,speechSettings.format(o));
+            String formatted=speechSettings.format(o);
+            add(unique,formatted);
+            addAnnouncementParts(unique,formatted);
             add(unique,SpeechRules.guard(o.guard,speechSettings.nicknames()));
             add(unique,SpeechRules.exact(o.issue,speechSettings.overrides(SpeechPreferences.ALERT)));
             add(unique,SpeechRules.exact(o.property,speechSettings.overrides(SpeechPreferences.PLACE)));
@@ -175,6 +177,15 @@ public final class VoiceManager {
         String clean=SpeechRules.clean(value);
         if(clean.isEmpty())return;
         out.putIfAbsent(ExactPhrasePack.normalize(clean),clean);
+    }
+
+    private static void addAnnouncementParts(LinkedHashMap<String,String> out,String announcement){
+        if(announcement==null)return;
+        String[] parts=announcement.split("(?<=[.!?])\\s+");
+        for(String raw:parts){
+            String part=raw.replaceAll("[.!?]+$","").trim();
+            add(out,part);
+        }
     }
 
     private void savePendingManifest(String profile,List<String> phrases){
@@ -213,9 +224,31 @@ public final class VoiceManager {
     }
 
     public void preview(String text,float rate){main.post(()->enqueue(text,Math.max(.75f,Math.min(1.5f,rate))));}
-    public void test(){preview("Silvertracker update. "+SpeechRules.guard("T.MURD",speechSettings.nicknames())+". Third warning parking breach. Impeccable.",speechSettings.speed());}
+    public void test(){
+        main.post(()->{
+            if(!ready()){
+                status="Exact "+activeName()+" phrase pack required";
+                lastError="Import the exact AnyVoiceLab phrase-pack WAV first.";
+                return;
+            }
+            try{
+                LinkedHashMap<String,File> map=ExactPhrasePack.clips(context,activeProfile().id);
+                String preferred=ExactPhrasePack.normalize("Silvertracker update");
+                String phrase=map.containsKey(preferred)?"Silvertracker update":
+                        map.isEmpty()?null:map.keySet().iterator().next();
+                if(phrase==null){status="Exact phrase pack is empty";lastError=status;return;}
+                enqueue(phrase,speechSettings.speed());
+            }catch(Exception e){lastError=safe(e);status="Exact voice test failed";}
+        });
+    }
     public void readLatest(Collection<Observation> rows){if(rows!=null)for(Observation o:rows)speak(o);}
-    public void speechSettingsChanged(){stop();refreshStatus();}
+    public void speechSettingsChanged(){
+        stop();
+        if(ready()){
+            status="Speech wording changed — copy a fresh exact phrase-pack script if you added new wording";
+            lastError="";
+        }else refreshStatus();
+    }
 
     private void enqueue(String text,float speed){
         String clean=SpeechRules.clean(text);
