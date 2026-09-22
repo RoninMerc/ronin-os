@@ -8,12 +8,15 @@ before={n:hashlib.sha256((j/n).read_bytes()).hexdigest() for n in protected}
 rep(root/'app/build.gradle','versionCode 122','versionCode 123');rep(root/'app/build.gradle',"versionName '1.1.12'","versionName '1.1.13'")
 p=root/'app/build.gradle';s=p.read_text();s=s.replace("    implementation files('libs/local-speech.aar')\n",'').replace("    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.20'\n",'');p.write_text(s)
 for name in ['ExactWav.java','RecordedSpeechStore.java','RecordingSettingsUi.java','SpeechRules.java','VoiceManager.java']:shutil.copyfile(payload/name,j/name)
-# Fix playback deadline replacement; preparation timeout must not interrupt a longer recording.
+# Preparation timeout must not interrupt a longer recording.
 p=j/'VoiceManager.java';rep(p,'stage="Playing "+activeName()+" recording";deadline=', 'stage="Playing "+activeName()+" recording";if(deadline!=null)handler.removeCallbacks(deadline);deadline=')
+rep(p,'private Runnable listener,deadline;private int completed,failed,missing;', 'private Runnable listener,deadline;private volatile int completed,failed,missing;')
+rep(p,'        queue.addLast(new Entry(text,activeProfile(),o,preview));pump();','        queue.addLast(new Entry(text,activeProfile(),o,preview));pump();')
+# Unambiguous modern clipboard class, even with the text watcher imports.
+rep(j/'RecordingSettingsUi.java','((ClipboardManager)activity.getSystemService','((android.content.ClipboardManager)activity.getSystemService')
 (j/'LocalVoiceService.java').unlink()
 p=root/'app/src/main/AndroidManifest.xml';s=p.read_text();s=re.sub(r'<service\s+android:name="\.LocalVoiceService"[^>]*/>','',s);p.write_text(s)
 for path in [root/'app/src/main/assets/speech-model',root/'app/libs']:shutil.rmtree(path,ignore_errors=True)
-# Old synthesis references are preserved in phone data, not relabelled as recorded announcements.
 main=j/'MainActivity.java'
 rep(main,'    private SpeechSettingsUi speechEditor;','    private SpeechSettingsUi speechEditor;\n    private RecordingSettingsUi recordedEditor;\n    public void recordedAnnouncements(){if(recordedEditor!=null)recordedEditor.close();recordedEditor=RecordingSettingsUi.show(this,engine);}')
 rep(main,'        addCard(form,button("Alert wording & guard nicknames",false,this::speechWording));','        addCard(form,button("Exact recorded announcements",true,this::recordedAnnouncements));\n        addCard(form,button("Alert wording & guard nicknames",false,this::speechWording));')
@@ -34,7 +37,6 @@ rep(u,'"PREVIEW — EXAMPLE ONLY"','"COMPLETE ANNOUNCEMENT — EXACT WORDS"')
 rep(u,'"Preview queued in "+engine.voices.activeName()+"."','"Plays the assigned original recording only. Missing recordings are shown in voice status."')
 rep(u,'        row(root,add,button("Refresh list",()->{prefs.remember(engine.recent());render();}));','        row(root,add,button("Refresh list",()->{prefs.remember(engine.recent());render();}));\n        root.addView(button("Record these exact phrases",()->((MainActivity)activity).recordedAnnouncements()));')
 p=u;s=p.read_text().replace('" · phrase replacement"','" · match inside longer alerts"').replace('" · whole-alert replacement"','" · complete spoken replacement"');p.write_text(s)
-# This build's tests target original-audio playback; old synthesis tests no longer apply.
 a=root/'app/src/androidTest/java/au/com/roningroup/patrollink';a.mkdir(parents=True,exist_ok=True)
 for p in a.glob('*.java'):
  if p.name not in ['RefreshLifecycleTest.java','TlsRecoveryTest.java']:p.unlink()
