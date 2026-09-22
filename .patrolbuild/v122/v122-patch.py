@@ -8,6 +8,17 @@ def rep(p,old,new):
 
 before={name:hashlib.sha256((j/name).read_bytes()).hexdigest() for name in ['LocalVoiceService.java','VoiceAudio.java','Observation.java','FeedReducer.java','TimeParser.java','TlsPolicy.java']}
 for name in ['SpeechRules.java','SpeechPreferences.java','SpeechSettingsUi.java']:shutil.copy2(new/name,j/name)
+# Dialog close must be idempotent across Activity recreation and delayed dismiss callbacks.
+u=j/'SpeechSettingsUi.java'
+rep(u,'dialog.setOnDismissListener(d->{engine.remove(this);if(editor!=null)editor.dismiss();});','dialog.setOnDismissListener(d->{engine.remove(this);dismissSafely(editor);editor=null;});')
+rep(u,'    public void close(){if(editor!=null)editor.dismiss();if(dialog!=null)dialog.dismiss();engine.remove(this);}', '''    private static void dismissSafely(AlertDialog d){
+        if(d==null||!d.isShowing())return;
+        try{d.dismiss();}catch(IllegalArgumentException detached){/* Android already removed the window during recreation. */}
+    }
+    public void close(){
+        engine.remove(this);AlertDialog child=editor,parent=dialog;editor=null;dialog=null;
+        dismissSafely(child);dismissSafely(parent);
+    }''')
 rep(root/'app/build.gradle','versionCode 121','versionCode 122');rep(root/'app/build.gradle',"versionName '1.1.11'","versionName '1.1.12'")
 rep(j/'VoiceReadout.java','        String g=spokenGuard(guard),a=clean(issue),p=clean(property);','        return formatSpokenName(spokenGuard(guard),issue,property);\n    }\n    public static String formatSpokenName(String name,String issue,String property){\n        String g=clean(name),a=clean(issue),p=clean(property);')
 vm=j/'VoiceManager.java'
