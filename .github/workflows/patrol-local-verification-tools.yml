@@ -1,0 +1,28 @@
+name: Patrol local verification tools
+on:
+  push:
+    branches: [patrol-link-v121-ondevice-speech]
+    paths: [.github/workflows/patrol-local-verification-tools.yml]
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Package local dependencies for APK alignment and speech transcription checks
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/local-audio-tools/wheels
+          cp /usr/local/lib/android/sdk/build-tools/36.0.0/lib64/libc++.so /tmp/local-audio-tools/
+          python3 -m venv /tmp/hf
+          /tmp/hf/bin/pip -q install huggingface_hub
+          /tmp/hf/bin/python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download('Systran/faster-whisper-base.en', local_dir='/tmp/local-audio-tools/asr_model')
+          PY
+          /tmp/hf/bin/pip download --dest /tmp/local-audio-tools/wheels --only-binary=:all: --python-version 3.13 --implementation cp --abi cp313 --platform manylinux_2_28_x86_64 --platform manylinux_2_27_x86_64 --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 faster-whisper
+          find /tmp/local-audio-tools -type f -not -path '*/.cache/*' -exec sha256sum {} \; > /tmp/local-audio-tools/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: Patrol-local-audio-verification-tools, path: /tmp/local-audio-tools/, retention-days: 3}
