@@ -1,0 +1,195 @@
+name: Patrol Link 1.1.12 speech editor
+on:
+  push:
+    branches: ['patrol-link-v122-speech-editor']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-link-v122-speech-editor
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct v1.1.11 and apply speech editor only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v122 /tmp/deliver122/evidence /tmp/deliver122/screenshots
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v122
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v122
+          J=/tmp/patrol-v122/app/src/main/java/au/com/roningroup/patrollink
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v122
+          mkdir -p /tmp/patrol-v122/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v122/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v122
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v122
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v122/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v122/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v122
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v122
+          cp "$J/PatrolEngine.java" /tmp/PatrolEngine-v121.java
+          python3 .patrolbuild/v122/patch.py /tmp/patrol-v122
+          diff -u /tmp/PatrolEngine-v121.java "$J/PatrolEngine.java" > /tmp/deliver122/evidence/MONITOR-DIFF.txt || test "$?" = 1
+          mkdir -p /tmp/patrol-v122/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v122/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+          node --check /tmp/patrol-v122/app/src/main/assets/extract.js
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Bundle same pinned offline model and reference-compatible assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          mkdir -p /tmp/patrol-v122/app/libs /tmp/models /tmp/old-clips
+          curl --fail --location --retry 3 -o /tmp/patrol-v122/app/libs/sherpa-onnx.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  /tmp/patrol-v122/app/libs/sherpa-onnx.aar' | sha256sum -c -
+          curl --fail --location --retry 3 -o /tmp/pocket.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-pocket-tts-int8-2026-01-26.tar.bz2
+          tar -xjf /tmp/pocket.tar.bz2 -C /tmp/models
+          M=/tmp/models/sherpa-onnx-pocket-tts-int8-2026-01-26
+          A=/tmp/patrol-v122/app/src/main/assets
+          mkdir -p "$A/pocket" "$A/voice" "$A/licenses"
+          for f in lm_flow.int8.onnx lm_main.int8.onnx encoder.onnx decoder.int8.onnx text_conditioner.onnx vocab.json token_scores.json; do cp "$M/$f" "$A/pocket/"; done
+          cp "$M/test_wavs/bria.wav" /tmp/patrol-v122/app/src/androidTest/assets/other-voice.wav
+          curl --fail --location -o "$A/licenses/sherpa-onnx-LICENSE.txt" https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/LICENSE
+          curl --fail --location -o "$A/licenses/pocket-tts-LICENSE.txt" https://raw.githubusercontent.com/kyutai-labs/pocket-tts/main/LICENSE
+          printf '%s\n' 'Pocket TTS by Kyutai. Model source: https://huggingface.co/kyutai/pocket-tts' 'Runtime export: sherpa-onnx pocket-tts-int8-2026-01-26; runtime 1.13.8.' 'Licensing notices are bundled alongside this attribution.' > "$A/licenses/PocketTTS-MODEL-ATTRIBUTION.txt"
+          base64 -d .patrolbuild/felicity_scan.ogg.b64 > /tmp/old-clips/scan.ogg
+          base64 -d .patrolbuild/felicity_breach.ogg.b64 > /tmp/old-clips/breach.ogg
+          cat .patrolbuild/felicity_incident.ogg.b64.part* | base64 -d > /tmp/old-clips/incident.ogg
+          cat .patrolbuild/felicity_generic.ogg.b64.part* | base64 -d > /tmp/old-clips/generic.ogg
+          for f in scan breach incident generic; do ffmpeg -v error -i /tmp/old-clips/$f.ogg -ac 1 -ar 24000 -f s16le /tmp/old-clips/$f.pcm; done
+          cat /tmp/old-clips/scan.pcm /tmp/old-clips/breach.pcm /tmp/old-clips/incident.pcm /tmp/old-clips/generic.pcm > /tmp/old-clips/reference.pcm
+          ffmpeg -v error -f s16le -ar 24000 -ac 1 -i /tmp/old-clips/reference.pcm "$A/voice/felicity.wav"
+          rm -f /tmp/patrol-v122/app/src/main/res/raw/felicity_*.ogg
+          # The existing app-private selected reference is intentionally never replaced on upgrade.
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          a=Path('/tmp/patrol-v122/app/src/main/assets')
+          Path('/tmp/deliver122/evidence/ASSET-SHA256.json').write_text(json.dumps({str(p.relative_to(a)):hashlib.sha256(p.read_bytes()).hexdigest() for p in a.rglob('*') if p.is_file()},indent=2))
+          java=Path('/tmp/patrol-v122/app/src/main/java/au/com/roningroup/patrollink')
+          for name in ['VoiceManager.java','LocalVoiceService.java','SpeechPreferences.java','SpeechSettingsUi.java']:
+              s=(java/name).read_text()
+              for forbidden in ['android.speech.tts','TextToSpeech','HttpURLConnection','api.elevenlabs.io','R.raw.felicity_']:
+                  assert forbidden not in s,(name,forbidden)
+          assert 'if(dest.isFile()&&dest.length()>1024)return dest;' in (java/'VoiceManager.java').read_text()
+          PY
+      - name: Compile signed APKs and unit regressions
+        working-directory: /tmp/patrol-v122
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Browser parser regressions
+        run: |
+          python3 -m venv /tmp/testvenv
+          /tmp/testvenv/bin/pip -q install playwright
+          /tmp/testvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v122/tests/test_dom.py');s=p.read_text().replace("shutil.which('chromium') or None", "shutil.which('chromium') or shutil.which('google-chrome') or None");p.write_text(s)
+          PY
+          /tmp/testvenv/bin/python /tmp/patrol-v122/tests/test_dom.py | tee /tmp/deliver122/evidence/DOM-TESTS.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 monitor, offline voice and actual editor controls
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: |
+            cd /tmp/patrol-v122 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.VoicePipelineTest
+            cp -r /tmp/patrol-v122/app/build/outputs/androidTest-results /tmp/deliver122/evidence/baseline-android
+            cd /tmp/patrol-v122 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.SpeechEditorTest
+            cp -r /tmp/patrol-v122/app/build/outputs/androidTest-results /tmp/deliver122/evidence/editor-android
+            adb pull /sdcard/Download/PatrolLink-v122-Speech-Controls.png /tmp/deliver122/screenshots/
+            adb pull /sdcard/Download/PatrolLink-v122-Alert-List.png /tmp/deliver122/screenshots/
+            adb pull /sdcard/Download/PatrolLink-v122-Alert-Editor.png /tmp/deliver122/screenshots/
+            adb pull /sdcard/Download/PatrolLink-v122-Guard-Nicknames.png /tmp/deliver122/screenshots/
+      - name: Verify finished package and results
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/patrol-v122/app/build/outputs/apk/release/app-release.apk /tmp/deliver122/Ronin-Patrol-Link-v1.1.12-Speech-Editor.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs /tmp/deliver122/Ronin-Patrol-Link-v1.1.12-Speech-Editor.apk > /tmp/deliver122/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver122/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/deliver122/Ronin-Patrol-Link-v1.1.12-Speech-Editor.apk > /tmp/deliver122/evidence/PACKAGE.txt
+          cp -r /tmp/patrol-v122/app/build/test-results /tmp/deliver122/evidence/unit-results
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET,json,os,hashlib
+          root=Path('/tmp/deliver122');suites=[];total=0
+          for p in (root/'evidence').rglob('TEST-*.xml'):
+              for s in ET.parse(p).getroot().iter('testsuite'):
+                  d=dict(s.attrib);assert int(d.get('failures',0))==0 and int(d.get('errors',0))==0 and int(d.get('skipped',0))==0,(p,d)
+                  total+=int(d.get('tests',0));suites.append(d)
+          assert total>=60,(total,suites)
+          assert any('SpeechEditorTest' in s.get('name','') for s in suites)
+          apk=root/'Ronin-Patrol-Link-v1.1.12-Speech-Editor.apk';sha=hashlib.sha256(apk.read_bytes()).hexdigest()
+          record={'version':'1.1.12','version_code':122,'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'apk_bytes':apk.stat().st_size,'apk_sha256':sha,'tests':total,'suites':suites}
+          (root/'evidence/TEST-RESULTS.json').write_text(json.dumps(record,indent=2))
+          lines=['RONIN PATROL LINK 1.1.12 — EDITABLE SPEECH', 'Commit: '+record['commit'],'Run: '+record['run'],'APK SHA-256: '+sha,'APK bytes: '+str(apk.stat().st_size),'JUnit tests passed: '+str(total),
+            '', 'IMPLEMENTED',
+            'Speech controls: discovered alert wording list, search, add, edit, original/replacement preview, restore-original option.',
+            'Place-name aliases and whole-word/phrase pronunciation replacements. Blank override uses original text.',
+            'Nicknames bound to guard IDs: D.DEO = Dylan; D.ROGERS1 = Dean; T.MURD = Tristan. Explicit blank remains blank and uses username on later launches.',
+            'Editable opening phrase. Optional blank removes it.',
+            'Speech playback rate: 0.75x to 1.50x, normal 1.00x, pitch kept at 1.0; applied to cached audio as well as newly generated speech.',
+            'Alert catalog grows from actual parsed selected-guard rows, including silent baseline/muted reads; it does not claim unseen server alert types.',
+            'Original source matter, location, guard IDs, dashboard and server records are not rewritten.',
+            'Queued unplayed matters are retained and use new speech wording. An already-playing sentence may finish before new wording takes effect.',
+            'Same bundled Pocket TTS / sherpa-onnx 1.13.8 engine, single selected local voice, no voice API/account/system TTS fallback.',
+            'Existing app-private selected Felicity reference and voice imports are preserved on in-place upgrade. CI bundled reference uses the prior published Felicity sample, not the private full training WAV.',
+            '', 'TEST SCOPE',
+            'Unit formatter regressions and browser parser regressions passed.',
+            'Android 16 emulator: refresh/TLS recovery; real offline-model generation and playback; actual alert editing controls; persistent blank nickname fallback; saved speed and actual MediaPlayer playback at 0.75x and 1.50x; unchanged selected reference hash.',
+            'No physical Samsung handset, authenticated live Silvertracker account, Bluetooth route or whole-shift test.',
+            'APK signature matches the existing test certificate for in-place update. Previously disclosed test-key exposure is not fixed by this release.',
+            'Install over v1.1.11; do not uninstall or clear app data. Open Speech controls from the dashboard.'
+          ]
+          (root/'Ronin-Patrol-Link-v1.1.12-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.12-verified
+          path: |
+            /tmp/deliver122/Ronin-Patrol-Link-v1.1.12-Speech-Editor.apk
+            /tmp/deliver122/Ronin-Patrol-Link-v1.1.12-VERIFICATION.txt
+          retention-days: 7
+      - name: Save regression evidence and source without signing keys
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v122-test-evidence
+          path: |
+            /tmp/patrol-v122/app/build/reports/
+            /tmp/patrol-v122/app/build/test-results/
+            /tmp/patrol-v122/app/build/outputs/androidTest-results/
+            /tmp/patrol-v122/app/src/main/java/
+            /tmp/patrol-v122/app/src/main/AndroidManifest.xml
+            /tmp/patrol-v122/app/build.gradle
+            /tmp/deliver122/evidence/
+            /tmp/deliver122/screenshots/
+          retention-days: 7
