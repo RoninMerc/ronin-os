@@ -1,0 +1,162 @@
+name: Patrol Link 1.1.10 local voice only
+on:
+  push:
+    branches: ['patrol-link-v120-local-voice-only']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+          cache-read-only: false
+
+      - name: Reconstruct v117 and apply local-only voice correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v120 /tmp/deliver120
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v120
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v120
+
+          cp .patrolbuild/PatrolEngine.java /tmp/patrol-v120/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java
+          cp .patrolbuild/MainActivity.java /tmp/patrol-v120/app/src/main/java/au/com/roningroup/patrollink/MainActivity.java
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v120
+          mkdir -p /tmp/patrol-v120/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v120/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v120
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v120
+          cp .patrolbuild/TlsPolicy.java /tmp/patrol-v120/app/src/main/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v120/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v120/app/src/androidTest/java/au/com/roningroup/patrollink/
+
+          mkdir -p /tmp/patrol-v120/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v120/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+
+          cp .patrolbuild/VoiceManager.java /tmp/patrol-v120/app/src/main/java/au/com/roningroup/patrollink/VoiceManager.java
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v120
+          python3 .patrolbuild/v120-patch.py /tmp/patrol-v120
+
+          mkdir -p /tmp/patrol-v120/app/src/main/res/raw
+          base64 -d .patrolbuild/felicity_scan.ogg.b64 > /tmp/patrol-v120/app/src/main/res/raw/felicity_scan.ogg
+          base64 -d .patrolbuild/felicity_breach.ogg.b64 > /tmp/patrol-v120/app/src/main/res/raw/felicity_breach.ogg
+          cat .patrolbuild/felicity_incident.ogg.b64.part* | base64 -d > /tmp/patrol-v120/app/src/main/res/raw/felicity_incident.ogg
+          cat .patrolbuild/felicity_generic.ogg.b64.part* | base64 -d > /tmp/patrol-v120/app/src/main/res/raw/felicity_generic.ogg
+
+          grep -q 'versionCode 120' /tmp/patrol-v120/app/build.gradle
+          grep -q "versionName '1.1.10'" /tmp/patrol-v120/app/build.gradle
+          grep -q 'class VoiceManager' /tmp/patrol-v120/app/src/main/java/au/com/roningroup/patrollink/VoiceManager.java
+          grep -q 'Import training audio' /tmp/patrol-v120/app/src/main/java/au/com/roningroup/patrollink/MainActivity.java
+          ! grep -R -n -E 'ElevenLabs|elevenlabs|xi-api-key|api\.elevenlabs|TextToSpeech|android\.speech\.tts|SecretStore|API key' /tmp/patrol-v120/app/src/main/java/au/com/roningroup/patrollink/
+          node --check /tmp/patrol-v120/app/src/main/assets/extract.js
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Unit tests and APK compilation
+        working-directory: /tmp/patrol-v120
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Parser regressions in Chromium
+        shell: bash
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v120/tests/test_dom.py')
+          s=p.read_text().replace("shutil.which('chromium') or None", "shutil.which('chromium') or shutil.which('google-chrome') or None")
+          p.write_text(s)
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v120/tests/test_dom.py | tee /tmp/deliver120/DOM-TESTS.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 refresh/TLS regression
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v120 && gradle --no-daemon :app:connectedDebugAndroidTest
+
+      - name: Verify release signature and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/patrol-v120/app/build/outputs/apk/release/app-release.apk /tmp/deliver120/Ronin-Patrol-Link-v1.1.10-Local-Voice-Only.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs /tmp/deliver120/Ronin-Patrol-Link-v1.1.10-Local-Voice-Only.apk | tee /tmp/deliver120/APK-VERIFICATION.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/deliver120/APK-VERIFICATION.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver120/APK-VERIFICATION.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/deliver120/Ronin-Patrol-Link-v1.1.10-Local-Voice-Only.apk > /tmp/deliver120/PACKAGE.txt
+          sha256sum /tmp/deliver120/*.apk > /tmp/deliver120/SHA256SUMS.txt
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET, os
+          lines=['Ronin Patrol Link 1.1.10','Commit: '+os.environ['GITHUB_SHA'],'Run: '+os.environ['GITHUB_RUN_ID']]
+          folders=['/tmp/patrol-v120/app/build/test-results','/tmp/patrol-v120/app/build/outputs/androidTest-results']
+          seen=0
+          for folder in folders:
+              for p in Path(folder).rglob('TEST-*.xml'):
+                  root=ET.parse(p).getroot()
+                  for suite in root.iter('testsuite'):
+                      info={k:suite.attrib.get(k,'0') for k in ['tests','failures','errors','skipped','time']}
+                      assert int(info['failures'])==0 and int(info['errors'])==0 and int(info['skipped'])==0, (p,info)
+                      seen+=int(info['tests'])
+                      lines.append(suite.attrib.get('name',p.name)+': '+str(info))
+          assert seen>=18, ('expected core and emulator results',seen)
+          lines += [
+              'All recorded tests passed.',
+              'Voice system is local-only: no ElevenLabs integration, no voice API key, and no Android/system TextToSpeech fallback are present in the app source.',
+              'Felicity is available immediately as the built-in default local voice pack.',
+              'Imported training-script recordings remain selectable local voice packs and require no API.',
+              'Hard single-voice rule: only the selected local voice pack can produce audio.',
+              'Current local voice packs replay prerecorded phrases that exist in the supplied training recording; they do not synthesize arbitrary unseen words such as a new property name.',
+              'Voice playback remains isolated from the Silvertracker 30-second refresh loop.',
+              'Refresh/TLS emulator scope remains a controlled monitor feed, not authenticated live Silvertracker or a physical whole-shift test.',
+              'Signing certificate matches the existing sideloaded installation for in-place update.'
+          ]
+          Path('/tmp/deliver120/TEST-SUMMARY.txt').write_text('\n'.join(lines)+'\n')
+          PY
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.10-verified
+          path: /tmp/deliver120/*
+          retention-days: 7
+
+      - name: Upload regression evidence and current source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v120-test-evidence
+          path: |
+            /tmp/patrol-v120/app/build/reports/
+            /tmp/patrol-v120/app/build/outputs/androidTest-results/
+            /tmp/patrol-v120/app/build/test-results/
+            /tmp/patrol-v120/app/src/main/
+            /tmp/patrol-v120/app/src/test/
+            /tmp/patrol-v120/app/src/androidTest/java/
+            /tmp/patrol-v120/app/build.gradle
+          retention-days: 7
