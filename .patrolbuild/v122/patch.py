@@ -55,13 +55,24 @@ p=java/'MainActivity.java';s=p.read_text()
 s=rep(s,'buttonRow(dashboard,button("Voice settings",false,this::voiceLibrary),button("Diagnostics",false,this::diagnostics));','addCard(dashboard,button("Speech controls",false,()->new SpeechSettingsUi(this,engine).show()));\n        buttonRow(dashboard,button("Voice settings",false,this::voiceLibrary),button("Diagnostics",false,this::diagnostics));')
 s=rep(s,'addCard(form,button("Test full update",true,engine.voices::test));','addCard(form,button("Speech controls: wording, names and speed",false,()->new SpeechSettingsUi(this,engine).show()));\n        addCard(form,button("Test full update",true,engine.voices::test));')
 p.write_text(s)
-p=java/'SpeechSettingsUi.java';s=p.read_text();s=rep(s,'private void saved(){engine.voices.stop();','private void saved(){engine.voices.speechSettingsChanged();');p.write_text(s)
+p=java/'SpeechSettingsUi.java';s=p.read_text();s=rep(s,'private void saved(){engine.voices.stop();','private void saved(){engine.voices.speechSettingsChanged();');s=s.replace('when that exact name appears inside an alert.','when that exact name appears inside an unedited alert.');p.write_text(s)
 
 unit=root/'app/src/test/java/au/com/roningroup/patrollink';instrument=root/'app/src/androidTest/java/au/com/roningroup/patrollink'
 shutil.copyfile(payload/'SpeechRulesTest.java',unit/'SpeechRulesTest.java')
 shutil.copyfile(payload/'SpeechEditorTest.java',instrument/'SpeechEditorTest.java')
 # The existing real-model test now expects the configurable formatter, not the legacy one.
 p=instrument/'VoicePipelineTest.java';s=p.read_text();s=s.replace('String text=AnnouncementText.format(new Observation(','String text=new SpeechPreferences(context).format(new Observation(');p.write_text(s)
+
+# An exact full-alert rewrite is authoritative for place wording. Do not expand
+# a manually written "Impeccable body corporate" into "...body corporate body corporate".
+p=java/'SpeechRules.java';s=p.read_text();s=rep(s,'issue=phrases(phrases(issue,places),pronunciations);','if(clean(alerts.get(key(o.issue))).isEmpty())issue=phrases(issue,places);\n        issue=phrases(issue,pronunciations);');p.write_text(s)
+p=unit/'SpeechRulesTest.java';s=p.read_text();s=rep(s,'public class SpeechRulesTest {','''public class SpeechRulesTest {
+    @Test public void completeAlertOverrideDoesNotDoubleExpandPlace(){
+        Observation o=new Observation("8","T.MURD","Impeccable","Patrol at Impeccable","",1000);
+        String spoken=SpeechRules.format(o,"",names(),rule(o.issue,"Patrol at Impeccable body corporate"),rule("Impeccable","Impeccable body corporate"),empty());
+        assertEquals("Tristan. Patrol at Impeccable body corporate.",spoken);
+    }
+''');p.write_text(s)
 
 assert 'versionCode 122' in (root/'app/build.gradle').read_text()
 assert 'voices.speechSettings.remember(selected)' in (java/'PatrolEngine.java').read_text()
