@@ -1,0 +1,37 @@
+name: Agent Forge build tools
+on:
+  push:
+    branches: [agent-forge-tools-v010]
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Collect Android tools and pinned libraries
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+          mkdir -p out/tools out/libs
+          cp -r "$ANDROID_HOME/build-tools/36.0.0" out/tools/build-tools
+          cp "$ANDROID_HOME/platforms/android-36/android.jar" out/tools/android.jar
+          curl -fL https://repo.maven.apache.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar -o out/libs/okhttp.jar
+          curl -fL https://repo.maven.apache.org/maven2/com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar -o out/libs/okio.jar
+          curl -fL https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.10/kotlin-stdlib-1.9.10.jar -o out/libs/kotlin-stdlib.jar
+          curl -fL https://repo.maven.apache.org/maven2/org/jetbrains/annotations/13.0/annotations-13.0.jar -o out/libs/annotations.jar
+          curl -fL https://repo.maven.apache.org/maven2/org/jsoup/jsoup/1.21.2/jsoup-1.21.2.jar -o out/libs/jsoup.jar
+          curl -fL https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar -o out/libs/junit.jar
+          curl -fL https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar -o out/libs/hamcrest.jar
+          curl -fL https://repo.maven.apache.org/maven2/org/json/json/20250517/json-20250517.jar -o out/libs/json-test.jar
+          find out -type f -exec sha256sum {} \; > out/CONTENTS.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-forge-build-tools
+          path: out/
+          retention-days: 2
