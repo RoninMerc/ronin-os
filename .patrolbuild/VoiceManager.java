@@ -205,7 +205,7 @@ public final class VoiceManager {
         enqueue(new Announcement(kind,detail));
     }
 
-    private static String fullReadout(String activity,String location,String guard) {
+    static String fullReadout(String activity,String location,String guard) {
         StringBuilder b=new StringBuilder();
         if(!activity.isEmpty()) b.append(activity);
         if(!location.isEmpty()&&!containsNormalised(activity,location)) {
