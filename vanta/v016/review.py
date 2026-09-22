@@ -63,7 +63,7 @@ repl('app/src/main/java/com/ronin/vanta/MainActivity.java',
       if ("application/zip".equalsIgnoreCase(mime)
           || "application/x-zip-compressed".equalsIgnoreCase(mime)
           || "application/x-zip".equalsIgnoreCase(mime)) return true;
-      try (Cursor cursor =
+      try (android.database.Cursor cursor =
           getContentResolver()
               .query(uri, new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null)) {
         if (cursor != null && cursor.moveToFirst()) {
