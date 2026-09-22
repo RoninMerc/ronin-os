@@ -44,7 +44,8 @@ voice_library=r'''    private void voiceLibrary() {
 
         Button setup=button(engine.voices.apiConfigured()?"Change voice engine API key":"Set up voice engine",false,this::voiceApiSetup);
         addCard(form,setup);
-        Button prepare=button("Prepare "+active.name,true,()->prepareActiveVoice(active.name));
+        final String activeNameForPrepare=active.name;
+        Button prepare=button("Prepare "+activeNameForPrepare,true,()->prepareActiveVoice(activeNameForPrepare));
         addCard(form,prepare);
 
         form.addView(text("VOICE LIBRARY",11,MUTED,true)); gap(form,6);
