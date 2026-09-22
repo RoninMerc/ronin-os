@@ -1,0 +1,217 @@
+name: Patrol Link 1.1.11 offline full readout
+on:
+  push:
+    branches: ['patrol-link-v121-ondevice-readout']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-v121
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct known working reader and apply local voice implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v121 /tmp/deliver121/tools /tmp/deliver121/voice-tests
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v121
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v121
+          J=/tmp/patrol-v121/app/src/main/java/au/com/roningroup/patrollink
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v121
+          mkdir -p /tmp/patrol-v121/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v121/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v121
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v121
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v121/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v121/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v121
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v121
+          mkdir -p /tmp/patrol-v121/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v121/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+          node --check /tmp/patrol-v121/app/src/main/assets/extract.js
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Bundle pinned offline runtime and model
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          mkdir -p /tmp/patrol-v121/app/libs /tmp/models /tmp/old-clips
+          curl --fail --location --retry 3 -o /tmp/patrol-v121/app/libs/sherpa-onnx.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  /tmp/patrol-v121/app/libs/sherpa-onnx.aar' | sha256sum -c -
+          curl --fail --location --retry 3 -o /tmp/pocket.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-pocket-tts-int8-2026-01-26.tar.bz2
+          sha256sum /tmp/pocket.tar.bz2 > /tmp/deliver121/MODEL-ARCHIVE-SHA256.txt
+          tar -xjf /tmp/pocket.tar.bz2 -C /tmp/models
+          M=/tmp/models/sherpa-onnx-pocket-tts-int8-2026-01-26
+          mkdir -p /tmp/patrol-v121/app/src/main/assets/pocket /tmp/patrol-v121/app/src/main/assets/voice /tmp/patrol-v121/app/src/main/assets/licenses
+          for f in lm_flow.int8.onnx lm_main.int8.onnx encoder.onnx decoder.int8.onnx text_conditioner.onnx vocab.json token_scores.json; do cp "$M/$f" /tmp/patrol-v121/app/src/main/assets/pocket/; done
+          cp "$M/test_wavs/bria.wav" /tmp/patrol-v121/app/src/androidTest/assets/other-voice.wav
+          curl --fail --location -o /tmp/patrol-v121/app/src/main/assets/licenses/sherpa-onnx-LICENSE.txt https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.8/LICENSE
+          curl --fail --location -o /tmp/patrol-v121/app/src/main/assets/licenses/pocket-tts-LICENSE.txt https://raw.githubusercontent.com/kyutai-labs/pocket-tts/main/LICENSE
+          base64 -d .patrolbuild/felicity_scan.ogg.b64 > /tmp/old-clips/scan.ogg
+          base64 -d .patrolbuild/felicity_breach.ogg.b64 > /tmp/old-clips/breach.ogg
+          cat .patrolbuild/felicity_incident.ogg.b64.part* | base64 -d > /tmp/old-clips/incident.ogg
+          cat .patrolbuild/felicity_generic.ogg.b64.part* | base64 -d > /tmp/old-clips/generic.ogg
+          for f in scan breach incident generic; do ffmpeg -v error -i /tmp/old-clips/$f.ogg -ac 1 -ar 24000 -f s16le /tmp/old-clips/$f.pcm; done
+          cat /tmp/old-clips/scan.pcm /tmp/old-clips/breach.pcm /tmp/old-clips/incident.pcm /tmp/old-clips/generic.pcm > /tmp/old-clips/reference.pcm
+          ffmpeg -v error -f s16le -ar 24000 -ac 1 -i /tmp/old-clips/reference.pcm /tmp/patrol-v121/app/src/main/assets/voice/felicity.wav
+          rm -f /tmp/patrol-v121/app/src/main/res/raw/felicity_*.ogg
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          base=Path('/tmp/patrol-v121/app/src/main/assets')
+          hashes={str(p.relative_to(base)):hashlib.sha256(p.read_bytes()).hexdigest() for p in base.rglob('*') if p.is_file()}
+          Path('/tmp/deliver121/ASSET-SHA256.json').write_text(json.dumps(hashes,indent=2))
+          voice=Path('/tmp/patrol-v121/app/src/main/java/au/com/roningroup/patrollink')
+          for name in ['VoiceManager.java','VoiceReference.java','LocalVoiceService.java']:
+              s=(voice/name).read_text()
+              for forbidden in ['android.speech.tts','TextToSpeech','HttpURLConnection','api.elevenlabs.io','R.raw.felicity_']:
+                  assert forbidden not in s,(name,forbidden)
+          assert 'android:process=":voice"' in Path('/tmp/patrol-v121/app/src/main/AndroidManifest.xml').read_text()
+          PY
+      - name: Compile signed APKs and run unit regressions
+        working-directory: /tmp/patrol-v121
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Browser parser regressions
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v121/tests/test_dom.py');s=p.read_text().replace("shutil.which('chromium') or None", "shutil.which('chromium') or shutil.which('google-chrome') or None");p.write_text(s)
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v121/tests/test_dom.py | tee /tmp/deliver121/DOM-TESTS.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 real voice generation and refresh/TLS tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: |
+            cd /tmp/patrol-v121 && gradle --no-daemon :app:connectedDebugAndroidTest
+            adb shell run-as au.com.roningroup.patrollink ls files/voice-test-evidence
+            adb exec-out run-as au.com.roningroup.patrollink cat files/voice-test-evidence/full-update-0.wav > /tmp/deliver121/voice-tests/full-update-0.wav
+            adb exec-out run-as au.com.roningroup.patrollink cat files/voice-test-evidence/full-update-1.wav > /tmp/deliver121/voice-tests/full-update-1.wav
+            adb exec-out run-as au.com.roningroup.patrollink cat files/voice-test-evidence/full-update-2.wav > /tmp/deliver121/voice-tests/full-update-2.wav
+            adb exec-out run-as au.com.roningroup.patrollink cat files/voice-test-evidence/PIPELINE.txt > /tmp/deliver121/voice-tests/PIPELINE.txt
+      - name: Inspect generated speech content locally in CI
+        shell: bash
+        run: |
+          python3 -m venv /tmp/asrvenv
+          /tmp/asrvenv/bin/pip -q install faster-whisper cryptography
+          /tmp/asrvenv/bin/python - <<'PY'
+          from faster_whisper import WhisperModel
+          from pathlib import Path
+          import json
+          model=WhisperModel('base.en',device='cpu',compute_type='int8',cpu_threads=2)
+          result={}
+          for p in sorted(Path('/tmp/deliver121/voice-tests').glob('*.wav')):
+              segments,_=model.transcribe(str(p),language='en',beam_size=5,vad_filter=False)
+              result[p.name]=' '.join(s.text.strip() for s in segments)
+          for p in sorted(Path('/tmp/old-clips').glob('*.ogg')):
+              segments,_=model.transcribe(str(p),language='en',beam_size=5,vad_filter=False)
+              result['old-'+p.name]=' '.join(s.text.strip() for s in segments)
+          Path('/tmp/deliver121/voice-tests/LOCAL-ASR-CHECK.json').write_text(json.dumps(result,indent=2))
+          for i,words in [(0,['patrol','solo']),(1,['locked']),(2,['parking','impeccable'])]:
+              t=result['full-update-'+str(i)+'.wav'].lower()
+              assert all(w in t for w in words),(i,t)
+          PY
+      - name: Verify package and prepare private final-reference assembly tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/patrol-v121/app/build/outputs/apk/release/app-release.apk /tmp/deliver121/Patrol-Link-v121-CI-tested.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs /tmp/deliver121/Patrol-Link-v121-CI-tested.apk > /tmp/deliver121/APK-VERIFICATION.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver121/APK-VERIFICATION.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/deliver121/Patrol-Link-v121-CI-tested.apk > /tmp/deliver121/PACKAGE.txt
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" /tmp/deliver121/tools/
+          cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" /tmp/deliver121/tools/
+          cp -r "$ANDROID_HOME/build-tools/36.0.0/lib64" /tmp/deliver121/tools/ || true
+          curl --fail --location --retry 3 -o /tmp/deliver121/tools/sherpa-jvm.jar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-jvm-1.13.8.jar
+          curl --fail --location --retry 3 -o /tmp/deliver121/tools/sherpa-linux.jar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-native-lib-linux-x64-1.13.8.jar
+          cp .patrolbuild/v121/LocalVoiceProbe.java .patrolbuild/v121/VoiceReference.java /tmp/deliver121/tools/
+          /tmp/asrvenv/bin/python - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import hashes,serialization
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          import os,json,base64
+          # The pre-existing compatibility key is never uploaded in plaintext. This envelope
+          # permits inserting the user's full-quality reference in the private working container.
+          pub=b'''-----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtOZzCGg7oLvLoPgFrij5
+          Dt8FEDEMlZhXWUN4yek4gU4l/JDtSy22Az5NC0XzrC3bDI0rD4OoeRXGlLsvA0mL
+          xic0nkwfZI9L64IifRElKtbFML+EIKaEnLKWAgfsHVjyktuWDoX+icdRGOGULNR9
+          zzc2yh2OcpKomnCMC2NHtUDyvBSIRl2EXkdz2liF7TMEzmkKaE0s0QdJXFA6kg6K
+          hbnelcvOKsk8HIZZ5L6lzTHqccCxCekS0Qa3J++XCDXeSIN/OGS3sE21VixNYxoM
+          1EmBLgP2hYyzH4OIN5hvr97yY1vdYJPsCM+KrThul3uDWKiXe0QeK2Kg421bjGeo
+          NQIDAQAB
+          -----END PUBLIC KEY-----'''
+          pub=b'\n'.join(x.strip() for x in pub.splitlines())
+          key=AESGCM.generate_key(256);nonce=os.urandom(12)
+          wrapped=serialization.load_pem_public_key(pub).encrypt(key,padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
+          encrypted=AESGCM(key).encrypt(nonce,Path('/tmp/patrol-v121/test-signing.p12').read_bytes(),b'patrol-v121-private-assembly')
+          encode=lambda x:base64.b64encode(x).decode()
+          Path('/tmp/deliver121/tools/compatibility-key.encrypted.json').write_text(json.dumps({'key':encode(wrapped),'nonce':encode(nonce),'ciphertext':encode(encrypted)}))
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET,json,os
+          rows=[];total=0
+          for folder in ['/tmp/patrol-v121/app/build/test-results','/tmp/patrol-v121/app/build/outputs/androidTest-results']:
+              for p in Path(folder).rglob('TEST-*.xml'):
+                  root=ET.parse(p).getroot()
+                  for suite in root.iter('testsuite'):
+                      d=dict(suite.attrib);assert int(d.get('failures',0))==0 and int(d.get('errors',0))==0 and int(d.get('skipped',0))==0,d
+                      total+=int(d.get('tests',0));rows.append(d)
+          assert total>=35,total
+          Path('/tmp/deliver121/TEST-RESULTS.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'tests':total,'suites':rows,'scope':'Real offline-model inference and audio playback on Android 16 emulator; simulated monitor rows. No authenticated live account, physical handset or whole-shift verification.'},indent=2))
+          PY
+          sha256sum /tmp/deliver121/*.apk > /tmp/deliver121/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v121-offline-verified
+          path: /tmp/deliver121/
+          retention-days: 3
+      - name: Preserve test evidence and source without signing keys
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v121-evidence
+          path: |
+            /tmp/patrol-v121/app/build/reports/
+            /tmp/patrol-v121/app/build/test-results/
+            /tmp/patrol-v121/app/build/outputs/androidTest-results/
+            /tmp/patrol-v121/app/src/main/java/
+            /tmp/patrol-v121/app/src/main/AndroidManifest.xml
+            /tmp/patrol-v121/app/build.gradle
+            /tmp/deliver121/voice-tests/
+          retention-days: 3
