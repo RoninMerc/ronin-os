@@ -1,0 +1,51 @@
+name: Patrol v121 audio audit
+on:
+  push:
+    branches: [patrol-link-v121-ondevice-speech]
+    paths: [.github/workflows/patrol-v121-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Inspect local speech dependencies and recordings
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/audit /tmp/audio
+          sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg
+          curl -fL --retry 3 -o /tmp/runtime.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          echo '633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  /tmp/runtime.aar' | sha256sum -c -
+          unzip -l /tmp/runtime.aar > /tmp/audit/aar-files.txt
+          unzip -p /tmp/runtime.aar classes.jar > /tmp/classes.jar
+          javap -classpath /tmp/classes.jar com.k2fsa.sherpa.onnx.OfflineTts com.k2fsa.sherpa.onnx.OfflineTtsConfig com.k2fsa.sherpa.onnx.OfflineTtsModelConfig com.k2fsa.sherpa.onnx.OfflineTtsPocketModelConfig com.k2fsa.sherpa.onnx.GenerationConfig > /tmp/audit/android-api.txt
+          base64 -d .patrolbuild/felicity_scan.ogg.b64 >/tmp/audio/scan.ogg
+          base64 -d .patrolbuild/felicity_breach.ogg.b64 >/tmp/audio/breach.ogg
+          cat .patrolbuild/felicity_incident.ogg.b64.part* | base64 -d >/tmp/audio/incident.ogg
+          cat .patrolbuild/felicity_generic.ogg.b64.part* | base64 -d >/tmp/audio/generic.ogg
+          curl -fL --retry 3 -o /tmp/pocket.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-pocket-tts-int8-2026-01-26.tar.bz2
+          tar -tvf /tmp/pocket.tar.bz2 >/tmp/audit/model-files.txt
+          sha256sum /tmp/pocket.tar.bz2 >/tmp/audit/model-hash.txt
+          python3 -m venv /tmp/py
+          /tmp/py/bin/pip -q install faster-whisper
+          /tmp/py/bin/python - <<'PY'
+          import pathlib,json
+          from faster_whisper import WhisperModel
+          model=WhisperModel('base.en',device='cpu',compute_type='int8',cpu_threads=2)
+          out={}
+          for p in pathlib.Path('/tmp/audio').glob('*.ogg'):
+              segments,_=model.transcribe(str(p),language='en',beam_size=5,vad_filter=False)
+              out[p.name]=' '.join(s.text for s in segments).strip()
+          pathlib.Path('/tmp/audit/actual-alert-transcripts.json').write_text(json.dumps(out,indent=2))
+          print(json.dumps(out,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Patrol-v121-audio-audit
+          path: /tmp/audit/
+          retention-days: 3
