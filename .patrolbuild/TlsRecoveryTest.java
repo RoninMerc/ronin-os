@@ -2,7 +2,6 @@ package au.com.roningroup.patrollink;
 
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.net.Uri;
 import android.net.http.SslError;
 import android.os.SystemClock;
 import android.webkit.*;
@@ -14,10 +13,11 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import java.io.*;
-import java.net.*;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.util.*;
 import java.util.concurrent.atomic.*;
 import java.util.function.Predicate;
 import javax.net.ssl.*;
@@ -56,12 +56,11 @@ public class TlsRecoveryTest {
                 while(!socket.isClosed()) {
                     try(Socket client=socket.accept()) {
                         client.setSoTimeout(5000);
-                        // A validating WebView rejects our self-signed certificate before requesting content.
                         client.getInputStream().read(new byte[4096]);
                         byte[] body="fixture".getBytes(StandardCharsets.UTF_8);
                         client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Length: "+body.length+"\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
                         client.getOutputStream().write(body);
-                    } catch(IOException expected) { /* Rejected certificate or test shutdown. */ }
+                    } catch(IOException expected) { /* Certificate rejected or test shutdown. */ }
                 }
             },"untrusted-tls-fixture");
             thread.setDaemon(true);thread.start();
@@ -69,27 +68,37 @@ public class TlsRecoveryTest {
         String url(String path) {return "https://127.0.0.1:"+socket.getLocalPort()+path;}
         @Override public void close() throws Exception {socket.close();thread.join(6000);}
     }
-    private static WebResourceRequest request(String url) {
-        return new WebResourceRequest() {
-            public Uri getUrl(){return Uri.parse(url);}
-            public boolean isForMainFrame(){return true;}
-            public boolean isRedirect(){return false;}
-            public boolean hasGesture(){return false;}
-            public String getMethod(){return "GET";}
-            public Map<String,String> getRequestHeaders(){return Collections.emptyMap();}
-        };
+    /** Deliberately sends an invalid TLS record. This server is test-only, on loopback. */
+    private static final class BrokenHandshakeServer implements AutoCloseable {
+        final ServerSocket socket;
+        final Thread thread;
+        BrokenHandshakeServer() throws IOException {
+            socket=new ServerSocket(0,10,InetAddress.getByName("127.0.0.1"));
+            thread=new Thread(()->{
+                while(!socket.isClosed()) {
+                    try(Socket client=socket.accept()) {
+                        client.setSoTimeout(5000);
+                        client.getInputStream().read(new byte[4096]);
+                        client.getOutputStream().write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                        client.getOutputStream().flush();
+                    } catch(IOException expected) { /* Connection rejected or test shutdown. */ }
+                }
+            },"broken-handshake-fixture");
+            thread.setDaemon(true);thread.start();
+        }
+        String url() {return "https://127.0.0.1:"+socket.getLocalPort()+"/broken-handshake";}
+        @Override public void close() throws Exception {socket.close();thread.join(6000);}
     }
     @Test public void rejectedResourceDoesNotFreezeFeedAndMainTlsFailureRecoversAutomatically() throws Exception {
         AtomicInteger requests=new AtomicInteger(), sslCallbacks=new AtomicInteger();
-        AtomicReference<WebViewClient> realClient=new AtomicReference<>();
-        try(UntrustedServer server=new UntrustedServer(); ActivityScenario<MainActivity> scenario=ActivityScenario.launch(MainActivity.class)) {
+        try(UntrustedServer server=new UntrustedServer(); BrokenHandshakeServer broken=new BrokenHandshakeServer(); ActivityScenario<MainActivity> scenario=ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(a->{
                 PatrolEngine e=((PatrolApp)a.getApplication()).engine();
                 e.stopRuntime("TEST_SETUP","Controlled TLS fixture setup");
                 e.prefs.edit().putString("guard0","D.DEO").putString("guard1","D.ROGERS1").putString("guard2","T.MURD").apply();
                 WebView w=e.webView();
                 w.clearSslPreferences();
-                WebViewClient original=w.getWebViewClient();realClient.set(original);
+                WebViewClient original=w.getWebViewClient();
                 w.setWebViewClient(new WebViewClient(){
                     @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return original.shouldOverrideUrlLoading(v,r);}
                     @Override public void onPageStarted(WebView v,String u,Bitmap b){original.onPageStarted(v,u,b);}
@@ -126,7 +135,6 @@ public class TlsRecoveryTest {
                 assertFalse(e.state.equals("TLS_ERROR"));baseline.set(e.lastRead);before.set(requests.get());
             });
             await(scenario,"automatic 30-second cycle after asset certificate rejection",45000,e->requests.get()>before.get()&&e.healthy()&&e.lastRead>baseline.get());
-            // Main-page certificate failure must invalidate freshness, not be ignored as a resource.
             scenario.onActivity(a->{PatrolEngine e=((PatrolApp)a.getApplication()).engine();baseline.set(e.lastRead);
                 e.webView().clearSslPreferences();e.webView().loadUrl(server.url("/blocked-document.html"));
             });
@@ -142,12 +150,11 @@ public class TlsRecoveryTest {
                 assertEquals(3,e.selectedCount);assertTrue(e.webView().isAttachedToWindow());
                 assertTrue(CookieManager.getInstance().getCookie(PatrolEngine.MONITOR).contains("fixture_tls_session=kept"));
                 baseline.set(e.lastRead);before.set(requests.get());
-                // Exercise Android's separate non-recoverable-handshake callback as well.
-                realClient.get().onReceivedError(e.webView(),request(e.webView().getUrl()),new WebResourceError(){
-                    public int getErrorCode(){return WebViewClient.ERROR_FAILED_SSL_HANDSHAKE;}
-                    public CharSequence getDescription(){return "synthetic handshake failure";}
-                });
-                assertEquals("TLS_ERROR",e.state);assertEquals(baseline.get(),e.lastRead);
+                e.webView().loadUrl(broken.url());
+            });
+            await(scenario,"non-recoverable TLS handshake failure surfaced",15000,e->e.state.equals("TLS_ERROR"));
+            scenario.onActivity(a->{PatrolEngine e=((PatrolApp)a.getApplication()).engine();
+                assertEquals(baseline.get(),e.lastRead);assertFalse(e.healthy());
                 assertTrue(e.diagnostics().contains("Last network error code: -11"));
             });
             await(scenario,"automatic recovery after non-recoverable-handshake callback",45000,e->requests.get()>before.get()&&e.healthy()&&e.lastRead>baseline.get());
