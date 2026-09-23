@@ -9,3 +9,5 @@ if s.count(old) != 1:
     raise SystemExit(f'0.16 upgrade probe assertion: expected 1, found {s.count(old)}')
 p.write_text(s.replace(old,new,1),encoding='utf-8')
 print('Updated Android 0.16 upgrade probe version assertion.')
+
+# Trigger note: 0.16 device rerun after versionCode 160 probe correction.
