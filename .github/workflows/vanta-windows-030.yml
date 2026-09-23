@@ -45,6 +45,8 @@ jobs:
         run: |
           python vanta/windows-030/materialize.py
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python vanta/windows-030/compiler_repair.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           if(!(Test-Path ronin-vanta-windows/docs/CODEX_EQUIVALENT.md)){throw 'Codex-equivalent contract missing'}
           if(-not (Select-String -Quiet -Path ronin-vanta-windows/Directory.Build.props -Pattern '<Version>0.3.0</Version>')){throw '0.3.0 version not applied'}
           if(!(Test-Path ronin-vanta-windows/src/Vanta.Core/Agentic.cs)){throw 'Agentic core missing'}
