@@ -10,3 +10,5 @@ s=s.replace('public static async Task<CommandResult> RunAsync(', 'public static 
 s=s.replace('return new CommandResult(', 'return new ProjectCommandResult(',1)
 p.write_text(s,encoding='utf-8')
 print('Renamed legacy project command result to avoid agentic CommandResult collision.')
+
+# Rebuild trigger: verify repaired native Windows 0.3 before promoting to 0.4.
