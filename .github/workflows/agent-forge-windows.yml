@@ -1,0 +1,122 @@
+name: Build Ronin Agent Forge Windows
+
+on:
+  push:
+    branches: [agent-forge-windows-v010]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore Agent Forge source
+        shell: pwsh
+        run: |
+          $b64 = ((Get-ChildItem .agentforge-src\part*.b64 | Sort-Object Name | ForEach-Object { Get-Content $_.FullName -Raw }) -join '')
+          [IO.File]::WriteAllBytes("source.zip",[Convert]::FromBase64String(($b64 -replace '\s','')))
+          Expand-Archive source.zip -DestinationPath work -Force
+
+      - name: Install build dependencies
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run Python tests
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: |
+          python app/main.py --self-test
+          python -m unittest tests/test_backend.py -v
+
+      - name: Run orchestration tests
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: node tests/core.test.js
+
+      - name: Syntax checks
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: |
+          node --check app/static/app.js
+          node --check app/static/bridge.js
+          node --check app/static/engine.js
+          python -m py_compile app/main.py
+
+      - name: Build Windows executable
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name RoninAgentForge --add-data "app/static;static" app/main.py
+          if (!(Test-Path dist/RoninAgentForge.exe)) { throw "Executable missing" }
+
+      - name: Smoke-test packaged executable
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: |
+          $p = Start-Process -FilePath "$PWD\dist\RoninAgentForge.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Packaged self-test failed: $($p.ExitCode)" }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "ISCC.exe not found" }
+          & $iscc build\agent-forge.iss
+          if (!(Test-Path dist\Ronin_Agent_Forge_Windows_v0.1.0_Setup.exe)) { throw "Installer missing" }
+
+      - name: Build verification artifacts
+        shell: pwsh
+        working-directory: work/Ronin_Agent_Forge_Windows_v0.1.0
+        run: |
+          @"
+          RONIN AGENT FORGE WINDOWS 0.1.0 - BUILD VERIFICATION
+
+          GitHub run: $env:GITHUB_RUN_ID
+          Commit: $env:GITHUB_SHA
+          Runner: windows-latest
+          Python self-test: PASSED
+          Backend policy/storage tests: PASSED
+          JS orchestration tests: PASSED (36 tests)
+          JavaScript syntax: PASSED
+          Python syntax: PASSED
+          Packaged executable self-test: PASSED
+          Installer build: PASSED
+
+          Boundaries:
+          - Live View exposes actions/evidence, not private chain-of-thought.
+          - Public web research is read-only; no login, forms, messages, purchases or shell tools.
+          - No Ronin production connectors are included.
+          - Final interactive use with the owner's API accounts was not performed in CI.
+          "@ | Set-Content -Encoding UTF8 dist\VERIFICATION.txt
+
+          $installer=(Get-FileHash dist\Ronin_Agent_Forge_Windows_v0.1.0_Setup.exe -Algorithm SHA256).Hash.ToLower()
+          $exe=(Get-FileHash dist\RoninAgentForge.exe -Algorithm SHA256).Hash.ToLower()
+          "${installer}  Ronin_Agent_Forge_Windows_v0.1.0_Setup.exe`n${exe}  RoninAgentForge.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Agent-Forge-Windows-v0.1.0
+          path: |
+            work/Ronin_Agent_Forge_Windows_v0.1.0/dist/Ronin_Agent_Forge_Windows_v0.1.0_Setup.exe
+            work/Ronin_Agent_Forge_Windows_v0.1.0/dist/RoninAgentForge.exe
+            work/Ronin_Agent_Forge_Windows_v0.1.0/dist/VERIFICATION.txt
+            work/Ronin_Agent_Forge_Windows_v0.1.0/dist/SHA256SUMS.txt
+            source.zip
+          retention-days: 7
