@@ -81,13 +81,7 @@ jobs:
       - name: Build and smoke-test Windows installer
         shell: pwsh
         run: |
-          $source = Get-Content vanta/windows-native/package.ps1 -Raw
-          $source = $source.Replace("$installerSource=Join-Path $root 'vanta/windows-native/installer.iss'", "$installerSource=Join-Path $root 'ronin-vanta-windows/installer.iss'")
-          $source = $source.Replace("Copy-Item $installerSource ronin-vanta-windows/installer.iss", "")
-          $source = $source.Replace("Ronin-Vanta-Windows-0.1.1-Setup.exe", "Ronin-Vanta-Windows-0.3.0-Setup.exe")
-          $source = $source.Replace("version='0.1.1'", "version='0.3.0'")
-          Set-Content artifacts/package-030.ps1 $source -Encoding utf8
-          & artifacts/package-030.ps1
+          & vanta/windows-030/package.ps1
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 
       - name: Preserve exact source and checksums
