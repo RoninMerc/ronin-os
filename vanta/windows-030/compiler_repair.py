@@ -36,3 +36,21 @@ for rel, pairs in tests.items():
         t = t.replace(old, new)
     p.write_text(t, encoding='utf-8')
 print('Repaired invalid multiple var declarators in Windows 0.3 tests.')
+
+# Product corrections discovered by native acceptance tests.
+p = Path('ronin-vanta-windows/src/Vanta.Core/Workflows.cs')
+t = p.read_text(encoding='utf-8')
+old = '        conversation = JsonEx.Clone(conversation); conversation.Draft = "";'
+new = '        conversation = JsonEx.Clone(conversation); conversation.Draft = "";\n        if (conversation.ModelKey.Length == 0 && selected != null) conversation.ModelKey = selected.Key;'
+if old not in t:
+    raise SystemExit('Chat model seed insertion point not found')
+p.write_text(t.replace(old, new, 1), encoding='utf-8')
+
+p = Path('ronin-vanta-windows/src/Vanta.Windows/MainWindow.cs')
+t = p.read_text(encoding='utf-8')
+old = '        Loaded += (_, _) => { ConfigureTray(); Navigate(Services.Preferences.LastAgentProject.Length > 0 ? "Workspace" : "Projects"); scheduleTimer.Start(); _ = RunDueSchedules(); };'
+new = '        Loaded += (_, _) => { ConfigureTray(); Navigate("Chat"); scheduleTimer.Start(); _ = RunDueSchedules(); };'
+if old not in t:
+    raise SystemExit('Conversation-first startup insertion point not found')
+p.write_text(t.replace(old, new, 1), encoding='utf-8')
+print('Applied conversation-first startup and explicit first-turn model seeding.')
