@@ -30,8 +30,9 @@ for rel, pairs in tests.items():
     p = Path(rel)
     t = p.read_text(encoding='utf-8')
     for old, new in pairs:
-        if old not in t:
+        count = t.count(old)
+        if count == 0:
             raise SystemExit(f'Test compiler repair pattern not found in {rel}: {old}')
-        t = t.replace(old, new, 1)
+        t = t.replace(old, new)
     p.write_text(t, encoding='utf-8')
 print('Repaired invalid multiple var declarators in Windows 0.3 tests.')
