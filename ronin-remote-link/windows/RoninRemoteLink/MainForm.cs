@@ -335,24 +335,29 @@ public sealed class MainForm : Form
             var id = txtTargetId.Text.Trim().Replace(" ", "");
             if (id.Length < 3) throw new InvalidOperationException("Enter the main desktop ID.");
 
-            var target = id;
             var server = txtServer.Text.Trim();
             var key = txtKey.Text.Trim();
-            if (!string.IsNullOrWhiteSpace(server))
+            var target = id + (string.IsNullOrWhiteSpace(server) ? "" : "/r@" + server);
+
+            var uri = new StringBuilder("rustdesk://");
+            if (files) uri.Append("file-transfer/");
+            uri.Append(target);
+
+            var hasQuery = false;
+            if (!string.IsNullOrWhiteSpace(key))
             {
-                target += "/r@" + server;
-                if (!string.IsNullOrWhiteSpace(key))
-                    target += "?key=" + Uri.EscapeDataString(key);
+                uri.Append("?key=").Append(Uri.EscapeDataString(key));
+                hasQuery = true;
+            }
+            if (!string.IsNullOrEmpty(txtSessionPassword.Text))
+            {
+                uri.Append(hasQuery ? "&" : "?")
+                   .Append("password=")
+                   .Append(Uri.EscapeDataString(txtSessionPassword.Text));
             }
 
             var psi = new ProcessStartInfo(engine) { UseShellExecute = false };
-            psi.ArgumentList.Add(files ? "--file-transfer" : "--connect");
-            psi.ArgumentList.Add(target);
-            if (!string.IsNullOrEmpty(txtSessionPassword.Text))
-            {
-                psi.ArgumentList.Add("--password");
-                psi.ArgumentList.Add(txtSessionPassword.Text);
-            }
+            psi.ArgumentList.Add(uri.ToString());
             Process.Start(psi);
             SetStatus(files ? "File transfer opened." : "Remote desktop opened.");
             await Task.CompletedTask;

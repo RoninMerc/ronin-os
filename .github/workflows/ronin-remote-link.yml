@@ -55,11 +55,16 @@ jobs:
       - name: Build phone and tablet APKs
         working-directory: ronin-remote-link/android
         run: gradle --no-daemon :app:assemblePhoneDebug :app:assembleTabletDebug
-      - name: Stage APKs
+      - name: Verify and stage APKs
         run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          PHONE="ronin-remote-link/android/app/build/outputs/apk/phone/debug/app-phone-debug.apk"
+          TABLET="ronin-remote-link/android/app/build/outputs/apk/tablet/debug/app-tablet-debug.apk"
+          "$APKSIGNER" verify --verbose "$PHONE"
+          "$APKSIGNER" verify --verbose "$TABLET"
           mkdir -p out/android
-          cp ronin-remote-link/android/app/build/outputs/apk/phone/debug/app-phone-debug.apk out/android/Ronin-Remote-Link-Phone-v0.1.0.apk
-          cp ronin-remote-link/android/app/build/outputs/apk/tablet/debug/app-tablet-debug.apk out/android/Ronin-Remote-Link-Tablet-v0.1.0.apk
+          cp "$PHONE" out/android/Ronin-Remote-Link-Phone-v0.1.0.apk
+          cp "$TABLET" out/android/Ronin-Remote-Link-Tablet-v0.1.0.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Ronin-Remote-Link-Phone-v0.1.0
