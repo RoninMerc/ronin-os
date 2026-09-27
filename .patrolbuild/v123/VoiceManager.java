@@ -224,6 +224,15 @@ public final class VoiceManager {
     }
 
     public void preview(String text,float rate){main.post(()->enqueue(text,Math.max(.75f,Math.min(1.5f,rate))));}
+    public boolean welcome(){
+        final String message="Good evening, Tristan. Let's have a good shift.";
+        if(!ready()) return false;
+        try{
+            if(resolve(message,activeProfile().id).isEmpty()) return false;
+        }catch(Exception e){ return false; }
+        preview(message,speechSettings.speed());
+        return true;
+    }
     public void test(){
         main.post(()->{
             if(!ready()){
