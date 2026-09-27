@@ -1,0 +1,359 @@
+Silvertracker update
+New Silvertracker update
+New activity
+New patrol activity
+Good evening, Tristan. Let's have a good shift
+Good evening, Tristan
+Let's have a good shift
+Adam
+Adam Kinsella
+A Kinsella
+Blake
+Blake Eyers
+B Eyers
+Broadbeach SNP
+SNP
+Caley
+Caley Ismay
+C Ismay
+Christopher
+Christopher Henry
+Chris Henry
+Connor
+Connor Fitzpatrick
+C Fitz
+Dave
+Dave Sahu
+D Sahu 1
+David
+David Henry
+D Henry 1
+Dean
+Dean Rogers
+D Rogers 1
+Dylan
+Dylan Deo
+D Deo
+Hilton Guard
+H Security
+Jack Bell
+J Bell 1
+Jack Grillo
+J Grillo
+Jack Taylor
+Jack T
+Jackson
+Jackson Bryant-Kelly
+J Bryant 1
+Jazna
+Jazna Jenyns
+Info 1
+Kieran
+Kieran Davies
+K Davies
+K Davies 1
+Lochlan
+Lochlan Mitchelson-Hall
+L M Hall
+Maarino
+Maarino Graves
+M Graves
+M Graves 1
+Mitch
+Mitch De Petro
+M Petro
+Nic
+Nic Billingham
+N Bill
+Peter
+Peter Davis
+Peter D
+Samuel
+Samuel Gallo
+S Gallo
+Sebastian
+Sebastian Ashenden
+S Ashenden
+Thomas
+Thomas Edwards
+T Edwards
+Tohi
+Tohi Graves
+T Graves 1
+Tristan
+Tristan Murdoch
+T Murd
+Troy
+Troy Rogers
+T Rogers
+Alarm Response
+Animal Control
+Assault
+Attempted Break & Enter
+Breach - GCCC
+Breach- GCCC
+Breach - Body Corporate By-laws
+Breach- Body Corporate By-laws
+Break and Enter
+Car Accident
+Common Property Damage
+Customer assistance
+Customer Complaint
+Danger/Threat
+Disturbance
+Domestic Violence
+Door Found Open
+Environmental Issue
+Fire Incident
+First Aid Applied
+Garage Door Found Open
+Gate Access - Emergency
+Gate Access - Resident/Visitor
+General Issue
+Graffiti
+Hazard
+Hooning
+Injury
+Interaction - Resident
+Lost and Found
+Minor Flooding
+Noise Complaint
+Owner Response
+Pedestrian Gate Unsecured
+Phone Call Received
+Physical Altercation
+Physical Violence
+Property Damage
+Public Assistance
+Public nuisance
+QAS On Site
+QFS On Site
+QPS On Site
+Resident Issue/Concern
+Robbery
+Security Gate Unsecured
+Security Patrol
+Solicitation
+Stolen Vehicle
+Suspicious Activity
+Tampering
+Theft
+Trespassing
+Unauthorized Visitor
+Under The Influence
+Vandalism
+Vehicle Patrol Completed
+Vehicle Unsecured
+Verbal Altercation
+Welfare Check
+Window Found Open
+General Patrol
+Guard Patrol
+General Patrol - Impeccable
+General Patrol - Impeccable BC
+General Patrol - Impeccable body corporate
+Guard Patrol - Impeccable
+Guard Patrol - Impeccable body corporate
+General Patrol - Solo
+Guard Patrol - Solo
+General Patrol - Serenade
+General Patrol - Serenade BC
+General Patrol - Serenade body corporate
+Guard Patrol - Serenade
+General Patrol - Western Bay
+General Patrol - Western Bay BC
+General Patrol - Western Bay body corporate
+Guard Patrol - Western Bay
+General Patrol - Slipstream
+General Patrol - Slipstream BC
+General Patrol - Slipstream body corporate
+Guard Patrol - Slipstream
+General Patrol - Balmara Place
+General Patrol - Balmara BC
+General Patrol - Balmara body corporate
+Guard Patrol - Balmara Place
+General Patrol - Eolo
+General Patrol - Eolo BC
+General Patrol - Eolo body corporate
+Guard Patrol - Eolo
+General Patrol - Christina RBC
+General Patrol - Christina
+Guard Patrol - Christina RBC
+General Patrol - Tradition Place
+General Patrol - Tradition BC
+General Patrol - Tradition body corporate
+Guard Patrol - Tradition Place
+General Patrol - Quest
+Guard Patrol - Quest
+Scan point
+Patrol scan point
+Scan point recorded
+Patrol scan recorded
+General patrol scan point
+Patrol check completed
+Area check completed
+Parking breach
+Parking breach one
+Parking breach two
+Parking breach three
+First warning parking breach
+Second warning parking breach
+Third warning parking breach
+Parking breach - first warning
+Parking breach - second warning
+Parking breach - third warning
+First breach
+Second breach
+Third breach
+Visitor parking breach
+Resident parking breach
+Vehicle breach
+Parking breach recorded
+New parking breach
+Suspicious vehicle
+Suspicious vehicle report
+Suspicious vehicle observed
+Incident report
+New incident report
+Security incident
+Activity report
+General report
+Recreation centre locked
+Recreation centre unlocked
+Rec centre locked
+Rec centre unlocked
+Recreation centre check completed
+Gate locked
+Gate unlocked
+Gate check completed
+Building locked
+Building unlocked
+Facility locked
+Facility unlocked
+Vehicle observed
+Vehicle check completed
+No issues observed
+Nothing further to report
+Zero
+One
+Two
+Three
+Four
+Five
+Six
+Seven
+Eight
+Nine
+First
+Second
+Third
+Warning
+First warning
+Second warning
+Third warning
+Registration
+Vehicle registration
+Number plate
+Alpha
+Bravo
+Charlie
+Delta
+Echo
+Foxtrot
+Golf
+Hotel
+India
+Juliet
+Kilo
+Lima
+Mike
+November
+Oscar
+Papa
+Quebec
+Romeo
+Sierra
+Tango
+Uniform
+Victor
+Whiskey
+X-ray
+Yankee
+Zulu
+Body corporate
+BC
+RBC
+GCCC
+QAS
+QFS
+QPS
+Visitor car park
+Visitor parking
+Resident parking
+Common property
+Recreation centre
+Entrance
+Exit
+Gate
+Driveway
+Car park
+Western entrance
+Eastern entrance
+Northern boundary
+Southern boundary
+No further action required
+Monitoring continues
+Patrol continues
+End of update
+Silvertrack update
+Jack
+Equipment Register
+Fuel Run
+General Patrol - Balmara Pla
+General Patrol - Boambillee
+General patrol - Bobsled Lan
+General Patrol - Ceil Circui
+General Patrol - Christina B
+General Patrol - Eastern Bay
+General Patrol - Elusive BC
+General Patrol - Northern Ba
+General Patrol - Pathfinder
+General Patrol - Piccolo BC
+General Patrol - Quest BC
+General Patrol - Rampage BC
+General Patrol - Recreation
+General Patrol - Solo Place
+General Patrol - Sovereign B
+General Patrol - Tradition B
+General Patrol - Village Hig
+Recreational Facility Gym
+Recreational Facility Unlock
+Vehicle Checklist - 065OX4
+Vehicle Checklist - 113OM3
+Balmara BC
+Boambillee BC
+Bobsled BC
+Ceil BC
+Christina BC
+Eastern Bay BC
+Elusive BC
+Eolo BC
+Guardhouse
+Harbour Front BC
+Impeccable BC
+Northern Bay BC
+Pathfinder BC
+Piccollo BC
+Quest BC
+Rampage BC
+Recreational Facility 1
+Serenade BC
+Slipstream BC
+Solo BC
+Sovereign BC
+Tradition BC
+Village High BC
+Western Bay BC / Serenity Bay
+Parking Breach - 1st Warning
+Parking Breach - 2nd Warning
+Parking Breach - 3rd Warning
