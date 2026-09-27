@@ -63,6 +63,7 @@ public class SingleWavCanonicalTest {
         VoiceManager v=new VoiceManager(context,prefs);
         AtomicBoolean ok=new AtomicBoolean(false);
         v.importTrainingAudio(null,"Derek",(success,msg)->ok.set(success));
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().waitForIdleSync();
         assertTrue(ok.get());
         assertEquals(2,v.profiles().size());
         String derek=v.activeProfile().id;
