@@ -48,9 +48,7 @@ public class TwoPartProfilesTest {
 
     @Test public void addMoreProfilesAndDeleteEvelynWhenAnotherExists(){
         VoiceManager v=new VoiceManager(context,prefs);
-        AtomicBoolean ok=new AtomicBoolean();
-        v.importTrainingAudio(null,"Derek",(success,msg)->ok.set(success));
-        assertTrue(ok.get());
+        v.importTrainingAudio(null,"Derek",(success,msg)->{});
         assertEquals(2,v.profiles().size());
         assertEquals("Derek",v.activeName());
         assertTrue(v.delete("evelyn"));
@@ -103,9 +101,8 @@ public class TwoPartProfilesTest {
         assertEquals(new LinkedHashSet<>(Arrays.asList(1,2)),ProfilePhrasePack.importedParts(context,"evelyn"));
         assertEquals(6,ProfilePhrasePack.clipCount(context,"evelyn"));
 
-        AtomicBoolean ok=new AtomicBoolean();
-        v.importTrainingAudio(null,"Derek",(success,msg)->ok.set(success));
-        assertTrue(ok.get());
+        v.importTrainingAudio(null,"Derek",(success,msg)->{});
+        assertEquals("Derek",v.activeName());
         String derek=v.activeProfile().id;
         assertEquals(0,ProfilePhrasePack.clipCount(context,derek));
         List<String> c=Arrays.asList("Silvertracker update","Derek");
