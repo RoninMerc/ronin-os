@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'au.com.roningroup.remotelink'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "au.com.roningroup.remotelink"
+        minSdk 28
+        targetSdk 36
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    flavorDimensions "device"
+    productFlavors {
+        phone {
+            dimension "device"
+            applicationIdSuffix ".phone"
+            resValue "string", "app_name", "Ronin Remote Link"
+            buildConfigField "boolean", "TABLET_BUILD", "false"
+        }
+        tablet {
+            dimension "device"
+            applicationIdSuffix ".tablet"
+            resValue "string", "app_name", "Ronin Remote Link Tablet"
+            buildConfigField "boolean", "TABLET_BUILD", "true"
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+}

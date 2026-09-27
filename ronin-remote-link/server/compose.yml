@@ -1,0 +1,24 @@
+services:
+  hbbs:
+    container_name: ronin-remote-hbbs
+    image: ghcr.io/rustdesk/rustdesk-server:1.1.16
+    command: hbbs -r ${PUBLIC_HOST}:21117
+    volumes:
+      - ./data:/root
+    ports:
+      - "21115:21115/tcp"
+      - "21116:21116/tcp"
+      - "21116:21116/udp"
+    depends_on:
+      - hbbr
+    restart: unless-stopped
+
+  hbbr:
+    container_name: ronin-remote-hbbr
+    image: ghcr.io/rustdesk/rustdesk-server:1.1.16
+    command: hbbr
+    volumes:
+      - ./data:/root
+    ports:
+      - "21117:21117/tcp"
+    restart: unless-stopped
