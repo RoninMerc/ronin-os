@@ -4,7 +4,7 @@ on:
     branches: ['patrol-link-v127-two-part-multi-profile']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: patrol-link-v127-two-part-multi-profile
   cancel-in-progress: true
@@ -160,6 +160,22 @@ jobs:
           ]
           Path('/tmp/deliver127/Ronin-Patrol-Link-v1.1.17-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
           PY
+
+      - name: Publish direct APK on build branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/deliver127/Ronin-Patrol-Link-v1.1.17-Two-Part-Multi-Profile.apk dist/Ronin-Patrol-Link-v1.1.17-Two-Part-Multi-Profile.apk
+          git config user.name "Ronin Patrol Link Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add dist/Ronin-Patrol-Link-v1.1.17-Two-Part-Multi-Profile.apk
+          if git diff --cached --quiet; then
+            echo "Direct APK already current."
+          else
+            git commit -m "Publish Patrol Link v1.1.17 direct APK [skip ci]"
+            git push origin HEAD:patrol-link-v127-two-part-multi-profile
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
