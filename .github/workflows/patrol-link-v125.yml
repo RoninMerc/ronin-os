@@ -1,0 +1,151 @@
+name: Patrol Link 1.1.15 exact pack coverage
+on:
+  push:
+    branches: ['patrol-link-v125-exact-pack-coverage']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-link-v125-exact-pack-coverage
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct v1.1.13 and apply exact-pack coverage fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v125 /tmp/deliver124/evidence
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v125
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v125
+          J=/tmp/patrol-v125/app/src/main/java/au/com/roningroup/patrollink
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v125
+          mkdir -p /tmp/patrol-v125/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v125/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v125
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v125
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v125/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v125/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v125
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v125
+          python3 .patrolbuild/v122/patch.py /tmp/patrol-v125
+          python3 .patrolbuild/v123/patch.py /tmp/patrol-v125
+          python3 .patrolbuild/v125/patch.py /tmp/patrol-v125
+          mkdir -p /tmp/patrol-v125/app/src/main/assets/exact
+          cp .patrolbuild/v123/base_phrases.txt /tmp/patrol-v125/app/src/main/assets/exact/base_phrases.txt
+          mkdir -p /tmp/patrol-v125/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v125/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/patrol-v125')
+          java=root/'app/src/main/java/au/com/roningroup/patrollink'
+          forbidden=['android.speech.tts','TextToSpeech','com.k2fsa.sherpa.onnx','api.elevenlabs.io','xi-api-key']
+          for p in java.glob('*.java'):
+              content=p.read_text()
+              for bad in forbidden: assert bad not in content,(p,bad)
+          assert 'LocalVoiceService' not in (root/'app/src/main/AndroidManifest.xml').read_text()
+          assert "versionName '1.1.15'" in (root/'app/build.gradle').read_text()
+          voice=(java/'VoiceManager.java').read_text()
+          assert 'addAnnouncementParts' in voice
+          assert 'Silvertracker update' in voice
+          PY
+      - name: Compile and run unit tests
+        working-directory: /tmp/patrol-v125
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Browser parser regressions
+        shell: bash
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v125/tests/test_dom.py')
+          s=p.read_text().replace("shutil.which('chromium') or None", "shutil.which('chromium') or shutil.which('google-chrome') or None")
+          p.write_text(s)
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v125/tests/test_dom.py | tee /tmp/deliver124/evidence/DOM-TESTS.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 refresh TLS and exact-pack regressions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v125 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest
+      - name: Verify package and create delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver124/Ronin-Patrol-Link-v1.1.15-Master-Site-Voice-Pack.apk
+          cp /tmp/patrol-v125/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver124/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver124/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver124/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver124/evidence/SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = [
+              'RONIN PATROL LINK 1.1.15 — MASTER SITE VOICE PACK',
+              '',
+              'This release retains the v1.1.13 exact AnyVoiceLab recording architecture.',
+              'No TTS, no voice reconstruction, no ElevenLabs and no Android system voice.',
+              '',
+              'FIXES:',
+              '- Master exact phrase script now includes all guard names/usernames and all incident types supplied in the site screenshots.',
+              '- Guard nickname defaults are seeded from the supplied Silvertracker user list without overwriting user-edited nicknames.\n              - First successful live feed in an app session plays the exact recorded welcome: "Good evening, Tristan. Let's have a good shift."',
+              '- Editing speech wording marks the exact pack as potentially needing regeneration, rather than implying the current pack definitely covers new wording.',
+              '- Refresh/TLS logic is unchanged from the working monitor build.',
+              '',
+              'INSTALL:',
+              'Install over v1.1.13. Do not uninstall or clear app data. The existing Eve exact pack remains installed.',
+              'After installing, copy a fresh exact phrase-pack script and generate/import a new AnyVoiceLab WAV so the expanded guard/status/welcome recordings are present.',
+              '',
+              'TEST SCOPE:',
+              'Compilation, unit tests, browser parser regressions, Android 16 refresh/TLS tests and exact phrase-pack split/import regressions passed in CI.',
+              'No physical Samsung handset, live authenticated Silvertracker shift or Bluetooth/car audio route was tested.'
+          ]
+          Path('/tmp/deliver124/Ronin-Patrol-Link-v1.1.15-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.15-verified
+          path: |
+            /tmp/deliver124/Ronin-Patrol-Link-v1.1.15-Master-Site-Voice-Pack.apk
+            /tmp/deliver124/Ronin-Patrol-Link-v1.1.15-VERIFICATION.txt
+          retention-days: 7
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v125-evidence
+          path: |
+            /tmp/patrol-v125/app/build/reports/
+            /tmp/patrol-v125/app/build/test-results/
+            /tmp/patrol-v125/app/build/outputs/androidTest-results/
+            /tmp/deliver124/evidence/
+          retention-days: 7
