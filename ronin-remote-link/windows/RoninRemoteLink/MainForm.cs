@@ -255,7 +255,7 @@ public sealed class MainForm : Form
             {
                 UseShellExecute = true,
                 Verb = "runas",
-                Arguments = "/i "" + temp + "" /quiet /norestart"
+                Arguments = "/i \"" + temp + "\" /quiet /norestart"
             };
             using var p = Process.Start(psi) ?? throw new InvalidOperationException("Could not start installer.");
             await p.WaitForExitAsync();
@@ -306,7 +306,7 @@ public sealed class MainForm : Form
             var pw = txtHostPassword.Text;
             if (pw.Length < 12) throw new InvalidOperationException("Use an unattended password of at least 12 characters.");
             var engine = RequireEngine();
-            await RunElevated(engine, "--password "" + EscapeArg(pw) + """);
+            await RunElevated(engine, "--password \"" + EscapeArg(pw) + "\"");
             txtHostPassword.Clear();
             SetStatus("Unattended password updated. It is not stored by Ronin Remote Link.");
         }
@@ -320,7 +320,7 @@ public sealed class MainForm : Form
             var cfg = txtConfigString.Text.Trim();
             if (cfg.Length < 10) throw new InvalidOperationException("Paste a valid exported RustDesk server config string first.");
             var engine = RequireEngine();
-            await RunElevated(engine, "--config "" + EscapeArg(cfg) + """);
+            await RunElevated(engine, "--config \"" + EscapeArg(cfg) + "\"");
             SetStatus("Self-hosted server configuration imported into the engine.");
         }
         catch (Exception ex) { Error(ex.Message); }
