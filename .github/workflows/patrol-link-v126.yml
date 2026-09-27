@@ -70,7 +70,8 @@ jobs:
           assert 'Felicity' not in vm
           ui=(java/'MainActivity.java').read_text()
           assert 'Evelyn · Multi-part voice pack' in ui
-          assert 'Import Part ' in ui
+          assert 'pendingEvelynPart=part.number' in ui
+          assert 'Copy Part ' in ui
           PY
 
       - name: Compile and unit tests
