@@ -10,3 +10,5 @@ if hashlib.sha256(patch).hexdigest() != '08cef9be5f4f4bd9c387e6a3a5ba0a524e8935d
     raise SystemExit('Windows 0.4 patch checksum mismatch')
 subprocess.run(['patch','--batch','--fuzz=0','-p1','-d','.'], input=patch, check=True)
 print(f'Applied Windows Vanta 0.4 next-level patch ({len(patch)} bytes).')
+
+# Trigger Windows 0.4 validation run after workflow creation.
