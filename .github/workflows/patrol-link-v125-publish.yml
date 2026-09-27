@@ -1,0 +1,34 @@
+name: Publish Patrol Link 1.1.15 release asset
+on:
+  push:
+    branches: ['patrol-link-v125-release-asset']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified v1.1.15 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/release
+          gh run download 36313567257 --repo "$GITHUB_REPOSITORY" --name Ronin-Patrol-Link-v1.1.15-verified --dir /tmp/release
+          test -s /tmp/release/Ronin-Patrol-Link-v1.1.15-Master-Site-Voice-Pack.apk
+          test -s /tmp/release/Patrol-Link-v1.1.15-Master-Site-Voice-Pack-Script.txt
+      - name: Publish direct APK and script
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create patrol-link-v1.1.15 \
+            /tmp/release/Ronin-Patrol-Link-v1.1.15-Master-Site-Voice-Pack.apk \
+            /tmp/release/Patrol-Link-v1.1.15-Master-Site-Voice-Pack-Script.txt \
+            /tmp/release/Ronin-Patrol-Link-v1.1.15-VERIFICATION.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 4b323de083ff20abdb6591e1a81feb8e11048de2 \
+            --title "Ronin Patrol Link v1.1.15" \
+            --notes "Master site exact-voice pack: supplied guard names/usernames, supplied incident types, and one-time welcome message. Install over v1.1.14 without clearing data."
