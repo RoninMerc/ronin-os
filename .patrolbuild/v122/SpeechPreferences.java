@@ -24,6 +24,39 @@ public final class SpeechPreferences {
             seed(init,"D.DEO","Dylan");seed(init,"D.ROGERS1","Dean");seed(init,"T.MURD","Tristan");
             init.putBoolean("nicknames_seeded",true);
         }
+        if(!prefs.getBoolean("site_guard_names_seeded_v125",false)) {
+            seed(init,"A.KINSELLA","Adam");
+            seed(init,"B.EYERS","Blake");
+            seed(init,"SNP","Broadbeach SNP");
+            seed(init,"C.ISMAY","Caley");
+            seed(init,"CHRIS.HENRY","Christopher");
+            seed(init,"C.FITZ","Connor");
+            seed(init,"D.SAHU1","Dave");
+            seed(init,"D.HENRY1","David");
+            seed(init,"D.ROGERS1","Dean");
+            seed(init,"D.DEO","Dylan");
+            seed(init,"HSECURITY","Hilton Guard");
+            seed(init,"J.BELL1","Jack");
+            seed(init,"J.GRILLO","Jack");
+            seed(init,"JACK.T","Jack");
+            seed(init,"J.BRYANT1","Jackson");
+            seed(init,"INFO.1","Jazna");
+            seed(init,"K.DAVIES","Kieran");
+            seed(init,"K.DAVIES1","Kieran");
+            seed(init,"L.MHALL","Lochlan");
+            seed(init,"M.GRAVES","Maarino");
+            seed(init,"M.GRAVES1","Maarino");
+            seed(init,"M.PETRO","Mitch");
+            seed(init,"N.BILL","Nic");
+            seed(init,"PETER.D","Peter");
+            seed(init,"S.GALLO","Samuel");
+            seed(init,"S.ASHENDEN","Sebastian");
+            seed(init,"T.EDWARDS","Thomas");
+            seed(init,"T.GRAVES1","Tohi");
+            seed(init,"T.MURD","Tristan");
+            seed(init,"T.ROGERS","Troy");
+            init.putBoolean("site_guard_names_seeded_v125",true);
+        }
         init.apply();
         for(String type:Arrays.asList(ALERT,PLACE,PHRASE))load(type);
     }
