@@ -243,7 +243,7 @@ public final class VoiceManager {
         }
         // Include both sides of existing pronunciation rules so they remain visible/editable.
         for(SpeechPreferences.Entry e:speechSettings.entries(SpeechPreferences.PHRASE)){
-            add(raw,e.original);if(e.edited())add(raw,e.replacement);
+            add(raw,e.original);
         }
         if(recent!=null)for(Observation o:recent){
             add(raw,o.issue);add(raw,o.property);
