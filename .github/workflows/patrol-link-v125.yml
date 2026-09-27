@@ -131,7 +131,7 @@ jobs:
               '',
               'WELCOME',
               'On the first successful READ_OK live feed in an app session, Patrol Link attempts the exact recorded phrase:',
-              'Good evening, Tristan. Let\\'s have a good shift.',
+              "Good evening, Tristan. Let's have a good shift.",
               'It is spoken once per signed-in app session when that exact recording exists in the selected voice pack.',
               '',
               'INSTALL / VOICE PACK',
