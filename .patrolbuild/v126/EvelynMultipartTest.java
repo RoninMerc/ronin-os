@@ -27,7 +27,7 @@ public class EvelynMultipartTest {
     private static void le32(DataOutputStream d,int v)throws IOException{le16(d,v);le16(d,v>>>16);}
 
     private File wav(String name,int phrases)throws Exception{
-        int rate=48000,phraseFrames=rate/2,pauseFrames=rate*3;
+        int rate=48000,phraseFrames=rate*3/4,pauseFrames=rate*3;
         int total=phrases*phraseFrames+Math.max(0,phrases-1)*pauseFrames;
         File f=new File(context.getCacheDir(),name);
         try(DataOutputStream d=new DataOutputStream(new BufferedOutputStream(new FileOutputStream(f)))){
