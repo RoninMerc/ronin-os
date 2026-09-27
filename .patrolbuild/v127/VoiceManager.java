@@ -308,7 +308,7 @@ public final class VoiceManager {
     public void stop(){if(Looper.myLooper()!=Looper.getMainLooper()){main.post(this::stop);return;}queue.clear();clipQueue.clear();current=null;releasePlayer();}
     private void refreshStatus(){
         Profile p=activeProfile();Set<Integer> parts=ProfilePhrasePack.importedParts(context,p.id);
-        status=ProfilePhrasePack.ready(context,p.id)?p.name+" exact recordings ready · "+parts.size()+"/2 parts imported:p "+parts:p.name+" voice pack needs recordings";
+        status=ProfilePhrasePack.ready(context,p.id) ? p.name+" exact recordings ready · "+parts.size()+"/2 parts imported "+parts : p.name+" voice pack needs recordings";
     }
 
     private JSONObject storedManifest(String id){try{String raw=prefs.getString(MANIFEST_PREFIX+id,"");return raw.isEmpty()?null:new JSONObject(raw);}catch(Exception e){return null;}}
