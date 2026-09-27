@@ -1,0 +1,171 @@
+name: Patrol Link 1.1.16 Evelyn multipart
+on:
+  push:
+    branches: ['patrol-link-v126-evelyn-multipart']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-link-v126-evelyn-multipart
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Reconstruct v1.1.15 and apply Evelyn multipart
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v126 /tmp/deliver126/evidence
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v126
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v126
+          J=/tmp/patrol-v126/app/src/main/java/au/com/roningroup/patrollink
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v126
+          mkdir -p /tmp/patrol-v126/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v126/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v126
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v126
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v126/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v126/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v126
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v126
+          python3 .patrolbuild/v122/patch.py /tmp/patrol-v126
+          python3 .patrolbuild/v123/patch.py /tmp/patrol-v126
+          python3 .patrolbuild/v124/patch.py /tmp/patrol-v126
+          python3 .patrolbuild/v125/patch.py /tmp/patrol-v126
+          python3 .patrolbuild/v126/patch.py /tmp/patrol-v126
+          mkdir -p /tmp/patrol-v126/app/src/main/assets/exact
+          cp .patrolbuild/v123/base_phrases.txt /tmp/patrol-v126/app/src/main/assets/exact/base_phrases.txt
+          mkdir -p /tmp/patrol-v126/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v126/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/patrol-v126'); java=root/'app/src/main/java/au/com/roningroup/patrollink'
+          forbidden=['android.speech.tts','TextToSpeech','com.k2fsa.sherpa.onnx','api.elevenlabs.io','xi-api-key']
+          for p in java.glob('*.java'):
+              content=p.read_text()
+              for bad in forbidden: assert bad not in content,(p,bad)
+          assert "versionName '1.1.16'" in (root/'app/build.gradle').read_text()
+          vm=(java/'VoiceManager.java').read_text()
+          assert 'DEFAULT_NAME="Evelyn"' in vm
+          assert 'PART_SIZE=22' in vm
+          assert 'Felicity' not in vm
+          ui=(java/'MainActivity.java').read_text()
+          assert 'Evelyn · Multi-part voice pack' in ui
+          assert 'Import Part ' in ui
+          PY
+
+      - name: Compile and unit tests
+        working-directory: /tmp/patrol-v126
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Browser parser regressions
+        shell: bash
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v126/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v126/tests/test_dom.py | tee /tmp/deliver126/evidence/DOM-TESTS.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 monitor and Evelyn multipart tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v126 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.EvelynMultipartTest
+
+      - name: Verify and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver126/Ronin-Patrol-Link-v1.1.16-Evelyn-Multipart.apk
+          cp /tmp/patrol-v126/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver126/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver126/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver126/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver126/evidence/SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET, os
+          total=0
+          for folder in [Path('/tmp/patrol-v126/app/build/test-results'),Path('/tmp/patrol-v126/app/build/outputs/androidTest-results')]:
+              for p in folder.rglob('TEST-*.xml'):
+                  for s in ET.parse(p).getroot().iter('testsuite'):
+                      assert int(s.attrib.get('failures',0))==0 and int(s.attrib.get('errors',0))==0 and int(s.attrib.get('skipped',0))==0,(p,s.attrib)
+                      total+=int(s.attrib.get('tests',0))
+          lines=[
+              'RONIN PATROL LINK 1.1.16 — EVELYN MULTI-PART EXACT VOICE',
+              'Commit: '+os.environ['GITHUB_SHA'],
+              'Run: '+os.environ['GITHUB_RUN_ID'],
+              'Tests passed: '+str(total),
+              '',
+              'VOICE',
+              'Evelyn is the only voice profile exposed by the app.',
+              'No TTS, voice reconstruction, ElevenLabs or system fallback voice.',
+              'Master exact script is divided into numbered parts of at most 22 phrases.',
+              'Each WAV part is imported against its matching part number and merged into one Evelyn exact-recording library.',
+              'Replacing one part does not delete recordings imported from other parts.',
+              'Existing exact voice data is migrated into the Evelyn library when possible.',
+              '',
+              'INSTALL',
+              'Install over v1.1.15. Do not uninstall or clear app data.',
+              'Open Voice settings, refresh script parts, then copy/generate/import each numbered part.',
+              '',
+              'TEST SCOPE',
+              'Unit, parser, Android 16 refresh/TLS, exact WAV splitting, site coverage and Evelyn multipart merge tests passed in CI.',
+              'No physical Samsung handset or live whole-shift test.'
+          ]
+          Path('/tmp/deliver126/Ronin-Patrol-Link-v1.1.16-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.16-verified
+          path: |
+            /tmp/deliver126/Ronin-Patrol-Link-v1.1.16-Evelyn-Multipart.apk
+            /tmp/deliver126/Ronin-Patrol-Link-v1.1.16-VERIFICATION.txt
+          retention-days: 7
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v126-evidence
+          path: |
+            /tmp/patrol-v126/app/build/reports/
+            /tmp/patrol-v126/app/build/test-results/
+            /tmp/patrol-v126/app/build/outputs/androidTest-results/
+            /tmp/deliver126/evidence/
+          retention-days: 7
