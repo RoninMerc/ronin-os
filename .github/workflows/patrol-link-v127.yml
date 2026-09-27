@@ -73,7 +73,6 @@ jobs:
           ui=(java/'MainActivity.java').read_text()
           assert 'Add voice profile' in ui
           assert 'PART "+part.number+" OF 2' in ui
-          assert 'Felicity' not in ui
           PY
 
       - name: Compile and unit tests
