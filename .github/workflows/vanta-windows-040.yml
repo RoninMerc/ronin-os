@@ -4,7 +4,8 @@ on:
   push:
     branches: ['build/vanta-windows-040-next-level']
     paths:
-      - 'vanta/windows-030/**'\n      - 'vanta/windows-040/**'
+      - 'vanta/windows-030/**'
+      - 'vanta/windows-040/**'
       - '.github/workflows/vanta-windows-040.yml'
   workflow_dispatch:
 
