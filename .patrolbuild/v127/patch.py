@@ -70,7 +70,8 @@ voice_ui=r'''    private void voiceLibrary() {
             }),new LinearLayout.LayoutParams(-1,dp(52)));gap(c,8);
             c.addView(button((part.imported?"Replace":"Import")+" Part "+part.number+" WAV",true,()->{
                 pendingVoicePart=part.number;
-                Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT);pick.addCategory(Intent.CATEGORY_OPENABLE);pick.setType("audio/wav");
+                Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT);pick.addCategory(Intent.CATEGORY_OPENABLE);pick.setType("audio/*");
+                pick.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"audio/wav","audio/x-wav","audio/vnd.wave","audio/wave","application/octet-stream"});
                 try{startActivityForResult(pick,REQ_EXACT_PACK);}catch(ActivityNotFoundException e){toast("No file picker is installed.");}
             }),new LinearLayout.LayoutParams(-1,dp(52)));
             addCard(form,c);
