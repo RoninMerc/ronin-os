@@ -1,0 +1,191 @@
+name: Patrol Link 1.1.18 phrase editor
+on:
+  push:
+    branches: ['patrol-link-v128-phrase-editor']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-link-v128-phrase-editor
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Reconstruct v1.1.16 and restore profiles with two halves
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v128 /tmp/deliver127/evidence
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v128
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v128
+          J=/tmp/patrol-v128/app/src/main/java/au/com/roningroup/patrollink
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v128
+          mkdir -p /tmp/patrol-v128/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v128/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v128
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v128
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v128/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v128/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v128
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v128
+          python3 .patrolbuild/v122/patch.py /tmp/patrol-v128
+          python3 .patrolbuild/v123/patch.py /tmp/patrol-v128
+          python3 .patrolbuild/v124/patch.py /tmp/patrol-v128
+          python3 .patrolbuild/v125/patch.py /tmp/patrol-v128
+          python3 .patrolbuild/v126/patch.py /tmp/patrol-v128
+          python3 .patrolbuild/v128/patch.py /tmp/patrol-v128
+          mkdir -p /tmp/patrol-v128/app/src/main/assets/exact
+          cp .patrolbuild/v123/base_phrases.txt /tmp/patrol-v128/app/src/main/assets/exact/base_phrases.txt
+          mkdir -p /tmp/patrol-v128/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v128/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/patrol-v128'); java=root/'app/src/main/java/au/com/roningroup/patrollink'
+          forbidden=['android.speech.tts','TextToSpeech','com.k2fsa.sherpa.onnx','api.elevenlabs.io','xi-api-key']
+          for p in java.glob('*.java'):
+              content=p.read_text()
+              for bad in forbidden: assert bad not in content,(p,bad)
+          assert "versionName '1.1.18'" in (root/'app/build.gradle').read_text()
+          vm=(java/'VoiceManager.java').read_text()
+          assert 'voice_profiles_v4' in vm
+          assert 'DEFAULT_NAME="Evelyn"' in vm
+          assert 'profiles().size()' in vm
+          assert 'TOTAL_PARTS=2' in (java/'ProfilePhrasePack.java').read_text()
+          ui=(java/'MainActivity.java').read_text()
+          assert 'Add voice profile' in ui
+          assert 'PART "+part.number+" OF 2' in ui
+          assert 'Full phrase & word list' in ui
+          assert 'voicePhraseList' in ui
+          assert 'phraseItems' in vm
+          PY
+
+      - name: Compile and unit tests
+        working-directory: /tmp/patrol-v128
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Browser parser regressions
+        shell: bash
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v128/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v128/tests/test_dom.py | tee /tmp/deliver127/evidence/DOM-TESTS.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 monitor voice profile and two-part regressions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v128 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.TwoPartProfilesTest,au.com.roningroup.patrollink.PhraseCatalogTest
+
+      - name: Verify and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver127/Ronin-Patrol-Link-v1.1.18-Phrase-Editor.apk
+          cp /tmp/patrol-v128/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver127/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver127/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver127/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver127/evidence/SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET, os
+          total=0
+          for folder in [Path('/tmp/patrol-v128/app/build/test-results'),Path('/tmp/patrol-v128/app/build/outputs/androidTest-results')]:
+              for p in folder.rglob('TEST-*.xml'):
+                  for s in ET.parse(p).getroot().iter('testsuite'):
+                      assert int(s.attrib.get('failures',0))==0 and int(s.attrib.get('errors',0))==0 and int(s.attrib.get('skipped',0))==0,(p,s.attrib)
+                      total+=int(s.attrib.get('tests',0))
+          lines=[
+              'RONIN PATROL LINK 1.1.18 — FULL PHRASE EDITOR + TWO-PART MULTI-PROFILE VOICE',
+              'Commit: '+os.environ['GITHUB_SHA'],
+              'Run: '+os.environ['GITHUB_RUN_ID'],
+              'Tests passed: '+str(total),
+              '',
+              'VOICE PROFILES',
+              'First v1.1.18 launch resets the visible voice list to exactly one profile: Evelyn.',
+              'Legacy Felicity profile metadata is removed and Felicity is not exposed in the UI.',
+              'Users can add additional voice profiles, select them, and delete the active profile whenever at least one other profile exists.',
+              'The app prevents deleting the sole remaining profile so voice settings always remain usable.',
+              '',
+              'SCRIPT PARTS',
+              'Every selected profile uses exactly two script/WAV halves: Part 1 and Part 2.',
+              'The complete master phrase list is split as evenly as possible by phrase count.',
+              'Part 1 and Part 2 merge into the selected profile exact-recording library.',
+              'Replacing one half does not delete recordings imported from the other half.',
+              'Each profile keeps its recordings separate from every other profile.',
+              '',
+              'PHRASE DICTIONARY',
+              'Voice settings exposes the full current phrase/word catalogue used to build the two scripts.',
+              'Entries show original wording, final spoken wording, edited state and the resulting Part 1/Part 2 assignment.',
+              'Any phrase can be edited or restored. Reusable corrections are applied before location de-duplication, so edits such as Balmara Pl -> Balmara Place can also prevent duplicate location readouts.',
+              'Saving a phrase refreshes the two script manifests and tells the user which half must be regenerated.',
+              '',
+              'VOICE QUALITY',
+              'No TTS, local voice reconstruction, ElevenLabs or system fallback voice is used.',
+              'Playback uses only imported exact website recordings.',
+              '',
+              'INSTALL',
+              'Install over v1.1.16. Do not uninstall or clear app data.',
+              'Existing Evelyn recordings are migrated where possible.',
+              '',
+              'TEST SCOPE',
+              'Compilation, unit tests, parser regressions, Android 16 refresh/TLS, exact WAV splitting, site coverage, profile add/delete, exactly-two-part splitting, per-profile merge/isolation and phrase-catalog edit/de-duplication passed in CI.',
+              'No physical Samsung handset or live whole-shift test.'
+          ]
+          Path('/tmp/deliver127/Ronin-Patrol-Link-v1.1.18-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.18-verified
+          path: |
+            /tmp/deliver127/Ronin-Patrol-Link-v1.1.18-Phrase-Editor.apk
+            /tmp/deliver127/Ronin-Patrol-Link-v1.1.18-VERIFICATION.txt
+          retention-days: 7
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v128-evidence
+          path: |
+            /tmp/patrol-v128/app/build/reports/
+            /tmp/patrol-v128/app/build/test-results/
+            /tmp/patrol-v128/app/build/outputs/androidTest-results/
+            /tmp/deliver127/evidence/
+          retention-days: 7
