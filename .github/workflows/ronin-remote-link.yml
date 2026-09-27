@@ -1,0 +1,88 @@
+name: Ronin Remote Link v0.1
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ronin-remote-link-v0.1.0
+    paths:
+      - 'ronin-remote-link/**'
+      - '.github/workflows/ronin-remote-link.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish native Windows package
+        shell: pwsh
+        run: |
+          dotnet publish .\ronin-remote-link\windows\RoninRemoteLink\RoninRemoteLink.csproj -c Release -r win-x64 --self-contained true -o .\out\windows /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:DebugType=None
+          Copy-Item .\ronin-remote-link\README.md .\out\windows\README.md
+          Copy-Item .\ronin-remote-link\THIRD_PARTY_NOTICES.md .\out\windows\THIRD_PARTY_NOTICES.md
+          Compress-Archive -Path .\out\windows\* -DestinationPath .\out\Ronin-Remote-Link-Windows-v0.1.0.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Remote-Link-Windows-v0.1.0
+          path: out/Ronin-Remote-Link-Windows-v0.1.0.zip
+          if-no-files-found: error
+
+  android:
+    name: Android phone + tablet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android 16 SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build phone and tablet APKs
+        working-directory: ronin-remote-link/android
+        run: gradle --no-daemon :app:assemblePhoneDebug :app:assembleTabletDebug
+      - name: Stage APKs
+        run: |
+          mkdir -p out/android
+          cp ronin-remote-link/android/app/build/outputs/apk/phone/debug/app-phone-debug.apk out/android/Ronin-Remote-Link-Phone-v0.1.0.apk
+          cp ronin-remote-link/android/app/build/outputs/apk/tablet/debug/app-tablet-debug.apk out/android/Ronin-Remote-Link-Tablet-v0.1.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Remote-Link-Phone-v0.1.0
+          path: out/android/Ronin-Remote-Link-Phone-v0.1.0.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Remote-Link-Tablet-v0.1.0
+          path: out/android/Ronin-Remote-Link-Tablet-v0.1.0.apk
+          if-no-files-found: error
+
+  server:
+    name: Self-host server bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package server files
+        run: |
+          mkdir -p out
+          cp -R ronin-remote-link/server out/server
+          cp ronin-remote-link/README.md out/server/PROJECT_README.md
+          cp ronin-remote-link/THIRD_PARTY_NOTICES.md out/server/THIRD_PARTY_NOTICES.md
+          cd out
+          zip -r Ronin-Remote-Link-Server-v0.1.0.zip server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Remote-Link-Server-v0.1.0
+          path: out/Ronin-Remote-Link-Server-v0.1.0.zip
+          if-no-files-found: error
