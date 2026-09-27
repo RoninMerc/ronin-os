@@ -118,6 +118,12 @@ jobs:
           sha256sum "$APK" > /tmp/deliver125/evidence/SHA256SUMS.txt
           python3 - <<'PY'
           from pathlib import Path
+          src=Path('/tmp/patrol-v125/app/src/main/assets/exact/base_phrases.txt')
+          phrases=[line.strip() for line in src.read_text().splitlines() if line.strip()]
+          Path('/tmp/deliver125/Patrol-Link-v1.1.15-Master-Site-Voice-Pack-Script.txt').write_text('\n[pause 3]\n\n'.join(phrases)+'\n')
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
           lines=[
               'RONIN PATROL LINK 1.1.15 — MASTER SITE VOICE PACK',
               '',
@@ -152,6 +158,7 @@ jobs:
           path: |
             /tmp/deliver125/Ronin-Patrol-Link-v1.1.15-Master-Site-Voice-Pack.apk
             /tmp/deliver125/Ronin-Patrol-Link-v1.1.15-VERIFICATION.txt
+            /tmp/deliver125/Patrol-Link-v1.1.15-Master-Site-Voice-Pack-Script.txt
           retention-days: 7
 
       - name: Upload evidence
