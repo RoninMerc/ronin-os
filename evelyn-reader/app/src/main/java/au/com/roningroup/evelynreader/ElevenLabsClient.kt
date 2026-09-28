@@ -104,7 +104,7 @@ object ElevenLabsClient {
                     "Content-Disposition: form-data; name=\"files\"; filename=\"" +
                         originalFileName.replace("\"", "_") + "\"\r\n"
                 )
-                out.writeBytes("Content-Type: \${mimeType ?: "audio/wav"}\r\n\r\n")
+                out.writeBytes("Content-Type: " + (mimeType ?: "audio/wav") + "\r\n\r\n")
                 BufferedInputStream(FileInputStream(sourceFile), 128 * 1024).use { input ->
                     val buffer = ByteArray(128 * 1024)
                     while (true) {
