@@ -1,0 +1,58 @@
+name: Build Evie Assistant APK
+
+on:
+  push:
+    branches:
+      - evie-assistant-mvp-20260929
+    paths:
+      - 'evie-assistant/**'
+      - '.github/workflows/build-evie-assistant.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle 8.9
+        run: |
+          curl -fL --retry 3             https://services.gradle.org/distributions/gradle-8.9-bin.zip             -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+
+      - name: Build APK
+        working-directory: evie-assistant
+        run: |
+          /tmp/gradle-8.9/bin/gradle             --no-daemon             :app:assembleDebug             --stacktrace
+
+      - name: Verify APK
+        run: |
+          APK="$(find evie-assistant/app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          unzip -t "$APK" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Evie-Assistant-0.1.0.apk
+          ls -lh dist/Evie-Assistant-0.1.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Evie-Assistant-0.1.0
+          path: dist/Evie-Assistant-0.1.0.apk
+          if-no-files-found: error
+          retention-days: 7
