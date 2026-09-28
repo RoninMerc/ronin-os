@@ -1,0 +1,91 @@
+name: Build Ronin Voice Reader APK
+
+on:
+  push:
+    branches:
+      - voice-reader-build-20260928
+    paths:
+      - 'voice-reader/**'
+      - '.github/workflows/build-ronin-voice-reader.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout build assets
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+
+      - name: Fetch proven local TTS runtime
+        run: |
+          git clone --depth 1 --branch v1.4.2 https://github.com/siva-sub/NekoSpeak.git upstream
+
+      - name: Apply Ronin reader layer
+        run: |
+          cp voice-reader/ReaderActivity.kt upstream/app/src/main/java/com/nekospeak/tts/ui/ReaderActivity.kt
+          cp voice-reader/AndroidManifest.xml upstream/app/src/main/AndroidManifest.xml
+          cp upstream/LICENSE upstream/app/src/main/assets/NEKOSPEAK_MIT_LICENSE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('upstream/app/build.gradle.kts')
+          s = p.read_text()
+          s = s.replace('applicationId = "com.nekospeak.tts"', 'applicationId = "au.com.roningroup.voicereader"')
+          s = s.replace('versionCode = 16', 'versionCode = 1')
+          s = s.replace('versionName = "1.4.2"', 'versionName = "0.1.0"')
+          s = s.replace('compileSdk = 35', 'compileSdk = 35\n    ndkVersion = "27.2.12479018"')
+          s = s.replace('include("armeabi-v7a", "arm64-v8a")', 'include("arm64-v8a")')
+          s = s.replace('isUniversalApk = true // Also generate a universal APK', 'isUniversalApk = false')
+          p.write_text(s)
+
+          strings = Path('upstream/app/src/main/res/values/strings.xml')
+          t = strings.read_text()
+          t = re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">Ronin Voice Reader</string>', t)
+          strings.write_text(t)
+
+          wrapper = Path('upstream/gradle/wrapper/gradle-wrapper.properties')
+          w = wrapper.read_text().replace('gradle-9.2.0-bin.zip', 'gradle-8.9-bin.zip')
+          wrapper.write_text(w)
+          PY
+
+      - name: Build debug APK
+        working-directory: upstream
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          APK="$(find upstream/app/build/outputs/apk -type f -name '*arm64*v8a*debug*.apk' -o -name '*arm64-v8a*.apk' | head -n 1)"
+          if [ -z "$APK" ]; then
+            APK="$(find upstream/app/build/outputs/apk -type f -name '*.apk' | head -n 1)"
+          fi
+          test -n "$APK"
+          cp "$APK" dist/Ronin-Voice-Reader-0.1.0-arm64.apk
+          ls -lh dist/Ronin-Voice-Reader-0.1.0-arm64.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Voice-Reader-APK
+          path: dist/Ronin-Voice-Reader-0.1.0-arm64.apk
+          if-no-files-found: error
+          retention-days: 7
