@@ -36,7 +36,7 @@ s=rep(s,
             Profile source=activeProfile();
             if(ExactPhrasePack.installed(context,source.id))
                 saveCompleteTemplate(ExactPhrasePack.phrases(context,source.id),source.name);
-        }catch(Exception ignored){}
+        }catch(Exception captureError){}
         String id="voice-"+UUID.randomUUID();
         try{''')
 
