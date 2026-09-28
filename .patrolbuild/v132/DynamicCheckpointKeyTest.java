@@ -90,6 +90,20 @@ public class DynamicCheckpointKeyTest {
         assertEquals("Brand New BC",t.areas("D.DEO").get(0).label);
     }
 
+    @Test public void recCentreLabelsRemainCorrect(){
+        CheckpointTracker t=new CheckpointTracker(context);
+        long at=t.shiftStart()+330_000L;
+        t.observe(Arrays.asList(
+                row("gym","T.MURD","Recreational Facility Gym","General Patrol - Recreational Facility Gym",at),
+                row("bbq","T.MURD","Recreational Facility 1","General Patrol - Recreational Facility 1",at+60_000L)
+        ));
+        java.util.List<CheckpointTracker.AreaCount> areas=t.areas("T.MURD");
+        java.util.Set<String> labels=new java.util.HashSet<>();
+        for(CheckpointTracker.AreaCount a:areas)labels.add(a.label);
+        assertTrue(labels.contains("Rec Center 2 Gym"));
+        assertTrue(labels.contains("Rec Center 2 Barbecue Area"));
+    }
+
     @Test public void incidentsAtAPropertyAreNotCheckpointHits(){
         CheckpointTracker t=new CheckpointTracker(context);
         long at=t.shiftStart()+360_000L;
