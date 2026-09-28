@@ -108,7 +108,6 @@ public final class CheckpointTracker {
     }
 
     private void migrateLegacyCounts(){
-        if(counts.isEmpty())return;
         LinkedHashMap<String,Integer> migrated=new LinkedHashMap<>();
         for(Map.Entry<String,Integer> e:new ArrayList<>(counts.entrySet())){
             String old=e.getKey();
@@ -129,6 +128,19 @@ public final class CheckpointTracker {
         }
         counts.clear();
         counts.putAll(migrated);
+
+        // v1.1.20/v1.1.21 event keys were guard|legacyPointId|timestamp.
+        // Convert them too, otherwise revisiting an already-counted page after
+        // the update could count the same historical hit a second time.
+        LinkedHashSet<String> migratedEvents=new LinkedHashSet<>();
+        for(String event:seenEvents){
+            String[] parts=event.split("\\|",3);
+            if(parts.length!=3){migratedEvents.add(event);continue;}
+            Area a=legacyArea(parts[1]);
+            migratedEvents.add(parts[0]+"|"+(a==null?parts[1]:a.key)+"|"+parts[2]);
+        }
+        seenEvents.clear();
+        seenEvents.addAll(migratedEvents);
     }
 
     private static Area legacyArea(String id){
