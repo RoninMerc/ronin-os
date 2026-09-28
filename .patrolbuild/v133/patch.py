@@ -127,22 +127,12 @@ new='''    public void speechSettingsChanged(){
     }'''
 s=rep(s,old,new)
 
-old='''    private List<File> resolve(String profile,String text)throws Exception{
-        LinkedHashMap<String,File> map=ExactPhrasePack.clips(context,profile);
-        File direct=map.get(ExactPhrasePack.normalize(text));if(direct!=null)return Collections.singletonList(direct);
-        ArrayList<File> result=new ArrayList<>();
-        for(String raw:text.split("(?<=[.!?])\\s+")){
-            String part=raw.replaceAll("[.!?]+$","").trim();if(part.isEmpty())continue;
-            File clip=map.get(ExactPhrasePack.normalize(part));
-            if(clip==null)throw new IOException("No exact "+activeName()+" recording for: \\""+part+"\\".");
-            result.add(clip);
-        }
-        return result;
-    }'''
-new='''    private List<File> resolve(String profile,String text)throws Exception{
+resolve_start=s.index('    private List<File> resolve(String profile,String text)throws Exception{')
+resolve_end=s.index('    private void playNextClip(){',resolve_start)
+s=s[:resolve_start]+'''    private List<File> resolve(String profile,String text)throws Exception{
         return ExactPhraseResolver.resolve(ExactPhrasePack.clips(context,profile),text);
-    }'''
-s=rep(s,old,new)
+    }
+'''+s[resolve_end:]
 
 old='''    private void refreshStatus(){
         Profile p=activeProfile();
