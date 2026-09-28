@@ -93,39 +93,39 @@ jobs:
           sha256sum "$APK" > /tmp/deliver131/evidence/SHA256SUMS.txt
 
           cat > /tmp/deliver131/Ronin-Patrol-Link-v1.1.21-VERIFICATION.txt <<'EOF'
-RONIN PATROL LINK 1.1.21 — SILVERTRACKER BROWSER + REC CENTRE FIX
-
-FULL TEST PROVENANCE
-Full CI run 36441982530 passed:
-- source reconstruction
-- compile and unit tests
-- Chromium browser/parser regressions
-- Android 16 instrumentation regressions
-The prior run failed only in its report-generation Python string after all those test steps had passed.
-This release workflow rebuilt the identical application source and independently verified the APK signature.
-
-SILVERTRACKER DISPLAY
-The screenshot showed current Issue Monitor rows, so the visible problem was WebView/desktop-page scaling rather than a failed internet load.
-The Silvertracker desktop page now opens at a readable 135% initial scale, remains pannable/pinch-zoomable, and no longer depends on tiny website controls for paging.
-Large native left/right "Silvertracker page" buttons mirror the website pager.
-Automatic polling remains paused while Shift History is open, so paging is not interrupted.
-
-CHECKPOINT NAMES
-The two recreation-centre checkpoint labels are now:
-- Rec Center 2 Gym
-- Rec Center 2 Barbecue Area
-Internal rec1/rec2 storage IDs are preserved so current shift counts are not discarded by this update.
-
-SHIFT TALLY
-The tally still starts at the most recent 18:00 site-time shift boundary.
-Every loaded history page is de-duplicated by Issue ID and guard + checkpoint + recorded timestamp.
-
-INSTALL
-Install over v1.1.20. Do not uninstall or clear app data.
-
-TEST BOUNDARY
-CI did not use the user's authenticated live Silvertracker account or physical handset.
-EOF
+          RONIN PATROL LINK 1.1.21 — SILVERTRACKER BROWSER + REC CENTRE FIX
+          
+          FULL TEST PROVENANCE
+          Full CI run 36441982530 passed:
+          - source reconstruction
+          - compile and unit tests
+          - Chromium browser/parser regressions
+          - Android 16 instrumentation regressions
+          The prior run failed only in its report-generation Python string after all those test steps had passed.
+          This release workflow rebuilt the identical application source and independently verified the APK signature.
+          
+          SILVERTRACKER DISPLAY
+          The screenshot showed current Issue Monitor rows, so the visible problem was WebView/desktop-page scaling rather than a failed internet load.
+          The Silvertracker desktop page now opens at a readable 135% initial scale, remains pannable/pinch-zoomable, and no longer depends on tiny website controls for paging.
+          Large native left/right "Silvertracker page" buttons mirror the website pager.
+          Automatic polling remains paused while Shift History is open, so paging is not interrupted.
+          
+          CHECKPOINT NAMES
+          The two recreation-centre checkpoint labels are now:
+          - Rec Center 2 Gym
+          - Rec Center 2 Barbecue Area
+          Internal rec1/rec2 storage IDs are preserved so current shift counts are not discarded by this update.
+          
+          SHIFT TALLY
+          The tally still starts at the most recent 18:00 site-time shift boundary.
+          Every loaded history page is de-duplicated by Issue ID and guard + checkpoint + recorded timestamp.
+          
+          INSTALL
+          Install over v1.1.20. Do not uninstall or clear app data.
+          
+          TEST BOUNDARY
+          CI did not use the user's authenticated live Silvertracker account or physical handset.
+          EOF
 
       - name: Publish direct APK on release branch
         shell: bash
