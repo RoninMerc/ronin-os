@@ -1,0 +1,175 @@
+name: Patrol Link 1.1.27 visible entire-script copy
+on:
+  push:
+    branches: ['patrol-link-v137-visible-copy-script']
+    paths: ['.patrolbuild/v137/**', '.github/workflows/patrol-link-v137.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-link-v137-visible-copy-script
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct working v1.1.26 and apply copy-control patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/deliver137/evidence
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,hashlib,json
+          lines=Path('.github/workflows/patrol-link-v136.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct deployed source and apply tested reader patch')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          root=Path('/tmp/patrol-v134');java=root/'app/src/main/java/au/com/roningroup/patrollink'
+          assert "versionName '1.1.26'" in (root/'app/build.gradle').read_text()
+          names=['PatrolEngine.java','CheckpointTracker.java','HistoryPageAudit.java','HistoryScanGate.java','TimeParser.java','FeedReducer.java','ExactPhrasePack.java','ExactPhraseResolver.java','SpeechPreferences.java','SpeechRules.java','VoiceScriptText.java','RecordedTitleAliases.java']
+          protected=[java/n for n in names]+[root/'app/src/main/assets/extract.js',root/'app/src/main/AndroidManifest.xml']
+          protected+=list((root/'app/src/main/assets/exact').glob('*'))
+          before={p:p.read_bytes() for p in protected if p.is_file()}
+          main=(java/'MainActivity.java').read_text()
+          browser=main[main.index('    private void showCheckpointTally('):main.index('    private void detachWeb()')]
+          subprocess.run(['python3','.patrolbuild/v137/patch.py',str(root)],check=True)
+          for p,old in before.items():assert p.read_bytes()==old,str(p)
+          main=(java/'MainActivity.java').read_text()
+          assert main[main.index('    private void showCheckpointTally('):main.index('    private void detachWeb()')]==browser
+          assert "versionName '1.1.27'" in (root/'app/build.gradle').read_text()
+          Path('/tmp/deliver137/evidence/UNCHANGED.json').write_text(json.dumps({str(p.relative_to(root)):hashlib.sha256(data).hexdigest() for p,data in before.items()},indent=2))
+          PY
+      - name: Compile release and unit tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Original and history parser regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/domvenv137
+          /tmp/domvenv137/bin/pip -q install playwright
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v134/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv137/bin/python /tmp/patrol-v134/tests/test_dom.py | tee /tmp/deliver137/evidence/DOM-ORIGINAL.txt
+          /tmp/domvenv137/bin/python /tmp/patrol-v134/tests/test_history_dom.py | tee /tmp/deliver137/evidence/DOM-HISTORY.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 actual clipboard and full regression tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: |
+            cd /tmp/patrol-v134 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.SingleWavCanonicalTest,au.com.roningroup.patrollink.AdaptiveRefreshTest,au.com.roningroup.patrollink.SpeechPreviewParityTest,au.com.roningroup.patrollink.DynamicCheckpointKeyTest,au.com.roningroup.patrollink.AdditivePhrasePackTest,au.com.roningroup.patrollink.CompleteLibraryTemplateTest,au.com.roningroup.patrollink.EditableMasterScriptTest,au.com.roningroup.patrollink.HistoryReaderRegressionTest,au.com.roningroup.patrollink.EntireScriptCopyButtonTest
+            adb exec-out run-as au.com.roningroup.patrollink cat files/copy-script-top.png > /tmp/deliver137/evidence/copy-script-top.png
+      - name: Verify APK and actual test records
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver137/Ronin-Patrol-Link-v1.1.27-Copy-Entire-Script.apk
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver137/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver137/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver137/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver137/evidence/SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,xml.etree.ElementTree as E
+          cases=[]
+          for folder in ['test-results','outputs/androidTest-results']:
+              for f in (Path('/tmp/patrol-v134/app/build')/folder).rglob('TEST-*.xml'):
+                  tree=E.parse(f).getroot()
+                  for suite in tree.iter('testsuite'):
+                      assert not any(int(suite.get(k,'0')) for k in ('failures','errors','skipped')),(str(f),suite.attrib)
+                  for case in tree.iter('testcase'):
+                      assert all(case.find(k) is None for k in ('failure','error','skipped')),case.attrib
+                      cases.append(case.attrib)
+          new=[c for c in cases if c.get('classname','').endswith('.EntireScriptCopyButtonTest')]
+          assert len(new)==5,new
+          assert len(cases)>=109,len(cases)
+          shot=Path('/tmp/deliver137/evidence/copy-script-top.png')
+          assert shot.read_bytes().startswith(b'\x89PNG'), 'UI screenshot was not captured'
+          report=[
+              'RONIN PATROL LINK 1.1.27 - COPY ENTIRE VOICE SCRIPT',
+              'Commit: '+os.environ['GITHUB_SHA'],
+              'Build / test run: '+os.environ['GITHUB_RUN_ID'],
+              'Successful JUnit / Android instrumentation testcases: '+str(len(cases)),
+              'Chromium parser checks: 15 original + 13 history.',
+              '',
+              'VISIBLE COPY BUTTON',
+              'Copy entire voice script is pinned at the top of Voice settings, outside its scrolling options.',
+              'The same action is also directly on the dashboard and in Speech controls.',
+              'One tap copies a single complete text script with [pause 3] separators. It does not open a file or ask the user to assemble parts.',
+              'Visible confirmation shows the exact number of phrases copied and the source voice.',
+              '',
+              'WHICH SCRIPT',
+              'For a populated voice, the exporter reads its actual installed phrase manifest, including all base recordings and successful additive imports in order. Replacements remain one phrase, not duplicates.',
+              'Unsaved or unimported add-on drafts and unrelated loaded templates are not substituted for the installed voice library.',
+              'The exporter uses the existing serial import worker so an in-progress WAV import completes before it snapshots the source library. The source profile is captured when Copy is tapped.',
+              'A corrupt installed library produces a visible error instead of silently copying a stale or built-in-only script.',
+              'An empty new profile can reuse the saved combined template. When no template or installed recordings exist, the built-in base is explicitly identified as the source.',
+              'Copying preserves the phrase list as the complete-library import template for creating another voice.',
+              '',
+              'TESTS',
+              'Actual Android buttons were clicked and the system clipboard was read back; a 476-phrase fixture was copied as one text item.',
+              'The top Voice settings button is asserted fully visible without scrolling.',
+              'Base plus multiple add-ons, replacing a phrase, preserving audio bytes and tally preferences, source-profile capture, pending import serialization, and second-voice import were verified.',
+              'The rendered Voice settings screen was captured from the emulator for inspection.',
+              '',
+              'WORKING CHECKPOINT READER PRESERVED',
+              'PatrolEngine, CheckpointTracker, HistoryPageAudit, HistoryScanGate, time parsing, feed selection, extract.js, audio import, playback resolver, speech rules and all exact assets are byte-identical to reconstructed v1.1.26.',
+              'The MainActivity checkpoint/history methods are also unchanged. No tally reset or recording migration is performed.',
+              '',
+              'INSTALL',
+              'Install over the existing Patrol Link app. Do not uninstall, clear data or reset your tally.',
+              'Select Evelyn, then tap Copy entire voice script. Paste into the voice generator, create/select the new voice profile, and use Import complete-library WAV for its resulting recording.',
+              '',
+              'TEST BOUNDARY',
+              'Android 16 emulator and synthetic recordings; not the actual handset, personal installed audio library or authenticated Silvertracker session.'
+          ]
+          Path('/tmp/deliver137/Ronin-Patrol-Link-v1.1.27-VERIFICATION.txt').write_text('\n'.join(report)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.27-verified
+          path: /tmp/deliver137/
+          retention-days: 7
+      - name: Preserve regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v137-evidence
+          path: |
+            /tmp/patrol-v134/app/build/test-results/
+            /tmp/patrol-v134/app/build/outputs/androidTest-results/
+            /tmp/patrol-v134/app/build/reports/
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/MainActivity.java
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/VoiceManager.java
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/EntireScriptCopyUi.java
+            /tmp/deliver137/evidence/
+          retention-days: 7
