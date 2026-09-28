@@ -1,0 +1,59 @@
+RONIN REMOTE LINK v0.2.0 — INSTALL FIRST
+========================================
+
+This is Phase 1 / Option A. Ronin supplies the host/controller, Android launchers,
+security controls, diagnostics and self-hosted server configuration while the
+remote-desktop engine remains the unmodified, pinned RustDesk 1.4.9 client.
+
+RECOMMENDED ORDER
+-----------------
+
+1) SELF-HOSTED SERVER
+   - Use a small Linux VPS with Docker + Docker Compose.
+   - Extract Ronin-Remote-Link-Server-v0.2.0.zip.
+   - Copy server/.env.example to server/.env.
+   - Set PUBLIC_HOST to the VPS DNS name or stable public IP.
+   - Permit inbound TCP 21115-21117 and UDP 21116.
+   - Run: docker compose pull && docker compose up -d
+   - Run: ./status.sh
+   - Copy the contents of data/id_ed25519.pub. This is your Server Public Key.
+   - Back up the data directory with ./backup.sh.
+
+2) HOME / MAIN WINDOWS PC
+   - Extract Ronin-Remote-Link-Windows-v0.2.0.zip.
+   - Run RoninRemoteLink.exe.
+   - Open "This PC / Host" and press ONE-CLICK HOST SETUP.
+   - Get/copy the PC ID.
+   - Set a strong unattended password (24-character Generate button recommended).
+   - Configure the RustDesk engine for your self-hosted server/public key.
+   - Open Diagnostics and run all checks.
+
+3) ANDROID PHONE
+   - Install Ronin-Remote-Link-Phone-v0.2.0.apk.
+   - In the Ronin app press INSTALL PINNED ENGINE and install the official
+     RustDesk 1.4.9 build selected for the device CPU.
+   - Enter the main PC ID, server and public key.
+   - Keep "Require device unlock before every remote session" enabled.
+   - If desired, enter the access password and enable encrypted password storage.
+   - TEST SERVER, then connect.
+
+4) ANDROID TABLET
+   - Repeat the phone steps with Ronin-Remote-Link-Tablet-v0.2.0.apk.
+   - The tablet build uses the larger-screen layout and separate package identity.
+
+SECURITY NOTES
+--------------
+
+- Do not port-forward Windows RDP or VNC.
+- Ronin Windows does not save the remote access password.
+- Android password storage uses AES-256-GCM with the key held by Android Keystore.
+- v0.2 does not put a saved Android password back into the visible field at startup.
+- The optional device-unlock gate is enabled by default on Android.
+- Diagnostics deliberately omit password and server-key contents.
+- Keep server/data backed up and private; it contains the server identity keys.
+
+PHASE 2
+-------
+
+Ronin Core / Option B will replace the remote engine underneath the Ronin UI and
+settings model after this Phase 1 system has proven stable in daily use.
