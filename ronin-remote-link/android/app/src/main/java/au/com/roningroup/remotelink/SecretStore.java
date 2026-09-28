@@ -15,7 +15,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
 final class SecretStore {
-    private static final String KEY_ALIAS = "ronin_remote_link_v01";
+    private static final String KEY_ALIAS = "ronin_remote_link_v02";
     private static final String PREFS = "ronin_secret_store";
     private static final String VALUE = "remote_password";
     private static final String IV = "remote_password_iv";
@@ -53,6 +53,11 @@ final class SecretStore {
         cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, Base64.decode(i, Base64.NO_WRAP)));
         byte[] plain = cipher.doFinal(Base64.decode(e, Base64.NO_WRAP));
         return new String(plain, StandardCharsets.UTF_8);
+    }
+
+    boolean hasSecret() {
+        SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return p.contains(VALUE) && p.contains(IV);
     }
 
     void clear() {
