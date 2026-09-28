@@ -281,6 +281,9 @@ public final class CheckpointTracker {
         if(n.contains("bobsled"))return new Area("bobsled-lane","Bobsled Lane");
         if(n.contains("elusive"))return new Area("elusive","Elusive");
         if(n.contains("serenade"))return new Area("serenade","Serenade");
+        if(n.contains("balmara"))return new Area("balmara-place","Balmara Place");
+        if(n.contains("tradition"))return new Area("tradition-place","Tradition Place");
+        if(n.contains("rampage"))return new Area("rampage-bc","Rampage BC");
 
         String label=clean(raw);
         return new Area(slug(label),label);
