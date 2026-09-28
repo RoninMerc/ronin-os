@@ -1,0 +1,89 @@
+name: Build Evelyn Offline APK
+
+on:
+  push:
+    branches:
+      - evelyn-offline-final-20260928
+    paths:
+      - 'evelyn-offline/**'
+      - '.github/workflows/build-evelyn-offline.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Fetch official sherpa-onnx Android runtime
+        run: |
+          mkdir -p evelyn-offline/app/libs
+          curl -fL --retry 3             https://raw.githubusercontent.com/HayaiApp/HayaiTTS/main/app/libs/sherpa-onnx-1.13.2.aar             -o evelyn-offline/app/libs/sherpa-onnx-1.13.2.aar
+          test $(stat -c%s evelyn-offline/app/libs/sherpa-onnx-1.13.2.aar) -gt 50000000
+
+      - name: Fetch official PocketTTS int8 model
+        run: |
+          curl -fL --retry 3             https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-pocket-tts-int8-2026-01-26.tar.bz2             -o /tmp/pocket.tar.bz2
+          mkdir -p /tmp/pocket-extract
+          tar -xjf /tmp/pocket.tar.bz2 -C /tmp/pocket-extract
+
+          MODEL_DIR="$(find /tmp/pocket-extract -type d -name 'sherpa-onnx-pocket-tts-int8-2026-01-26' | head -n 1)"
+          test -n "$MODEL_DIR"
+
+          mkdir -p evelyn-offline/app/src/main/assets/pocket
+          cp "$MODEL_DIR/lm_flow.int8.onnx" evelyn-offline/app/src/main/assets/pocket/
+          cp "$MODEL_DIR/lm_main.int8.onnx" evelyn-offline/app/src/main/assets/pocket/
+          cp "$MODEL_DIR/encoder.onnx" evelyn-offline/app/src/main/assets/pocket/
+          cp "$MODEL_DIR/decoder.int8.onnx" evelyn-offline/app/src/main/assets/pocket/
+          cp "$MODEL_DIR/text_conditioner.onnx" evelyn-offline/app/src/main/assets/pocket/
+          cp "$MODEL_DIR/vocab.json" evelyn-offline/app/src/main/assets/pocket/
+          cp "$MODEL_DIR/token_scores.json" evelyn-offline/app/src/main/assets/pocket/
+
+          ls -lh evelyn-offline/app/src/main/assets/pocket
+          test -f evelyn-offline/app/src/main/assets/evelyn_reference.flac
+
+      - name: Gradle 8.9
+        run: |
+          curl -fL --retry 3             https://services.gradle.org/distributions/gradle-8.9-bin.zip             -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+
+      - name: Build APK
+        working-directory: evelyn-offline
+        run: |
+          /tmp/gradle-8.9/bin/gradle             --no-daemon             :app:assembleDebug             --stacktrace
+
+      - name: Verify APK
+        run: |
+          APK="$(find evelyn-offline/app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          unzip -t "$APK" >/dev/null
+          unzip -l "$APK" | grep 'assets/evelyn_reference.flac'
+          unzip -l "$APK" | grep 'assets/pocket/lm_flow.int8.onnx'
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libsherpa-onnx-jni.so'
+
+          mkdir -p dist
+          cp "$APK" dist/Evelyn-Offline-1.0.0-arm64.apk
+          ls -lh dist/Evelyn-Offline-1.0.0-arm64.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Evelyn-Offline-1.0.0
+          path: dist/Evelyn-Offline-1.0.0-arm64.apk
+          if-no-files-found: error
+          retention-days: 7
