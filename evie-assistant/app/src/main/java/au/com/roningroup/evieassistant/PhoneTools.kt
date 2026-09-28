@@ -392,7 +392,7 @@ object PhoneTools {
             "wifi", "wi-fi" -> Settings.ACTION_WIFI_SETTINGS
             "bluetooth" -> Settings.ACTION_BLUETOOTH_SETTINGS
             "location" -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
-            "notifications" -> Settings.ACTION_NOTIFICATION_SETTINGS
+            "notifications" -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
             "sound", "audio" -> Settings.ACTION_SOUND_SETTINGS
             "display" -> Settings.ACTION_DISPLAY_SETTINGS
             "apps", "applications" -> Settings.ACTION_APPLICATION_SETTINGS
