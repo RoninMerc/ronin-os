@@ -1,0 +1,237 @@
+name: Patrol Link 1.1.20 shift history voice fix
+on:
+  push:
+    branches: ['patrol-link-v130-shift-history-voice-fix']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: patrol-link-v130-shift-history-voice-fix
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Reconstruct Patrol Link and apply v1.1.20 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v130 /tmp/deliver130/evidence
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v130
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v130
+          J=/tmp/patrol-v130/app/src/main/java/au/com/roningroup/patrollink
+
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v130
+          mkdir -p /tmp/patrol-v130/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v130/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v130
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v130
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v130/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v130/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v122/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v123/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v124/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v125/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v126/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v127/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v128/patch.py /tmp/patrol-v130
+          python3 .patrolbuild/v129/patch.py /tmp/patrol-v130
+
+          mkdir -p /tmp/patrol-v130/app/src/main/assets/exact
+          cp .patrolbuild/v123/base_phrases.txt /tmp/patrol-v130/app/src/main/assets/exact/base_phrases.txt
+
+          python3 .patrolbuild/v130/patch.py /tmp/patrol-v130
+
+          mkdir -p /tmp/patrol-v130/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 \
+            -keystore /tmp/patrol-v130/app/src/androidTest/assets/tls-fixture.p12 \
+            -storepass fixture-only -keypass fixture-only \
+            -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' \
+            -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/patrol-v130')
+          java=root/'app/src/main/java/au/com/roningroup/patrollink'
+          assert "versionName '1.1.20'" in (root/'app/build.gradle').read_text()
+          engine=(java/'PatrolEngine.java').read_text()
+          main=(java/'MainActivity.java').read_text()
+          tracker=(java/'CheckpointTracker.java').read_text()
+          voice=(java/'VoiceManager.java').read_text()
+          speech=(java/'SpeechPreferences.java').read_text()
+          canonical=[x.strip() for x in (root/'app/src/main/assets/exact/canonical_phrases.txt').read_text().splitlines() if x.strip()]
+          assert len(dict.fromkeys(x.lower() for x in canonical)) == 360, len(canonical)
+          assert 'Door Found Open' in canonical
+          assert 'General Patrol - Balmara Place' in canonical
+          assert 'General Patrol - Ceil Circuit' in canonical
+          assert 'speechLedger.collect(selected, hadBaseline, lastRead, now)' in engine
+          assert 'last_live_read_at' in engine
+          assert 'setLoadWithOverviewMode(false)' in engine
+          assert 'scanVisiblePage' in engine and 'resumeLiveFeed' in engine
+          assert 'history page counted into shift tally' in engine
+          assert 'checkpoint+time' in main
+          assert 'SHIFT FROM ' in main
+          assert 'MIGRATED_V130' in tracker and 'seenEvents' in tracker
+          assert 'recordingIssue' in voice
+          assert 'if(type.equals(ALERT))' in speech
+          forbidden=['android.speech.tts','TextToSpeech','com.k2fsa.sherpa.onnx','api.elevenlabs.io','xi-api-key']
+          for p in java.glob('*.java'):
+              content=p.read_text()
+              for bad in forbidden:
+                  assert bad not in content,(p,bad)
+          PY
+
+      - name: Compile and unit tests
+        working-directory: /tmp/patrol-v130
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Browser parser regressions
+        shell: bash
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v130/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v130/tests/test_dom.py | tee /tmp/deliver130/evidence/DOM-TESTS.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 reliability shift-history regressions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v130 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.SingleWavCanonicalTest,au.com.roningroup.patrollink.CheckpointTrackerTest,au.com.roningroup.patrollink.AdaptiveRefreshTest,au.com.roningroup.patrollink.ShiftCheckpointHistoryTest,au.com.roningroup.patrollink.SpeechPreviewParityTest
+
+      - name: Verify and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver130/Ronin-Patrol-Link-v1.1.20-Shift-History-Voice-Fix.apk
+          cp /tmp/patrol-v130/app/build/outputs/apk/release/app-release.apk "$APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver130/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver130/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver130/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver130/evidence/SHA256SUMS.txt
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET, os
+          total=0
+          for folder in [Path('/tmp/patrol-v130/app/build/test-results'),Path('/tmp/patrol-v130/app/build/outputs/androidTest-results')]:
+              for p in folder.rglob('TEST-*.xml'):
+                  for s in ET.parse(p).getroot().iter('testsuite'):
+                      assert int(s.attrib.get('failures',0))==0 and int(s.attrib.get('errors',0))==0 and int(s.attrib.get('skipped',0))==0,(p,s.attrib)
+                      total+=int(s.attrib.get('tests',0))
+
+          report=[
+              'RONIN PATROL LINK 1.1.20 — SHIFT HISTORY + VOICE RELIABILITY FIX',
+              'Commit: '+os.environ['GITHUB_SHA'],
+              'Run: '+os.environ['GITHUB_RUN_ID'],
+              'Tests passed: '+str(total),
+              '',
+              'VOICE ALERT RELIABILITY',
+              'The old hard five-minute age gate is removed from live speech eligibility.',
+              'New rows are now judged against the previous successful live feed read, with a late-arrival lookback.',
+              'This specifically prevents a temporary Silvertracker/network delay from silently dropping an otherwise new alert such as Door Found Open.',
+              'The previous live-read timestamp is retained across process recreation within the same 18:00 shift.',
+              'Manual historical paging never feeds old rows into the speech ledger.',
+              '',
+              'EDITED WORDING',
+              'The speech editor preview now uses the same exact-sentence semantics as live exact playback.',
+              'Before save, the editor reports whether the selected exact voice has the required recording instead of silently accepting an unplayable sentence.',
+              'Canonical coverage now explicitly includes Door Found Open, General Patrol - Balmara Place and the corrected General Patrol - Ceil Circuit wording.',
+              'Existing v1.1.19 exact packs continue to play their existing phrases. The newly added Ceil Circuit phrase requires regenerating/importing the v1.1.20 canonical WAV once before that new phrase can play in the exact voice.',
+              '',
+              'SHIFT CHECKPOINT TALLY',
+              'The active tally starts at the most recent 18:00 in the configured site time zone.',
+              'The first v1.1.20 launch resets the old v1.1.19 partial-window tally to that 18:00 boundary.',
+              'Checkpoint rows are de-duplicated by Issue ID and by guard + checkpoint + recorded timestamp.',
+              'Pages older than the first visible Issue Monitor page can be loaded manually and accumulated into the same tally.',
+              '',
+              'SILVERTRACKER BROWSER',
+              'Load-with-overview shrinking is disabled and text zoom is increased so the Issue Monitor controls are usable on the phone.',
+              'Automatic 10-second polling pauses while the Silvertracker screen is open so the site pager is not repeatedly interrupted.',
+              'Use Silvertracker own < and > page controls; every loaded page is read into the 18:00 shift tally.',
+              'Scan this page re-reads the visible page without navigating away. Returning to Dashboard resumes the live feed.',
+              '',
+              'INSTALL',
+              'Install over v1.1.19. Do not uninstall or clear app data.',
+              '',
+              'TEST SCOPE',
+              'Compilation, unit tests, Chromium parser regressions, Android 16 refresh/TLS, exact-pack coverage, delayed-announcement logic, speech-preview parity, 18:00 shift boundary and checkpoint de-duplication passed in CI.',
+              'No physical Samsung handset or authenticated live Silvertracker account was used by CI.'
+          ]
+          Path('/tmp/deliver130/Ronin-Patrol-Link-v1.1.20-VERIFICATION.txt').write_text('\n'.join(report)+'\n')
+          PY
+
+      - name: Publish direct APK on build branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/deliver130/Ronin-Patrol-Link-v1.1.20-Shift-History-Voice-Fix.apk dist/Ronin-Patrol-Link-v1.1.20-Shift-History-Voice-Fix.apk
+          git config user.name "Ronin Patrol Link Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add dist/Ronin-Patrol-Link-v1.1.20-Shift-History-Voice-Fix.apk
+          if git diff --cached --quiet; then
+            echo "Direct APK already current."
+          else
+            git commit -m "Publish Patrol Link v1.1.20 direct APK [skip ci]"
+            git push origin HEAD:patrol-link-v130-shift-history-voice-fix
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.20-verified
+          path: |
+            /tmp/deliver130/Ronin-Patrol-Link-v1.1.20-Shift-History-Voice-Fix.apk
+            /tmp/deliver130/Ronin-Patrol-Link-v1.1.20-VERIFICATION.txt
+          retention-days: 7
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v130-evidence
+          path: |
+            /tmp/patrol-v130/app/build/reports/
+            /tmp/patrol-v130/app/build/test-results/
+            /tmp/patrol-v130/app/build/outputs/androidTest-results/
+            /tmp/deliver130/evidence/
+          retention-days: 7
