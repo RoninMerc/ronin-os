@@ -32,10 +32,36 @@ public final class AnnouncementLedger {
             if (hadBaseline && changed && saneTime && arrivedSinceLastGoodRead) out.add(o);
         }
 
-        while (seen.size() > 512) seen.remove(seen.keySet().iterator().next());
+        trim();
         out.sort(Comparator.comparingLong((Observation o) -> o.recordedAt)
                 .thenComparing(o -> o.id));
         return out;
+    }
+
+    /**
+     * Compatibility overload retained for the existing formatter/ledger tests.
+     * Production live monitoring uses the four-argument previous-read form above.
+     */
+    public List<Observation> collect(List<Observation> rows, boolean hadBaseline, long now) {
+        if (!hadBaseline) seen.clear();
+        ArrayList<Observation> out = new ArrayList<>();
+        for (Observation o : rows) {
+            if (o == null || o.id == null || o.id.trim().isEmpty()) continue;
+            String fingerprint = o.guard + "\n" + o.issue + "\n" + o.property;
+            String old = seen.put(o.id, fingerprint);
+            boolean changed = old == null || !old.equals(fingerprint);
+            boolean recent = o.recordedAt > 0 && o.recordedAt <= now + 90_000L
+                    && now - o.recordedAt <= 300_000L;
+            if (hadBaseline && changed && recent) out.add(o);
+        }
+        trim();
+        out.sort(Comparator.comparingLong((Observation o) -> o.recordedAt)
+                .thenComparing(o -> o.id));
+        return out;
+    }
+
+    private void trim() {
+        while (seen.size() > 512) seen.remove(seen.keySet().iterator().next());
     }
 
     public void clear() { seen.clear(); }
