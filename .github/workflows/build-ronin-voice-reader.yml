@@ -32,7 +32,7 @@ jobs:
 
       - name: Fetch proven local TTS runtime
         run: |
-          git clone --depth 1 --branch v1.4.2 https://github.com/siva-sub/NekoSpeak.git upstream
+          git clone --depth 1 --branch fix/pocket-download-urls https://github.com/guan-tends/NekoSpeak.git upstream
 
       - name: Apply Ronin reader layer
         run: |
@@ -47,7 +47,7 @@ jobs:
           s = p.read_text()
           s = s.replace('applicationId = "com.nekospeak.tts"', 'applicationId = "au.com.roningroup.voicereader"')
           s = s.replace('versionCode = 16', 'versionCode = 1')
-          s = s.replace('versionName = "1.4.2"', 'versionName = "0.1.0"')
+          s = s.replace('versionName = "1.4.2"', 'versionName = "0.1.1"')
           s = s.replace('compileSdk = 35', 'compileSdk = 35\n    ndkVersion = "27.2.12479018"')
           s = s.replace('include("armeabi-v7a", "arm64-v8a")', 'include("arm64-v8a")')
           s = s.replace('isUniversalApk = true // Also generate a universal APK', 'isUniversalApk = false')
@@ -77,13 +77,13 @@ jobs:
             APK="$(find upstream/app/build/outputs/apk -type f -name '*.apk' | head -n 1)"
           fi
           test -n "$APK"
-          cp "$APK" dist/Ronin-Voice-Reader-0.1.0-arm64.apk
+          cp "$APK" dist/Ronin-Voice-Reader-0.1.1-arm64.apk
           ls -lh dist/Ronin-Voice-Reader-0.1.0-arm64.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Ronin-Voice-Reader-APK
-          path: dist/Ronin-Voice-Reader-0.1.0-arm64.apk
+          path: dist/Ronin-Voice-Reader-0.1.1-arm64.apk
           if-no-files-found: error
           retention-days: 7
