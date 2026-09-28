@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
+import android.provider.AlarmClock
+import android.provider.MediaStore
 import android.provider.Settings
 import android.view.KeyEvent
 import java.util.Locale
@@ -24,19 +26,19 @@ object PhoneTools {
 
     fun openApp(context: Context, value: String): String {
         val packageName = resolvePackage(context, value)
-            ?: return "NOT_FOUND: Could not find an installed app matching \"$value\"."
+            ?: return "NOT_FOUND: Could not find an installed app matching \"" + value + "\"."
 
         val intent = context.packageManager
             .getLaunchIntentForPackage(packageName)
-            ?: return "ERROR: App $packageName has no launch intent."
+            ?: return "ERROR: App " + packageName + " has no launch intent."
 
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         return try {
             context.startActivity(intent)
-            "OK: Opened $value ($packageName)."
+            "OK: Opened " + value + " (" + packageName + ")."
         } catch (t: Throwable) {
-            "ERROR: Failed to open $value: " +
+            "ERROR: Failed to open " + value + ": " +
                 (t.message ?: t.javaClass.simpleName)
         }
     }
@@ -121,13 +123,13 @@ object PhoneTools {
                 AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
             "quick settings", "quicksettings" ->
                 AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS
-            else -> return "ERROR: Unsupported global action: $action"
+            else -> return "ERROR: Unsupported global action: " + action
         }
 
         return if (service.performGlobalAction(code)) {
-            "OK: Performed Android $action."
+            "OK: Performed Android " + action + "."
         } else {
-            "ERROR: Android rejected global action $action."
+            "ERROR: Android rejected global action " + action + "."
         }
     }
 
@@ -178,7 +180,7 @@ object PhoneTools {
             .coerceToText(context)
             .toString()
 
-        return "CLIPBOARD:\n$value"
+        return "CLIPBOARD:\n" + value
     }
 
     fun setClipboard(context: Context, text: String): String {
@@ -194,7 +196,7 @@ object PhoneTools {
 
     fun navigateTo(context: Context, destination: String): String {
         val query = Uri.encode(destination)
-        val uri = Uri.parse("google.navigation:q=$query")
+        val uri = Uri.parse("google.navigation:q=" + query)
         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
             setPackage("com.google.android.apps.maps")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -202,18 +204,18 @@ object PhoneTools {
 
         return try {
             context.startActivity(intent)
-            "OK: Started Google Maps navigation to $destination."
+            "OK: Started Google Maps navigation to " + destination + "."
         } catch (_: Throwable) {
             val fallback = Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse("geo:0,0?q=$query")
+                Uri.parse("geo:0,0?q=" + query)
             ).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
             try {
                 context.startActivity(fallback)
-                "OK: Opened maps search for $destination."
+                "OK: Opened maps search for " + destination + "."
             } catch (t: Throwable) {
                 "ERROR: Could not open navigation: " +
                     (t.message ?: t.javaClass.simpleName)
@@ -229,7 +231,7 @@ object PhoneTools {
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
             "next", "skip" -> KeyEvent.KEYCODE_MEDIA_NEXT
             "previous", "back" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
-            else -> return "ERROR: Unsupported media command: $command"
+            else -> return "ERROR: Unsupported media command: " + command
         }
 
         val now = android.os.SystemClock.uptimeMillis()
@@ -240,20 +242,180 @@ object PhoneTools {
             KeyEvent(now, now, KeyEvent.ACTION_UP, key, 0)
         )
 
-        return "OK: Sent media command $command."
+        return "OK: Sent media command " + command + "."
     }
 
-    fun openAssistantSettings(context: Context): String {
+    fun setMediaVolume(context: Context, percent: Int): String {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val value = ((percent.coerceIn(0, 100) / 100.0) * max)
+            .toInt()
+            .coerceIn(0, max)
+
+        audio.setStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            value,
+            AudioManager.FLAG_SHOW_UI
+        )
+
+        return "OK: Media volume set to " + percent.coerceIn(0, 100) + "%."
+    }
+
+    fun openUrl(context: Context, url: String): String {
+        val raw = url.trim()
+        if (raw.isBlank()) return "ERROR: URL is empty."
+
+        val uri = if (raw.startsWith("http://") || raw.startsWith("https://")) {
+            Uri.parse(raw)
+        } else {
+            Uri.parse("https://" + raw)
+        }
+
         return try {
             context.startActivity(
-                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                Intent(Intent.ACTION_VIEW, uri).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             )
-            "OK: Opened Android Accessibility settings."
+            "OK: Opened " + uri.toString() + "."
+        } catch (t: Throwable) {
+            "ERROR: Could not open URL: " + (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    fun composeSms(
+        context: Context,
+        number: String,
+        message: String
+    ): String {
+        return try {
+            context.startActivity(
+                Intent(
+                    Intent.ACTION_SENDTO,
+                    Uri.parse("smsto:" + Uri.encode(number))
+                ).apply {
+                    putExtra("sms_body", message)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            "OK: Opened SMS composer to " + number + " with the requested message. It has not been sent."
+        } catch (t: Throwable) {
+            "ERROR: Could not open SMS composer: " +
+                (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    fun dialNumber(context: Context, number: String): String {
+        return try {
+            context.startActivity(
+                Intent(
+                    Intent.ACTION_DIAL,
+                    Uri.parse("tel:" + Uri.encode(number))
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            "OK: Opened dialer for " + number + ". Call has not been placed."
+        } catch (t: Throwable) {
+            "ERROR: Could not open dialer: " +
+                (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    fun setTimer(
+        context: Context,
+        seconds: Int,
+        label: String
+    ): String {
+        return try {
+            context.startActivity(
+                Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                    putExtra(
+                        AlarmClock.EXTRA_LENGTH,
+                        seconds.coerceIn(1, 86_400)
+                    )
+                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            "OK: Requested timer for " + seconds.coerceIn(1, 86_400) +
+                " seconds" + if (label.isBlank()) "." else " labelled \"" + label + "\"."
+        } catch (t: Throwable) {
+            "ERROR: Could not set timer: " +
+                (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    fun setAlarm(
+        context: Context,
+        hour: Int,
+        minute: Int,
+        label: String
+    ): String {
+        return try {
+            context.startActivity(
+                Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                    putExtra(AlarmClock.EXTRA_HOUR, hour.coerceIn(0, 23))
+                    putExtra(AlarmClock.EXTRA_MINUTES, minute.coerceIn(0, 59))
+                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            "OK: Requested alarm for " +
+                "%02d:%02d".format(hour.coerceIn(0, 23), minute.coerceIn(0, 59)) +
+                if (label.isBlank()) "." else " labelled \"" + label + "\"."
+        } catch (t: Throwable) {
+            "ERROR: Could not set alarm: " +
+                (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    fun launchCamera(context: Context): String {
+        return try {
+            context.startActivity(
+                Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            "OK: Opened the camera."
+        } catch (t: Throwable) {
+            "ERROR: Could not open camera: " +
+                (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    fun openSettings(context: Context, page: String): String {
+        val action = when (page.lowercase(Locale.ROOT)) {
+            "accessibility" -> Settings.ACTION_ACCESSIBILITY_SETTINGS
+            "wifi", "wi-fi" -> Settings.ACTION_WIFI_SETTINGS
+            "bluetooth" -> Settings.ACTION_BLUETOOTH_SETTINGS
+            "location" -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
+            "notifications" -> Settings.ACTION_NOTIFICATION_SETTINGS
+            "sound", "audio" -> Settings.ACTION_SOUND_SETTINGS
+            "display" -> Settings.ACTION_DISPLAY_SETTINGS
+            "apps", "applications" -> Settings.ACTION_APPLICATION_SETTINGS
+            "battery" -> Settings.ACTION_BATTERY_SAVER_SETTINGS
+            else -> Settings.ACTION_SETTINGS
+        }
+
+        return try {
+            context.startActivity(
+                Intent(action).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            "OK: Opened " + page + " settings."
         } catch (t: Throwable) {
             "ERROR: Could not open settings: " +
                 (t.message ?: t.javaClass.simpleName)
         }
     }
+
+    fun readNotifications(): String =
+        NotificationCache.snapshot(30)
+
+    fun openAssistantSettings(context: Context): String =
+        openSettings(context, "accessibility")
 }
