@@ -1,0 +1,159 @@
+name: Patrol Link 1.1.26 history reader fix
+on:
+  push:
+    branches: ['patrol-link-v136-history-reader-fix']
+    paths: ['.patrolbuild/v136/**', '.github/workflows/patrol-link-v136.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-link-v136-history-reader-fix
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct deployed source and apply tested reader patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/deliver136/evidence
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,hashlib
+          lines=Path('.github/workflows/patrol-link-v134.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct Patrol Link and apply complete-library voice update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if 'mkdir -p /tmp/patrol-v134/app/src/androidTest/assets' in lines[i])
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          subprocess.run(['python3','.patrolbuild/v135/patch.py','/tmp/patrol-v134'],check=True)
+          root=Path('/tmp/patrol-v134');j=root/'app/src/main/java/au/com/roningroup/patrollink'
+          protected=['VoiceManager.java','ExactPhrasePack.java','ExactPhraseResolver.java','SpeechPreferences.java','SpeechRules.java','TimeParser.java','FeedReducer.java']
+          before={n:(j/n).read_bytes() for n in protected}
+          subprocess.run(['python3','.patrolbuild/v136/patch.py',str(root)],check=True)
+          assert "versionName '1.1.26'" in (root/'app/build.gradle').read_text()
+          for n,data in before.items():assert (j/n).read_bytes()==data,n
+          Path('/tmp/deliver136/evidence/UNCHANGED-COMPONENTS.txt').write_text('\n'.join(protected)+'\nByte-identical to reconstructed v1.1.25.\n')
+          PY
+          mkdir -p /tmp/patrol-v134/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tmp/patrol-v134/app/src/androidTest/assets/tls-fixture.p12 -storepass fixture-only -keypass fixture-only -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Compile and unit tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Original and targeted browser regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/domvenv136
+          /tmp/domvenv136/bin/pip -q install playwright
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v134/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv136/bin/python /tmp/patrol-v134/tests/test_dom.py | tee /tmp/deliver136/evidence/DOM-ORIGINAL.txt
+          /tmp/domvenv136/bin/python /tmp/patrol-v134/tests/test_history_dom.py | tee /tmp/deliver136/evidence/DOM-HISTORY.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 live-page lifecycle and regression tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v134 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.SingleWavCanonicalTest,au.com.roningroup.patrollink.AdaptiveRefreshTest,au.com.roningroup.patrollink.SpeechPreviewParityTest,au.com.roningroup.patrollink.DynamicCheckpointKeyTest,au.com.roningroup.patrollink.AdditivePhrasePackTest,au.com.roningroup.patrollink.CompleteLibraryTemplateTest,au.com.roningroup.patrollink.EditableMasterScriptTest,au.com.roningroup.patrollink.HistoryReaderRegressionTest
+      - name: Verify actual testcase results and release signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver136/Ronin-Patrol-Link-v1.1.26-History-Reader-Fix.apk
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver136/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver136/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver136/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver136/evidence/SHA256SUMS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,xml.etree.ElementTree as E
+          cases=[]
+          for folder in ['test-results','outputs/androidTest-results']:
+              for file in (Path('/tmp/patrol-v134/app/build')/folder).rglob('TEST-*.xml'):
+                  tree=E.parse(file).getroot()
+                  for suite in tree.iter('testsuite'):
+                      assert not any(int(suite.get(k,'0')) for k in ('failures','errors','skipped')),(str(file),suite.attrib)
+                  for case in tree.iter('testcase'):
+                      assert all(case.find(k) is None for k in ('failure','error','skipped')),case.attrib
+                      cases.append(case.attrib)
+          history=[c for c in cases if c.get('classname','').endswith('.HistoryReaderRegressionTest')]
+          assert len(history)==4,history
+          assert len(cases)>=104,len(cases)
+          report=[
+              'RONIN PATROL LINK 1.1.26 - HISTORY READER FIX',
+              'Commit: '+os.environ['GITHUB_SHA'],
+              'Run: '+os.environ['GITHUB_RUN_ID'],
+              'Successful JUnit/Android testcases: '+str(len(cases)),
+              'Chromium tests: 15 original + 13 targeted history checks.',
+              '',
+              'REPRODUCED FAULTS',
+              'The prior extractor returned immediately after any table rows were found, omitting remaining differently structured rows. The mixed-layout regression fails on v1.1.25 and passes on this reader.',
+              'The prior manual Scan method invalidated an active read on every tap. The new version combines taps and waits for stable non-busy rows.',
+              'Creator formatting, line breaks and decorated Issue ID cells are now handled without selecting Assigned To as the creator.',
+              '',
+              'HISTORY BEHAVIOUR',
+              'While the history screen is open, the app rechecks the visible DOM for in-place page changes. These checks do not reload the website or issue additional HTTP page requests.',
+              'The actual WebView test changes rows asynchronously without navigation, then performs 40 Scan calls. All three guards advance once and no extra page request occurs.',
+              'The per-page report preserves added results across repeat reads. The row list identifies added, already-counted, non-checkpoint, before-shift, or unreadable-time entries.',
+              'The duplicate identity remains guard + canonical area + full recorded timestamp. Issue IDs are not tally duplicate keys. Existing counts and keys are not reset.',
+              'Identities are retained until the shift rolls over, rather than evicted after 8000 hits.',
+              '',
+              'INSTALL AND USE',
+              'Install over the existing Patrol Link app. Do not uninstall, clear data, or reset the shift tally.',
+              'Open Silvertracker history, turn each page using either set of arrows, and wait for Scan complete. Manual Scan may be pressed once but is not required for detected page changes.',
+              'Revisit missed pages back to the shift start. Existing hits are skipped; previously missed hits are added. The app cannot recover rows it has not read.',
+              'Tap View this page\u2019s counted / skipped entries to inspect each selected-guard row.',
+              'Voices, voice scripts, audio import, time parsing and feed selection are byte-identical to the preceding release.',
+              '',
+              'TEST BOUNDARY',
+              'Controlled DOM fixtures and Android 16 emulator, not the actual handset or authenticated live Silvertracker DOM. The screenshot cannot establish exactly which live rows were previously missed or already counted.'
+          ]
+          Path('/tmp/deliver136/Ronin-Patrol-Link-v1.1.26-VERIFICATION.txt').write_text('\n'.join(report)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.26-verified
+          path: /tmp/deliver136/
+          retention-days: 7
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v136-evidence
+          path: |
+            /tmp/patrol-v134/app/build/test-results/
+            /tmp/patrol-v134/app/build/outputs/androidTest-results/
+            /tmp/patrol-v134/app/build/reports/
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/CheckpointTracker.java
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/MainActivity.java
+            /tmp/patrol-v134/app/src/main/assets/extract.js
+          retention-days: 7
