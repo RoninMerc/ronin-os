@@ -39,7 +39,7 @@ p.write_text(s)
 # the whole Silvertracker page to the phone width.
 p=java/'PatrolEngine.java'
 s=p.read_text()
-old='''        s.setUseWideViewPort(false); s.setLoadWithOverviewMode(false);
+old='''        s.setUseWideViewPort(true); s.setLoadWithOverviewMode(false);
         s.setTextZoom(115);'''
 new='''        s.setUseWideViewPort(true); s.setLoadWithOverviewMode(false);
         s.setTextZoom(100);
