@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Evie Assistant</string>
+    <string name="accessibility_service_description">Lets Evie read visible interface elements and perform phone navigation you request.</string>
+</resources>
