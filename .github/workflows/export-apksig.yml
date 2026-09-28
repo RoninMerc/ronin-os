@@ -1,0 +1,24 @@
+name: Export APK signer
+
+on:
+  push:
+    branches:
+      - evelyn-offline-final-20260928
+    paths:
+      - '.github/workflows/export-apksig.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download apksig
+        run: |
+          curl -fL --retry 3             https://raw.githubusercontent.com/vishwesh007/HSPatcher/main/libs/apksig-8.7.3.jar             -o apksig-8.7.3.jar
+          test $(stat -c%s apksig-8.7.3.jar) -gt 400000
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: apksig-8.7.3
+          path: apksig-8.7.3.jar
+          retention-days: 1
