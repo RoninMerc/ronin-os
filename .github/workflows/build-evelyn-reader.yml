@@ -1,0 +1,57 @@
+name: Build Evelyn Reader APK
+
+on:
+  push:
+    branches:
+      - evelyn-reader-cloud-20260928
+    paths:
+      - 'evelyn-reader/**'
+      - '.github/workflows/build-evelyn-reader.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle 8.9
+        run: |
+          curl -fL --retry 3 https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+
+      - name: Build APK
+        working-directory: evelyn-reader
+        run: |
+          /tmp/gradle-8.9/bin/gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          APK="$(find evelyn-reader/app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          cp "$APK" dist/Evelyn-Reader-1.0.0.apk
+          ls -lh dist/Evelyn-Reader-1.0.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Evelyn-Reader-1.0.0
+          path: dist/Evelyn-Reader-1.0.0.apk
+          if-no-files-found: error
+          retention-days: 7
