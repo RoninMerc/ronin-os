@@ -77,7 +77,7 @@ addition=r'''    private String addOnDraftKey(String profile){return "voice_addo
         StringBuilder b=new StringBuilder();
         for(int i=0;i<phrases.size();i++){
             if(i>0)b.append("[pause 3]\\n\\n");
-            b.append(phrases.get(i)).append('\\n');
+            b.append(phrases.get(i)).append('\n');
         }
         return b.toString();
     }
