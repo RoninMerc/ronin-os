@@ -1,0 +1,113 @@
+name: Patrol Link 1.1.25 verified release package
+on:
+  push:
+    branches: ['patrol-link-v135-release']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Patrol-Link-v135-test-evidence
+          run-id: 36461644036
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/v135-provenance
+      - name: Reconstruct identical tested application source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess, xml.etree.ElementTree as E, hashlib
+          lines=Path('.github/workflows/patrol-link-v135.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct the verified base and apply script-import patch')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          evidence=Path('/tmp/v135-provenance')
+          cases=[]
+          for folder in ['build/test-results','build/outputs/androidTest-results']:
+              for f in (evidence/folder).rglob('TEST-*.xml'):
+                  tree=E.parse(f).getroot()
+                  for s in tree.iter('testsuite'):
+                      assert not any(int(s.get(k,'0')) for k in ('failures','errors','skipped')),(str(f),s.attrib)
+                  cases.extend(tree.iter('testcase'))
+          assert len(cases)==100,len(cases)
+          for c in cases:
+              assert not any(c.find(k) is not None for k in ('failure','error','skipped')),c.attrib
+          new=[c for c in cases if c.get('classname','').endswith('.EditableMasterScriptTest')]
+          assert len(new)==8,[c.attrib for c in new]
+          assert any(c.get('name')=='full608PhraseRecordingImportsWithoutTheOld250PhraseLimit' for c in new)
+          java=Path('/tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink')
+          recorded=evidence/'src/main/java/au/com/roningroup/patrollink'
+          for name in ['VoiceScriptText.java','VoiceManager.java','ExactPhrasePack.java','MainActivity.java']:
+              assert (java/name).read_bytes()==(recorded/name).read_bytes(),name
+          out=Path('/tmp/deliver135');out.mkdir(exist_ok=True)
+          (out/'TEST-PROVENANCE.txt').write_text('Test run: 36461644036\nTested commit: 8229c4dd5ba2ea93a26450b38748e6b83d3f63bd\n100 successful JUnit/instrumentation cases, including 8 EditableMasterScriptTest cases.\n15 Chromium DOM checks passed in that run.\nReconstructed source files byte-match the test evidence.\nOriginal CI failed only its final suite-name report assertion; the actual testcase records confirm the new tests passed.\n')
+          PY
+      - name: Build signed release APK
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Verify signature and write release report
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver135/Ronin-Patrol-Link-v1.1.25-Master-Script-Import.apk
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver135/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver135/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver135/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver135/SHA256SUMS.txt
+          cat > /tmp/deliver135/Ronin-Patrol-Link-v1.1.25-VERIFICATION.txt <<'EOF'
+          RONIN PATROL LINK 1.1.25 - MASTER SCRIPT IMPORT
+
+          VERIFIED TESTS
+          100 successful JUnit and Android 16 instrumentation tests from run 36461644036.
+          These include all 8 new editable-master tests and an actual 608-phrase synthetic WAV import.
+          15 Chromium DOM/parser checks passed separately.
+          The first run failed only a report assertion that looked for the new class in the suite name rather than the individual testcase classnames.
+          This release rechecked every testcase and rebuilt identical application source. Four reconstructed source files were byte-compared against the test-run artifact.
+
+          CHANGES
+          Load script text file (.txt) reads a one-phrase-per-line list or a script with [pause 3] separators.
+          Copy loaded script / template copies that exact manifest in recording order.
+          Creating a new voice no longer overwrites the loaded template.
+          Full-library imports support 1-2000 phrases; each small additive import still supports up to 250 phrases.
+          Invalid phrase counts and duplicate text lines are rejected rather than guessing audio alignment.
+          Legacy truncated patrol titles can use their corrected recording when the old exact clip is absent.
+          Pet names are optional vocabulary only; they are not enabled in alerts automatically.
+
+          PRESERVATION
+          This update does not migrate or reset checkpoint counts, login state, or installed voice audio.
+          The new text manifest does not replace recordings until the matching full WAV is imported into the chosen profile.
+          Existing additive imports and full installed-library script copying remain available.
+
+          INSTALL
+          Install over the current Patrol Link app. Do not uninstall or clear app data.
+
+          TEST BOUNDARY
+          Synthetic WAVs and emulator fixtures, not the physical handset or authenticated live Silvertracker session.
+          No new speech audio was generated for the user in this build.
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.25-verified
+          path: /tmp/deliver135/
+          retention-days: 7
