@@ -11,6 +11,11 @@ object Prefs {
     private const val KEY_BUBBLE = "bubble_enabled"
     private const val KEY_SPEAK = "speak_enabled"
     private const val KEY_NAME = "user_name"
+    private const val KEY_VOICE_MODE = "voice_mode"
+    private const val KEY_QWEN_TTS_URL = "qwen_tts_url"
+    private const val KEY_QWEN_TTS_API = "qwen_tts_api"
+    private const val KEY_QWEN_TTS_VOICE = "qwen_tts_voice"
+    private const val KEY_QWEN_TTS_LANGUAGE = "qwen_tts_language"
 
     const val DEFAULT_MODEL =
         "JeffGreen311/eve-qwen3-8b-consciousness-liberated"
@@ -76,6 +81,44 @@ Never pretend an action succeeded. If a tool says it failed, say so briefly and 
 
     fun setSpeakEnabled(context: Context, value: Boolean) {
         p(context).edit().putBoolean(KEY_SPEAK, value).apply()
+    }
+
+    fun voiceMode(context: Context) =
+        p(context).getString(KEY_VOICE_MODE, "android").orEmpty()
+            .ifBlank { "android" }
+
+    fun setVoiceMode(context: Context, value: String) {
+        p(context).edit().putString(KEY_VOICE_MODE, value.trim()).apply()
+    }
+
+    fun qwenTtsUrl(context: Context) =
+        p(context).getString(KEY_QWEN_TTS_URL, "").orEmpty().trimEnd('/')
+
+    fun setQwenTtsUrl(context: Context, value: String) {
+        p(context).edit().putString(KEY_QWEN_TTS_URL, value.trim().trimEnd('/')).apply()
+    }
+
+    fun qwenTtsApiKey(context: Context) =
+        p(context).getString(KEY_QWEN_TTS_API, "").orEmpty()
+
+    fun setQwenTtsApiKey(context: Context, value: String) {
+        p(context).edit().putString(KEY_QWEN_TTS_API, value.trim()).apply()
+    }
+
+    fun qwenTtsVoice(context: Context) =
+        p(context).getString(KEY_QWEN_TTS_VOICE, "clone:Evie").orEmpty()
+            .ifBlank { "clone:Evie" }
+
+    fun setQwenTtsVoice(context: Context, value: String) {
+        p(context).edit().putString(KEY_QWEN_TTS_VOICE, value.trim()).apply()
+    }
+
+    fun qwenTtsLanguage(context: Context) =
+        p(context).getString(KEY_QWEN_TTS_LANGUAGE, "English").orEmpty()
+            .ifBlank { "English" }
+
+    fun setQwenTtsLanguage(context: Context, value: String) {
+        p(context).edit().putString(KEY_QWEN_TTS_LANGUAGE, value.trim()).apply()
     }
 
     fun configured(context: Context) =
