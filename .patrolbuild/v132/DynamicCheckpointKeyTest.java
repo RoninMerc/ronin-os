@@ -31,13 +31,21 @@ public class DynamicCheckpointKeyTest {
         CheckpointTracker t=new CheckpointTracker(context);
         long at=t.shiftStart()+60_000L;
         t.observe(Arrays.asList(
-                row("1","T.MURD","Rampage BC","General Patrol - Rampage BC",at),
-                row("2","D.ROGERS1","Rampage BC","General Patrol - Rampage BC",at),
-                row("3","D.DEO","Rampage BC","General Patrol - Rampage BC",at)
+                row("same-id","T.MURD","Rampage BC","General Patrol - Rampage BC",at),
+                row("same-id","D.ROGERS1","Rampage BC","General Patrol - Rampage BC",at),
+                row("same-id","D.DEO","Rampage BC","General Patrol - Rampage BC",at)
         ));
         assertEquals(1,t.total("T.MURD"));
         assertEquals(1,t.total("D.ROGERS1"));
         assertEquals(1,t.total("D.DEO"));
+    }
+
+    @Test public void activeShiftStillStartsAtSixPm(){
+        CheckpointTracker t=new CheckpointTracker(context);
+        java.time.ZonedDateTime z=java.time.Instant.ofEpochMilli(t.shiftStart())
+                .atZone(java.time.ZoneId.of("Australia/Brisbane"));
+        assertEquals(18,z.getHour());
+        assertEquals(0,z.getMinute());
     }
 
     @Test public void issueIdDoesNotDefineDuplicates(){
