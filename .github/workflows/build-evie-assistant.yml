@@ -3,7 +3,7 @@ name: Build Evie Assistant APK
 on:
   push:
     branches:
-      - evie-assistant-mvp-20260929
+      - evie-assistant-full-20260929
     paths:
       - 'evie-assistant/**'
       - '.github/workflows/build-evie-assistant.yml'
@@ -46,13 +46,13 @@ jobs:
           test -n "$APK"
           unzip -t "$APK" >/dev/null
           mkdir -p dist
-          cp "$APK" dist/Evie-Assistant-0.1.0.apk
-          ls -lh dist/Evie-Assistant-0.1.0.apk
+          cp "$APK" dist/Evie-Assistant-Full-0.2.0.apk
+          ls -lh dist/Evie-Assistant-Full-0.2.0.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Evie-Assistant-0.1.0
-          path: dist/Evie-Assistant-0.1.0.apk
+          name: Evie-Assistant-Full-0.2.0
+          path: dist/Evie-Assistant-Full-0.2.0.apk
           if-no-files-found: error
           retention-days: 7
