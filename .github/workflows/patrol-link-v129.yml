@@ -1,12 +1,12 @@
 name: Patrol Link 1.1.19 adaptive checkpoints
 on:
   push:
-    branches: ['patrol-link-v129-single-wav-canonical']
+    branches: ['patrol-link-v129-adaptive-checkpoints']
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: patrol-link-v129-single-wav-canonical
+  group: patrol-link-v129-adaptive-checkpoints
   cancel-in-progress: true
 jobs:
   build:
@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/patrol-v129 /tmp/deliver128/evidence
+          mkdir -p /tmp/patrol-v129 /tmp/deliver129/evidence
           cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
           unzip -q /tmp/base.zip -d /tmp/patrol-v129
           cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
@@ -97,7 +97,7 @@ jobs:
           p=Path('/tmp/patrol-v129/tests/test_dom.py')
           p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
           PY
-          /tmp/domvenv/bin/python /tmp/patrol-v129/tests/test_dom.py | tee /tmp/deliver128/evidence/DOM-TESTS.txt
+          /tmp/domvenv/bin/python /tmp/patrol-v129/tests/test_dom.py | tee /tmp/deliver129/evidence/DOM-TESTS.txt
 
       - name: Enable KVM
         run: |
@@ -120,12 +120,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK=/tmp/deliver128/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk
+          APK=/tmp/deliver129/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk
           cp /tmp/patrol-v129/app/build/outputs/apk/release/app-release.apk "$APK"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver128/evidence/APK-SIGNATURE.txt
-          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver128/evidence/APK-SIGNATURE.txt
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver128/evidence/PACKAGE.txt
-          sha256sum "$APK" > /tmp/deliver128/evidence/SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver129/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver129/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver129/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver129/evidence/SHA256SUMS.txt
           python3 - <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET, os
@@ -159,7 +159,7 @@ jobs:
               'Playback uses only imported exact website recordings.',
               '',
               'INSTALL',
-              'Install over v1.1.17. Do not uninstall or clear app data.',
+              'Install over v1.1.18. Do not uninstall or clear app data.',
               'Existing profile names are preserved where possible; generate/import the new single canonical WAV for portable exact coverage.',
               '',
               'REFRESH',
@@ -178,7 +178,7 @@ jobs:
               'Compilation, unit tests, parser regressions, Android 16 refresh/TLS, fixed voice-manifest portability, adaptive cadence checks, checkpoint grouping/deduplication, and existing site coverage tests passed in CI.',
               'No physical Samsung handset or live whole-shift test.'
           ]
-          Path('/tmp/deliver128/Ronin-Patrol-Link-v1.1.19-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
+          Path('/tmp/deliver129/Ronin-Patrol-Link-v1.1.19-VERIFICATION.txt').write_text('\n'.join(lines)+'\n')
           PY
 
       - name: Publish direct APK on build branch
@@ -186,7 +186,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp /tmp/deliver128/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk dist/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk
+          cp /tmp/deliver129/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk dist/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk
           git config user.name "Ronin Patrol Link Builder"
           git config user.email "actions@users.noreply.github.com"
           git add dist/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk
@@ -194,15 +194,15 @@ jobs:
             echo "Direct APK already current."
           else
             git commit -m "Publish Patrol Link v1.1.19 direct APK [skip ci]"
-            git push origin HEAD:patrol-link-v129-single-wav-canonical
+            git push origin HEAD:patrol-link-v129-adaptive-checkpoints
           fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: Ronin-Patrol-Link-v1.1.19-verified
           path: |
-            /tmp/deliver128/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk
-            /tmp/deliver128/Ronin-Patrol-Link-v1.1.19-VERIFICATION.txt
+            /tmp/deliver129/Ronin-Patrol-Link-v1.1.19-Adaptive-Checkpoint-Tally.apk
+            /tmp/deliver129/Ronin-Patrol-Link-v1.1.19-VERIFICATION.txt
           retention-days: 7
 
       - name: Upload evidence
@@ -214,5 +214,5 @@ jobs:
             /tmp/patrol-v129/app/build/reports/
             /tmp/patrol-v129/app/build/test-results/
             /tmp/patrol-v129/app/build/outputs/androidTest-results/
-            /tmp/deliver128/evidence/
+            /tmp/deliver129/evidence/
           retention-days: 7
