@@ -20,7 +20,7 @@ object NotificationCache {
     }
 
     fun snapshot(limit: Int = 30): String {
-        val rows = items.values.takeLast(limit)
+        val rows = items.values.toList().takeLast(limit)
         return if (rows.isEmpty()) {
             "NOTIFICATIONS: none cached."
         } else {
