@@ -1,0 +1,224 @@
+name: Patrol Link 1.1.24 complete library script
+on:
+  push:
+    branches: ['patrol-link-v134-copy-full-library']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: patrol-link-v134-copy-full-library
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Reconstruct Patrol Link and apply complete-library voice update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v134 /tmp/deliver134/evidence
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v134
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v134
+          J=/tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink
+
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v134
+          mkdir -p /tmp/patrol-v134/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v134/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v134
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v134
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v134/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v134/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v122/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v123/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v124/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v125/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v126/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v127/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v128/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v129/patch.py /tmp/patrol-v134
+          mkdir -p /tmp/patrol-v134/app/src/main/assets/exact
+          cp .patrolbuild/v123/base_phrases.txt /tmp/patrol-v134/app/src/main/assets/exact/base_phrases.txt
+          python3 .patrolbuild/v130/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v131/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v132/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v133/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v134/patch.py /tmp/patrol-v134
+
+          mkdir -p /tmp/patrol-v134/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 \
+            -keystore /tmp/patrol-v134/app/src/androidTest/assets/tls-fixture.p12 \
+            -storepass fixture-only -keypass fixture-only \
+            -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' \
+            -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/patrol-v134')
+          java=root/'app/src/main/java/au/com/roningroup/patrollink'
+          assert "versionName '1.1.24'" in (root/'app/build.gradle').read_text()
+          tracker=(java/'CheckpointTracker.java').read_text()
+          main=(java/'MainActivity.java').read_text()
+          assert 'guard+"|"+area.key+"|"+o.recordedAt' in tracker
+          assert 'Issue ID is deliberately NOT part' in tracker
+          assert 'migratedEvents' in tracker
+          assert 'Rec Center 2 Gym' in tracker
+          assert 'Rec Center 2 Barbecue Area' in tracker
+          assert 'Unique hit = area + Silvertracker recorded time + guard.' in main
+          assert 'LAST PAGE ADDED' in main
+          assert 'CheckpointTracker.POINTS' not in main
+          voice=(java/'VoiceManager.java').read_text()
+          exact=(java/'ExactPhrasePack.java').read_text()
+          assert 'importAdditions' in exact
+          assert 'ExactPhraseResolver.resolve' in voice
+          assert 'Add / replace exact phrases' in main
+          assert 'REQ_VOICE_ADDON = 4103' in main
+          assert 'Copy ENTIRE current library script' in main
+          assert 'REQ_COMPLETE_LIBRARY = 4104' in main
+          assert 'Import complete-library WAV' in main
+          assert 'completeLibraryScript()' in voice
+          assert 'importCompleteLibrary' in voice
+          PY
+
+      - name: Compile and unit tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Browser parser regressions
+        shell: bash
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v134/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v134/tests/test_dom.py | tee /tmp/deliver134/evidence/DOM-TESTS.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 checkpoint regressions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v134 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.SingleWavCanonicalTest,au.com.roningroup.patrollink.AdaptiveRefreshTest,au.com.roningroup.patrollink.SpeechPreviewParityTest,au.com.roningroup.patrollink.DynamicCheckpointKeyTest,au.com.roningroup.patrollink.AdditivePhrasePackTest,au.com.roningroup.patrollink.CompleteLibraryTemplateTest
+
+      - name: Verify and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver134/Ronin-Patrol-Link-v1.1.24-Complete-Library-Script.apk
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk "$APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver134/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver134/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver134/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver134/evidence/SHA256SUMS.txt
+
+          cat > /tmp/deliver134/Ronin-Patrol-Link-v1.1.24-VERIFICATION.txt <<'EOF'
+          RONIN PATROL LINK 1.1.24 — COMPLETE CURRENT VOICE LIBRARY SCRIPT
+
+          ONE-BUTTON COMPLETE SCRIPT
+          Voice Library now includes Copy ENTIRE current library script.
+          For a populated voice, it reads the exact installed library manifest: the original base phrases plus every add-on and replacement installed up to that moment.
+          The copied script preserves the same phrase order Patrol Link stores internally and inserts [pause 3] separators.
+
+          NEW-VOICE TEMPLATE
+          Copying the entire current library also stores that exact phrase list as the complete-library import template.
+          When a new voice profile is created, Patrol Link preserves the populated source voice as the template automatically.
+          The saved template survives profile switching and app restarts.
+          A blank new profile can therefore import a full WAV generated from the complete script without falling back to the original built-in-only manifest.
+
+          COMPLETE-LIBRARY IMPORT
+          Voice Library includes Import complete-library WAV.
+          It maps the WAV against the saved complete template rather than the original canonical-only list.
+          Importing it replaces only the selected voice profile's exact library.
+          Other voice profiles and the source voice remain untouched.
+
+          EXISTING ADD-ON WORKFLOW
+          Add / replace exact phrases remains unchanged.
+          Users can still add one phrase or a small WAV at any time.
+          Re-importing an existing phrase replaces only that phrase.
+          Composable exact playback remains enabled.
+
+          ORIGINAL BASE
+          The original built-in base-script/base-WAV controls remain available separately and are clearly marked reset-only.
+          They do not silently discard the saved complete-library template.
+
+          CHECKPOINTS
+          The v1.1.22 dynamic guard + area + Silvertracker timestamp checkpoint logic remains unchanged.
+
+          INSTALL
+          Install over v1.1.23. Do not uninstall or clear app data.
+
+          TEST SCOPE
+          Compilation, unit tests, Chromium parser regressions, Android 16 existing regressions, additive phrase imports, composable playback, complete-library copy persistence, profile switching and importing a full generated WAV into a new voice are covered.
+          CI does not use the user's physical phone or authenticated live Silvertracker account.
+          EOF
+      - name: Publish direct APK on build branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/deliver134/Ronin-Patrol-Link-v1.1.24-Complete-Library-Script.apk dist/Ronin-Patrol-Link-v1.1.24-Complete-Library-Script.apk
+          git config user.name "Ronin Patrol Link Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add dist/Ronin-Patrol-Link-v1.1.24-Complete-Library-Script.apk
+          if git diff --cached --quiet; then
+            echo "Direct APK already current."
+          else
+            git commit -m "Publish Patrol Link v1.1.24 direct APK [skip ci]"
+            git push origin HEAD:patrol-link-v134-copy-full-library
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.24-verified
+          path: |
+            /tmp/deliver134/Ronin-Patrol-Link-v1.1.24-Complete-Library-Script.apk
+            /tmp/deliver134/Ronin-Patrol-Link-v1.1.24-VERIFICATION.txt
+          retention-days: 7
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v134-evidence
+          path: |
+            /tmp/patrol-v134/app/build/reports/
+            /tmp/patrol-v134/app/build/test-results/
+            /tmp/patrol-v134/app/build/outputs/androidTest-results/
+            /tmp/deliver134/evidence/
+          retention-days: 7
