@@ -35,6 +35,8 @@ class AssistantService : Service(), RecognitionListener {
             "au.com.roningroup.evieassistant.LISTEN_ONCE"
         const val ACTION_COMMAND =
             "au.com.roningroup.evieassistant.COMMAND"
+        const val ACTION_SPEAK_ONLY =
+            "au.com.roningroup.evieassistant.SPEAK_ONLY"
         const val EXTRA_TEXT = "text"
 
         private const val CHANNEL = "evie_assistant"
@@ -64,6 +66,14 @@ class AssistantService : Service(), RecognitionListener {
         fun submitText(context: android.content.Context, text: String) {
             val i = Intent(context, AssistantService::class.java)
                 .setAction(ACTION_COMMAND)
+                .putExtra(EXTRA_TEXT, text)
+            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(i)
+            else context.startService(i)
+        }
+
+        fun speakOnly(context: android.content.Context, text: String) {
+            val i = Intent(context, AssistantService::class.java)
+                .setAction(ACTION_SPEAK_ONLY)
                 .putExtra(EXTRA_TEXT, text)
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(i)
             else context.startService(i)
@@ -140,6 +150,19 @@ class AssistantService : Service(), RecognitionListener {
                         notification("Evie is thinking…")
                     )
                     submitCommand(text)
+                }
+            }
+
+            ACTION_SPEAK_ONLY -> {
+                val text = intent.getStringExtra(EXTRA_TEXT).orEmpty().trim()
+                if (text.isNotBlank()) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification("Evie is speaking…")
+                    )
+                    if (busy.compareAndSet(false, true)) {
+                        speakReply(text)
+                    }
                 }
             }
         }
