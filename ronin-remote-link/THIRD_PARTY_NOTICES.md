@@ -1,8 +1,8 @@
 # Third-party notices
 
-Ronin Remote Link v0.1.0 is a separate launcher, configuration and deployment layer. It does not incorporate or modify RustDesk source code.
+Ronin Remote Link v0.2.0 is a separate launcher, configuration, security and deployment layer. It does not incorporate or modify RustDesk source code.
 
-It interoperates with and can download/install unmodified RustDesk binaries.
+It interoperates with and can direct the user to download/install unmodified RustDesk binaries.
 
 - RustDesk client: https://github.com/rustdesk/rustdesk
 - Pinned client version: 1.4.9
