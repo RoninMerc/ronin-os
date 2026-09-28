@@ -1,0 +1,40 @@
+name: Patrol Link reader source preparation
+on:
+  push:
+    branches: ['patrol-link-v136-history-reader-fix']
+    paths: ['.github/workflows/patrol-link-v136-source.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct deployed application without running it
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,zipfile
+          lines=Path('.github/workflows/patrol-link-v134.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct Patrol Link and apply complete-library voice update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if 'mkdir -p /tmp/patrol-v134/app/src/androidTest/assets' in lines[i])
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          subprocess.run(['python3','.patrolbuild/v135/patch.py','/tmp/patrol-v134'],check=True)
+          root=Path('/tmp/patrol-v134')
+          with zipfile.ZipFile('/tmp/patrol-reader-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for folder in ['app/src','tests']:
+                  for p in (root/folder).rglob('*'):
+                      if p.is_file() and p.suffix in ('.java','.js','.py','.xml','.json','.html','.txt'):
+                          z.write(p,p.relative_to(root))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patrol-reader-source
+          path: /tmp/patrol-reader-source.zip
+          retention-days: 2
