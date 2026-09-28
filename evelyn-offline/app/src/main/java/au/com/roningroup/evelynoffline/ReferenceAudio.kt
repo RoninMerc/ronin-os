@@ -1,13 +1,10 @@
 package au.com.roningroup.evelynoffline
 
 import android.content.Context
-import android.media.AudioFormat
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import java.io.File
-import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.zip.GZIPInputStream
 
 data class EvelynReference(
     val samples: FloatArray,
@@ -21,159 +18,109 @@ object ReferenceAudio {
     fun load(context: Context): EvelynReference {
         cached?.let { return it }
 
-        val temp = File(context.cacheDir, "evelyn_reference.flac")
-        if (!temp.isFile || temp.length() < 1000L) {
-            context.assets.open("evelyn_reference.flac").use { input ->
-                FileOutputStream(temp).use { output ->
-                    input.copyTo(output, 128 * 1024)
+        val wavBytes = context.assets.open("evelyn_reference.wav.gz").use { raw ->
+            GZIPInputStream(raw).use { gzip ->
+                val out = ByteArrayOutputStream()
+                val buffer = ByteArray(32 * 1024)
+                while (true) {
+                    val n = gzip.read(buffer)
+                    if (n < 0) break
+                    if (n > 0) out.write(buffer, 0, n)
                 }
+                out.toByteArray()
             }
         }
 
-        val decoded = decode(temp)
+        val decoded = parsePcmWav(wavBytes)
         cached = decoded
         return decoded
     }
 
-    private fun decode(file: File): EvelynReference {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(file.absolutePath)
-
-        var trackIndex = -1
-        var format: MediaFormat? = null
-
-        for (i in 0 until extractor.trackCount) {
-            val f = extractor.getTrackFormat(i)
-            val mime = f.getString(MediaFormat.KEY_MIME).orEmpty()
-            if (mime.startsWith("audio/")) {
-                trackIndex = i
-                format = f
-                break
-            }
+    private fun parsePcmWav(bytes: ByteArray): EvelynReference {
+        if (bytes.size < 44) {
+            throw IllegalStateException("Embedded Evelyn WAV is too small.")
         }
 
-        if (trackIndex < 0 || format == null) {
-            extractor.release()
-            throw IllegalStateException("Embedded Evelyn reference audio is unreadable.")
+        fun ascii(offset: Int, length: Int): String =
+            String(bytes, offset, length, Charsets.US_ASCII)
+
+        fun u16(offset: Int): Int =
+            (bytes[offset].toInt() and 0xff) or
+                ((bytes[offset + 1].toInt() and 0xff) shl 8)
+
+        fun i32(offset: Int): Int =
+            (bytes[offset].toInt() and 0xff) or
+                ((bytes[offset + 1].toInt() and 0xff) shl 8) or
+                ((bytes[offset + 2].toInt() and 0xff) shl 16) or
+                ((bytes[offset + 3].toInt() and 0xff) shl 24)
+
+        if (ascii(0, 4) != "RIFF" || ascii(8, 4) != "WAVE") {
+            throw IllegalStateException("Embedded Evelyn reference is not a RIFF/WAVE file.")
         }
 
-        extractor.selectTrack(trackIndex)
-        val mime = format.getString(MediaFormat.KEY_MIME)
-            ?: throw IllegalStateException("Embedded Evelyn audio has no codec.")
+        var offset = 12
+        var audioFormat = -1
+        var channels = -1
+        var sampleRate = -1
+        var bitsPerSample = -1
+        var dataOffset = -1
+        var dataSize = -1
 
-        val codec = MediaCodec.createDecoderByType(mime)
-        codec.configure(format, null, null, 0)
-        codec.start()
+        while (offset + 8 <= bytes.size) {
+            val id = ascii(offset, 4)
+            val size = i32(offset + 4)
+            if (size < 0) break
 
-        var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceAtLeast(1)
-        var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
-        var output = FloatArray(sampleRate * 8)
-        var count = 0
-        var inputDone = false
-        var outputDone = false
-        val info = MediaCodec.BufferInfo()
+            val payload = offset + 8
+            if (payload + size > bytes.size) break
 
-        try {
-            while (!outputDone) {
-                if (!inputDone) {
-                    val inputIndex = codec.dequeueInputBuffer(10_000)
-                    if (inputIndex >= 0) {
-                        val inputBuffer = codec.getInputBuffer(inputIndex)
-                            ?: throw IllegalStateException("Could not allocate audio input buffer.")
-                        val n = extractor.readSampleData(inputBuffer, 0)
-
-                        if (n < 0) {
-                            codec.queueInputBuffer(
-                                inputIndex,
-                                0,
-                                0,
-                                0L,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                            )
-                            inputDone = true
-                        } else {
-                            codec.queueInputBuffer(
-                                inputIndex,
-                                0,
-                                n,
-                                extractor.sampleTime,
-                                0
-                            )
-                            extractor.advance()
-                        }
+            when (id) {
+                "fmt " -> {
+                    if (size >= 16) {
+                        audioFormat = u16(payload)
+                        channels = u16(payload + 2)
+                        sampleRate = i32(payload + 4)
+                        bitsPerSample = u16(payload + 14)
                     }
                 }
-
-                when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000)) {
-                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        val outFormat = codec.outputFormat
-                        if (outFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                            sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                        }
-                        if (outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
-                            channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                                .coerceAtLeast(1)
-                        }
-                        if (outFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
-                            pcmEncoding = outFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
-                        }
-                        val wanted = sampleRate * 8
-                        if (wanted > output.size) output = output.copyOf(wanted)
-                    }
-
-                    else -> if (outputIndex >= 0) {
-                        val buffer = codec.getOutputBuffer(outputIndex)
-                        if (buffer != null && info.size > 0) {
-                            buffer.position(info.offset)
-                            buffer.limit(info.offset + info.size)
-                            buffer.order(ByteOrder.LITTLE_ENDIAN)
-
-                            if (pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
-                                val frames = info.size / 4 / channels
-                                repeat(frames) {
-                                    var sum = 0f
-                                    repeat(channels) { sum += buffer.float }
-                                    if (count < output.size) output[count++] = sum / channels
-                                }
-                            } else {
-                                val frames = info.size / 2 / channels
-                                repeat(frames) {
-                                    var sum = 0f
-                                    repeat(channels) {
-                                        sum += buffer.short.toFloat() / 32768f
-                                    }
-                                    if (count < output.size) output[count++] = sum / channels
-                                }
-                            }
-                        }
-
-                        outputDone =
-                            (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0 ||
-                            count >= output.size
-
-                        codec.releaseOutputBuffer(outputIndex, false)
-                    }
+                "data" -> {
+                    dataOffset = payload
+                    dataSize = size
+                    break
                 }
             }
-        } finally {
-            runCatching { codec.stop() }
-            codec.release()
-            extractor.release()
+
+            offset = payload + size + (size and 1)
         }
 
-        if (count < sampleRate * 2) {
-            throw IllegalStateException("Embedded Evelyn reference is too short after decoding.")
+        if (audioFormat != 1) {
+            throw IllegalStateException("Embedded Evelyn WAV is not PCM.")
+        }
+        if (channels != 1) {
+            throw IllegalStateException("Embedded Evelyn WAV is not mono.")
+        }
+        if (sampleRate != 24000) {
+            throw IllegalStateException("Embedded Evelyn WAV is not 24 kHz.")
+        }
+        if (bitsPerSample != 16) {
+            throw IllegalStateException("Embedded Evelyn WAV is not 16-bit PCM.")
+        }
+        if (dataOffset < 0 || dataSize <= 0 || dataOffset + dataSize > bytes.size) {
+            throw IllegalStateException("Embedded Evelyn WAV has no valid audio data.")
         }
 
-        val samples = output.copyOf(count)
-        var peak = 0f
-        for (v in samples) {
-            val a = kotlin.math.abs(v)
-            if (a > peak) peak = a
+        val sampleCount = dataSize / 2
+        if (sampleCount < sampleRate * 2) {
+            throw IllegalStateException("Embedded Evelyn reference is too short.")
         }
-        if (peak > 1f) {
-            for (i in samples.indices) samples[i] /= peak
+
+        val samples = FloatArray(sampleCount)
+        val buffer = ByteBuffer
+            .wrap(bytes, dataOffset, dataSize)
+            .order(ByteOrder.LITTLE_ENDIAN)
+
+        for (i in 0 until sampleCount) {
+            samples[i] = buffer.short.toFloat() / 32768f
         }
 
         return EvelynReference(samples, sampleRate)
