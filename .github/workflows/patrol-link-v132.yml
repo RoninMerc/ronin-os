@@ -1,0 +1,209 @@
+name: Patrol Link 1.1.22 dynamic checkpoint key
+on:
+  push:
+    branches: ['patrol-link-v132-checkpoint-key']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: patrol-link-v132-checkpoint-key
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Reconstruct Patrol Link and apply checkpoint-only fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/patrol-v132 /tmp/deliver132/evidence
+          cat .patrolbuild/base.part0{0,1,2,3,4,5} | base64 -d > /tmp/base.zip
+          unzip -q /tmp/base.zip -d /tmp/patrol-v132
+          cat .patrolbuild/overlay.part0{0,1,2} | base64 -d > /tmp/overlay.tgz
+          tar -xzf /tmp/overlay.tgz -C /tmp/patrol-v132
+          J=/tmp/patrol-v132/app/src/main/java/au/com/roningroup/patrollink
+
+          cp .patrolbuild/PatrolEngine.java .patrolbuild/MainActivity.java "$J/"
+          python3 .patrolbuild/v115-patch.py /tmp/patrol-v132
+          mkdir -p /tmp/patrol-v132/app/src/androidTest/java/au/com/roningroup/patrollink
+          cp .patrolbuild/RefreshLifecycleTest.java /tmp/patrol-v132/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v115-finalize.py /tmp/patrol-v132
+          python3 .patrolbuild/v116-patch.py /tmp/patrol-v132
+          cp .patrolbuild/TlsPolicy.java "$J/"
+          cp .patrolbuild/TlsPolicyTest.java /tmp/patrol-v132/app/src/test/java/au/com/roningroup/patrollink/
+          cp .patrolbuild/TlsRecoveryTest.java /tmp/patrol-v132/app/src/androidTest/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v117-patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v121/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v122/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v123/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v124/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v125/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v126/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v127/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v128/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v129/patch.py /tmp/patrol-v132
+          mkdir -p /tmp/patrol-v132/app/src/main/assets/exact
+          cp .patrolbuild/v123/base_phrases.txt /tmp/patrol-v132/app/src/main/assets/exact/base_phrases.txt
+          python3 .patrolbuild/v130/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v131/patch.py /tmp/patrol-v132
+          python3 .patrolbuild/v132/patch.py /tmp/patrol-v132
+
+          mkdir -p /tmp/patrol-v132/app/src/androidTest/assets
+          keytool -J-Dkeystore.pkcs12.legacy -genkeypair -alias fixture -keyalg RSA -keysize 2048 -storetype PKCS12 \
+            -keystore /tmp/patrol-v132/app/src/androidTest/assets/tls-fixture.p12 \
+            -storepass fixture-only -keypass fixture-only \
+            -dname 'CN=localhost,OU=Instrumentation fixture only,O=Test' \
+            -ext SAN=dns:localhost,ip:127.0.0.1 -ext EKU=serverAuth -validity 30 -noprompt
+
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/patrol-v132')
+          java=root/'app/src/main/java/au/com/roningroup/patrollink'
+          assert "versionName '1.1.22'" in (root/'app/build.gradle').read_text()
+          tracker=(java/'CheckpointTracker.java').read_text()
+          main=(java/'MainActivity.java').read_text()
+          assert 'guard+"|"+area.key+"|"+o.recordedAt' in tracker
+          assert 'Issue ID is deliberately NOT part' in tracker
+          assert 'migratedEvents' in tracker
+          assert 'Rec Center 2 Gym' in tracker
+          assert 'Rec Center 2 Barbecue Area' in tracker
+          assert 'Unique hit = area + Silvertracker recorded time + guard.' in main
+          assert 'LAST PAGE ADDED' in main
+          assert 'CheckpointTracker.POINTS' not in main
+          PY
+
+      - name: Compile and unit tests
+        working-directory: /tmp/patrol-v132
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Browser parser regressions
+        shell: bash
+        run: |
+          python3 -m venv /tmp/domvenv
+          /tmp/domvenv/bin/pip -q install playwright
+          /tmp/domvenv/bin/python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v132/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv/bin/python /tmp/patrol-v132/tests/test_dom.py | tee /tmp/deliver132/evidence/DOM-TESTS.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 checkpoint regressions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v132 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.SingleWavCanonicalTest,au.com.roningroup.patrollink.AdaptiveRefreshTest,au.com.roningroup.patrollink.SpeechPreviewParityTest,au.com.roningroup.patrollink.DynamicCheckpointKeyTest
+
+      - name: Verify and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver132/Ronin-Patrol-Link-v1.1.22-Dynamic-Checkpoint-Key.apk
+          cp /tmp/patrol-v132/app/build/outputs/apk/release/app-release.apk "$APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver132/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver132/evidence/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/deliver132/evidence/PACKAGE.txt
+          sha256sum "$APK" > /tmp/deliver132/evidence/SHA256SUMS.txt
+
+          cat > /tmp/deliver132/Ronin-Patrol-Link-v1.1.22-VERIFICATION.txt <<'EOF'
+          RONIN PATROL LINK 1.1.22 — DYNAMIC CHECKPOINT KEY
+
+          SCOPE
+          This build changes checkpoint/tally logic only. Voice wording and exact-recording behaviour are not changed.
+
+          CHECKPOINT IDENTITY
+          A checkpoint hit is unique by exactly:
+          - guard
+          - area
+          - Silvertracker recorded timestamp
+          Issue ID is not used to decide whether a hit is a duplicate.
+
+          EXAMPLES
+          Rampage BC + 00:42 + T.MURD and Rampage BC + 00:42 + D.ROGERS1 are two different hits.
+          Rampage BC + 00:42 + D.ROGERS1 seen again on the same or another history page is one hit.
+          Rampage BC + 00:43 + D.ROGERS1 is another hit.
+
+          DYNAMIC AREAS
+          Valid General Patrol / patrol-scan areas are learned from Silvertracker automatically.
+          The tally is no longer restricted to the old fixed checkpoint list.
+          Incidents such as Door Found Open are not counted as checkpoint hits.
+
+          PAGE FEEDBACK
+          Shift History now shows LAST PAGE ADDED with a +count for each selected guard so a page scan can be checked immediately.
+
+          COMPATIBILITY
+          Previous shift totals and old event keys are migrated to the new area keys where possible.
+          Existing already-counted pages remain protected against duplicate counting after the update.
+          Rec Center 2 Gym and Rec Center 2 Barbecue Area labels are retained.
+
+          INSTALL
+          Install over v1.1.21. Do not uninstall or clear app data.
+
+          TEST BOUNDARY
+          CI uses controlled Android 16 test data, not the user's authenticated live Silvertracker account or physical handset.
+          EOF
+
+      - name: Publish direct APK on build branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/deliver132/Ronin-Patrol-Link-v1.1.22-Dynamic-Checkpoint-Key.apk dist/Ronin-Patrol-Link-v1.1.22-Dynamic-Checkpoint-Key.apk
+          git config user.name "Ronin Patrol Link Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add dist/Ronin-Patrol-Link-v1.1.22-Dynamic-Checkpoint-Key.apk
+          if git diff --cached --quiet; then
+            echo "Direct APK already current."
+          else
+            git commit -m "Publish Patrol Link v1.1.22 direct APK [skip ci]"
+            git push origin HEAD:patrol-link-v132-checkpoint-key
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.22-verified
+          path: |
+            /tmp/deliver132/Ronin-Patrol-Link-v1.1.22-Dynamic-Checkpoint-Key.apk
+            /tmp/deliver132/Ronin-Patrol-Link-v1.1.22-VERIFICATION.txt
+          retention-days: 7
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v132-evidence
+          path: |
+            /tmp/patrol-v132/app/build/reports/
+            /tmp/patrol-v132/app/build/test-results/
+            /tmp/patrol-v132/app/build/outputs/androidTest-results/
+            /tmp/deliver132/evidence/
+          retention-days: 7
