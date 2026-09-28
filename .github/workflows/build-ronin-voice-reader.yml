@@ -78,7 +78,7 @@ jobs:
           fi
           test -n "$APK"
           cp "$APK" dist/Ronin-Voice-Reader-0.1.1-arm64.apk
-          ls -lh dist/Ronin-Voice-Reader-0.1.0-arm64.apk
+          ls -lh dist/Ronin-Voice-Reader-0.1.1-arm64.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
