@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -17,6 +19,8 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.widget.Toast
+import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -68,6 +72,7 @@ class AssistantService : Service(), RecognitionListener {
 
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
+    private val voiceWorker = Executors.newSingleThreadExecutor()
     private val busy = AtomicBoolean(false)
 
     private var recognizer: SpeechRecognizer? = null
@@ -79,6 +84,9 @@ class AssistantService : Service(), RecognitionListener {
 
     private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
+
+    private var mediaPlayer: MediaPlayer? = null
+    private var currentVoiceFile: File? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -110,6 +118,7 @@ class AssistantService : Service(), RecognitionListener {
                 activeCommandMode = false
                 Prefs.setWakeEnabled(this, false)
                 stopRecognizer()
+                stopVoicePlayback()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -150,21 +159,31 @@ class AssistantService : Service(), RecognitionListener {
                         override fun onStart(utteranceId: String?) = Unit
 
                         override fun onDone(utteranceId: String?) {
-                            if (utteranceId == "evie_reply" && wakeMode) {
-                                main.postDelayed(
-                                    { startWakeListening(0) },
-                                    250
-                                )
+                            if (utteranceId == "evie_reply") {
+                                busy.set(false)
+                                if (wakeMode) {
+                                    main.postDelayed(
+                                        { startWakeListening(0) },
+                                        250
+                                    )
+                                } else {
+                                    main.post { finishIfIdle() }
+                                }
                             }
                         }
 
                         @Deprecated("Deprecated in Java")
                         override fun onError(utteranceId: String?) {
-                            if (wakeMode) {
-                                main.postDelayed(
-                                    { startWakeListening(0) },
-                                    500
-                                )
+                            if (utteranceId == "evie_reply") {
+                                busy.set(false)
+                                if (wakeMode) {
+                                    main.postDelayed(
+                                        { startWakeListening(0) },
+                                        500
+                                    )
+                                } else {
+                                    main.post { finishIfIdle() }
+                                }
                             }
                         }
                     }
@@ -388,6 +407,7 @@ class AssistantService : Service(), RecognitionListener {
         }
 
         stopRecognizer()
+        stopVoicePlayback()
         updateNotification("Evie is thinking…")
 
         worker.execute {
@@ -396,6 +416,7 @@ class AssistantService : Service(), RecognitionListener {
                     .runCommand(text)
 
                 val reply = result.reply.trim()
+
                 main.post {
                     if (Prefs.speakEnabled(this)) {
                         speakReply(reply)
@@ -419,11 +440,30 @@ class AssistantService : Service(), RecognitionListener {
     }
 
     private fun speakReply(text: String) {
-        busy.set(false)
         updateNotification("Evie: " + text.take(80))
 
-        if (!ttsReady || text.isBlank()) {
-            toast(text.ifBlank { "Done." })
+        if (text.isBlank()) {
+            busy.set(false)
+            if (wakeMode) startWakeListening(350)
+            else finishIfIdle()
+            return
+        }
+
+        val useQwen =
+            Prefs.voiceMode(this).equals("qwen", ignoreCase = true) &&
+                Prefs.qwenTtsUrl(this).isNotBlank()
+
+        if (useQwen) {
+            speakReplyWithQwen(text)
+        } else {
+            speakReplyWithAndroid(text)
+        }
+    }
+
+    private fun speakReplyWithAndroid(text: String) {
+        if (!ttsReady) {
+            toast(text)
+            busy.set(false)
             if (wakeMode) startWakeListening(500)
             else finishIfIdle()
             return
@@ -435,13 +475,123 @@ class AssistantService : Service(), RecognitionListener {
             null,
             "evie_reply"
         )
+    }
 
-        if (!wakeMode) {
-            main.postDelayed(
-                { finishIfIdle() },
-                6_000
-            )
+    private fun speakReplyWithQwen(text: String) {
+        updateNotification("Evie is generating her voice…")
+
+        voiceWorker.execute {
+            try {
+                val bytes = QwenVoiceClient.synthesize(
+                    applicationContext,
+                    text
+                )
+
+                if (bytes.size < 44) {
+                    throw IllegalStateException(
+                        "Qwen3-TTS returned an empty or invalid audio response."
+                    )
+                }
+
+                val file = File(
+                    cacheDir,
+                    "evie_qwen_" + System.currentTimeMillis() + ".wav"
+                )
+
+                FileOutputStream(file).use { out ->
+                    out.write(bytes)
+                }
+
+                currentVoiceFile = file
+
+                main.post {
+                    playQwenFile(file)
+                }
+            } catch (t: Throwable) {
+                main.post {
+                    toast(
+                        "Qwen3-TTS failed, using Android voice: " +
+                            (t.message ?: t.javaClass.simpleName)
+                    )
+                    speakReplyWithAndroid(text)
+                }
+            }
         }
+    }
+
+    private fun playQwenFile(file: File) {
+        stopVoicePlayback()
+
+        val player = MediaPlayer()
+        mediaPlayer = player
+
+        try {
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+
+            player.setDataSource(file.absolutePath)
+
+            player.setOnPreparedListener { mp ->
+                updateNotification("Evie is speaking")
+                mp.start()
+            }
+
+            player.setOnCompletionListener {
+                finishQwenPlayback()
+            }
+
+            player.setOnErrorListener { _, _, _ ->
+                toast("Qwen3-TTS audio playback failed.")
+                finishQwenPlayback()
+                true
+            }
+
+            player.prepareAsync()
+        } catch (t: Throwable) {
+            toast(
+                "Qwen3-TTS playback error: " +
+                    (t.message ?: t.javaClass.simpleName)
+            )
+            finishQwenPlayback()
+        }
+    }
+
+    private fun finishQwenPlayback() {
+        runCatching {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+        }
+        mediaPlayer = null
+
+        currentVoiceFile?.let {
+            runCatching { it.delete() }
+        }
+        currentVoiceFile = null
+
+        busy.set(false)
+
+        if (wakeMode) {
+            startWakeListening(300)
+        } else {
+            finishIfIdle()
+        }
+    }
+
+    private fun stopVoicePlayback() {
+        runCatching {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+        }
+        mediaPlayer = null
+
+        currentVoiceFile?.let {
+            runCatching { it.delete() }
+        }
+        currentVoiceFile = null
     }
 
     private fun speakImmediate(text: String) {
@@ -547,12 +697,16 @@ class AssistantService : Service(), RecognitionListener {
         recognizer?.destroy()
         recognizer = null
 
+        stopVoicePlayback()
+
         runCatching {
             tts?.stop()
             tts?.shutdown()
         }
 
         worker.shutdownNow()
+        voiceWorker.shutdownNow()
+
         super.onDestroy()
     }
 }
