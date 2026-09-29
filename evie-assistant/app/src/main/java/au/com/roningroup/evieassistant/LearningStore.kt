@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import java.util.Locale
 
 class LearningStore(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "evie_memory.db", null, 1) {
+    SQLiteOpenHelper(context.applicationContext, "evie_memory.db", null, 2) {
 
     companion object {
         @Volatile private var instance: LearningStore? = null
@@ -61,6 +61,17 @@ class LearningStore(context: Context) :
             """.trimIndent()
         )
 
+        db.execSQL(
+            """
+            CREATE TABLE conversation (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
         db.execSQL("CREATE INDEX idx_memories_kind ON memories(kind)")
         db.execSQL("CREATE INDEX idx_actions_tool ON action_history(tool_name)")
         db.execSQL("CREATE INDEX idx_actions_created ON action_history(created_at)")
@@ -70,7 +81,73 @@ class LearningStore(context: Context) :
         db: SQLiteDatabase,
         oldVersion: Int,
         newVersion: Int
-    ) = Unit
+    ) {
+        if (oldVersion < 2) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS conversation (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
+
+    fun addConversationTurn(
+        role: String,
+        content: String
+    ) {
+        val clean = content.trim()
+        if (clean.isBlank()) return
+
+        val values = ContentValues().apply {
+            put("role", role.trim().ifBlank { "user" })
+            put("content", clean.take(12000))
+            put("created_at", System.currentTimeMillis())
+        }
+
+        writableDatabase.insert(
+            "conversation",
+            null,
+            values
+        )
+
+        writableDatabase.execSQL(
+            """
+            DELETE FROM conversation
+            WHERE id NOT IN (
+                SELECT id FROM conversation
+                ORDER BY id DESC
+                LIMIT 24
+            )
+            """.trimIndent()
+        )
+    }
+
+    fun recentConversation(limit: Int = 10): List<Pair<String, String>> {
+        val rows = mutableListOf<Pair<String, String>>()
+
+        readableDatabase.rawQuery(
+            """
+            SELECT role, content
+            FROM conversation
+            ORDER BY id DESC
+            LIMIT ?
+            """.trimIndent(),
+            arrayOf(limit.coerceIn(1, 24).toString())
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                rows += cursor.getString(0) to cursor.getString(1)
+            }
+        }
+
+        rows.reverse()
+        return rows
+    }
 
     fun remember(
         content: String,
@@ -337,9 +414,12 @@ class LearningStore(context: Context) :
         val memoryCount = count("memories")
         val routineCount = count("routines")
         val actionCount = count("action_history")
+        val conversationCount = count("conversation")
 
         return "Evie memory: " + memoryCount + " memories, " +
-            routineCount + " routines, " + actionCount + " logged actions."
+            routineCount + " routines, " +
+            actionCount + " logged actions, " +
+            conversationCount + " recent conversation turns."
     }
 
     private fun count(table: String): Long {
