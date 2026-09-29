@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import java.util.Locale
 
 class LearningStore(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "evie_memory.db", null, 2) {
+    SQLiteOpenHelper(context.applicationContext, "evie_memory.db", null, 3) {
 
     companion object {
         @Volatile private var instance: LearningStore? = null
@@ -72,6 +72,18 @@ class LearningStore(context: Context) :
             """.trimIndent()
         )
 
+        db.execSQL(
+            """
+            CREATE TABLE voice_scripts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                source_model TEXT,
+                created_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
         db.execSQL("CREATE INDEX idx_memories_kind ON memories(kind)")
         db.execSQL("CREATE INDEX idx_actions_tool ON action_history(tool_name)")
         db.execSQL("CREATE INDEX idx_actions_created ON action_history(created_at)")
@@ -89,6 +101,20 @@ class LearningStore(context: Context) :
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
+
+        if (oldVersion < 3) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS voice_scripts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source_model TEXT,
                     created_at INTEGER NOT NULL
                 )
                 """.trimIndent()
@@ -148,6 +174,37 @@ class LearningStore(context: Context) :
         rows.reverse()
         return rows
     }
+
+
+    fun saveVoiceScript(
+        title: String,
+        content: String,
+        sourceModel: String
+    ): Long {
+        val clean = content.trim()
+        if (clean.isBlank()) return -1
+
+        val values = ContentValues().apply {
+            put(
+                "title",
+                title.trim().ifBlank {
+                    "Evie Voice Script"
+                }
+            )
+            put("content", clean)
+            put("source_model", sourceModel.trim())
+            put("created_at", System.currentTimeMillis())
+        }
+
+        return writableDatabase.insert(
+            "voice_scripts",
+            null,
+            values
+        )
+    }
+
+    fun voiceScriptCount(): Long =
+        count("voice_scripts")
 
     fun remember(
         content: String,
@@ -415,11 +472,13 @@ class LearningStore(context: Context) :
         val routineCount = count("routines")
         val actionCount = count("action_history")
         val conversationCount = count("conversation")
+        val voiceScriptCount = count("voice_scripts")
 
         return "Evie memory: " + memoryCount + " memories, " +
             routineCount + " routines, " +
             actionCount + " logged actions, " +
-            conversationCount + " recent conversation turns."
+            conversationCount + " recent conversation turns, " +
+            voiceScriptCount + " saved voice scripts."
     }
 
     private fun count(table: String): Long {
