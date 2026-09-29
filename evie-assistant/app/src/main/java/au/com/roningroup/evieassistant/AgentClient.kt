@@ -18,6 +18,115 @@ class AgentClient(private val context: Context) {
         val toolTrace: List<String>
     )
 
+
+    fun testConnection(): String {
+        val apiKey = Prefs.apiKey(context)
+        if (apiKey.isBlank()) {
+            return "ERROR: Featherless API key is missing."
+        }
+
+        val connection =
+            (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                setRequestProperty(
+                    "Authorization",
+                    "Bearer " + apiKey
+                )
+                setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+                setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+                setRequestProperty(
+                    "X-Title",
+                    "Evie Assistant Diagnostic"
+                )
+                setRequestProperty(
+                    "User-Agent",
+                    "Evie-Assistant-Android/0.3"
+                )
+            }
+
+        return try {
+            val messages = JSONArray()
+                .put(
+                    JSONObject()
+                        .put("role", "system")
+                        .put(
+                            "content",
+                            "This is a connectivity test. Reply with EVIE_OK only."
+                        )
+                )
+                .put(
+                    JSONObject()
+                        .put("role", "user")
+                        .put("content", "Connection test")
+                )
+
+            val body = JSONObject()
+                .put("model", Prefs.model(context))
+                .put("messages", messages)
+                .put("temperature", 0.0)
+                .put("max_tokens", 20)
+                .toString()
+
+            connection.outputStream.use { out ->
+                out.write(
+                    body.toByteArray(
+                        StandardCharsets.UTF_8
+                    )
+                )
+                out.flush()
+            }
+
+            val code = connection.responseCode
+            val stream =
+                if (code in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+
+            val response = stream
+                ?.bufferedReader()
+                ?.use { it.readText() }
+                .orEmpty()
+
+            if (code !in 200..299) {
+                "ERROR: Featherless HTTP " +
+                    code + ": " +
+                    response.take(600)
+            } else {
+                val json = JSONObject(response)
+                val reply = json
+                    .optJSONArray("choices")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("message")
+                    ?.optString("content")
+                    .orEmpty()
+                    .trim()
+
+                if (reply.isBlank()) {
+                    "ERROR: Featherless responded but returned no text."
+                } else {
+                    "OK: Featherless model responded: " +
+                        reply.take(120)
+                }
+            }
+        } catch (t: Throwable) {
+            "ERROR: Featherless connection failed: " +
+                (t.message ?: t.javaClass.simpleName)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     fun runCommand(userText: String): Result {
         val apiKey = Prefs.apiKey(context)
         if (apiKey.isBlank()) {
