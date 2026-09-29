@@ -2,7 +2,12 @@ package au.com.roningroup.evieassistant
 
 import android.Manifest
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
@@ -22,6 +27,9 @@ import android.widget.TextView
 import android.widget.Toast
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -52,6 +60,28 @@ class MainActivity : Activity() {
     private lateinit var wakeButton: Button
     private lateinit var bubbleButton: Button
     private lateinit var testCommand: EditText
+    private lateinit var responseOutput: EditText
+    private lateinit var responseStatus: TextView
+    private var responseReceiverRegistered = false
+
+    private val responseReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(
+                context: Context?,
+                intent: Intent?
+            ) {
+                val response =
+                    intent
+                        ?.getStringExtra(
+                            AssistantService.EXTRA_RESPONSE
+                        )
+                        .orEmpty()
+
+                if (response.isNotBlank()) {
+                    showResponse(response)
+                }
+            }
+        }
 
     private var pendingStartWake = false
     private var pendingStartBubble = false
@@ -94,7 +124,7 @@ class MainActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Full pre-OS Android agent · v0.3"
+            text = "Full pre-OS Android agent · v0.3.1"
             textSize = 14f
             setPadding(0, 0, 0, dp(12))
         })
@@ -455,12 +485,150 @@ class MainActivity : Activity() {
                     return@setOnClickListener
                 }
 
+                responseStatus.text =
+                    "Waiting for Evie's response…"
+
+                responseOutput.setText("")
+
                 AssistantService.submitText(
                     this@MainActivity,
                     command
                 )
             }
         }, matchButton())
+
+        root.addView(section("Evie response"))
+
+        responseStatus = TextView(this).apply {
+            text = "No response yet."
+            textSize = 13f
+            setPadding(
+                0,
+                dp(4),
+                0,
+                dp(5)
+            )
+        }
+        root.addView(responseStatus)
+
+        responseOutput = EditText(this).apply {
+            hint =
+                "Evie's full Featherless response will appear here."
+            minLines = 10
+            maxLines = 24
+            gravity =
+                Gravity.TOP or Gravity.START
+            setTextIsSelectable(true)
+            keyListener = null
+            isCursorVisible = false
+            setPadding(
+                dp(12),
+                dp(12),
+                dp(12),
+                dp(12)
+            )
+        }
+        root.addView(responseOutput)
+
+        val responseRowOne =
+            LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+            }
+        root.addView(responseRowOne)
+
+        responseRowOne.addView(
+            Button(this).apply {
+                text = "COPY ALL"
+                setOnClickListener {
+                    copyResponse()
+                }
+            },
+            LinearLayout.LayoutParams(
+                0,
+                dp(54),
+                1f
+            )
+        )
+
+        responseRowOne.addView(
+            Button(this).apply {
+                text = "SPEAK RESPONSE"
+                setOnClickListener {
+                    val text =
+                        responseOutput.text
+                            .toString()
+
+                    if (text.isBlank()) {
+                        toast(
+                            "There is no Evie response to speak."
+                        )
+                    } else {
+                        AssistantService.speakOnly(
+                            this@MainActivity,
+                            text
+                        )
+                    }
+                }
+            },
+            LinearLayout.LayoutParams(
+                0,
+                dp(54),
+                1f
+            )
+        )
+
+        val responseRowTwo =
+            LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+            }
+        root.addView(responseRowTwo)
+
+        responseRowTwo.addView(
+            Button(this).apply {
+                text = "CLEAR"
+                setOnClickListener {
+                    Prefs.clearLastResponse(
+                        this@MainActivity
+                    )
+                    responseOutput.setText("")
+                    responseStatus.text =
+                        "Response cleared."
+                }
+            },
+            LinearLayout.LayoutParams(
+                0,
+                dp(54),
+                1f
+            )
+        )
+
+        responseRowTwo.addView(
+            Button(this).apply {
+                text = "SAVE AS VOICE SCRIPT"
+                setOnClickListener {
+                    saveCurrentVoiceScript()
+                }
+            },
+            LinearLayout.LayoutParams(
+                0,
+                dp(54),
+                1f
+            )
+        )
+
+        root.addView(TextView(this).apply {
+            text =
+                "COPY ALL copies the exact model response shown above so you can paste it directly into AnyVoiceLab. SAVE AS VOICE SCRIPT keeps the response in Evie's local voice-training dataset."
+            textSize = 13f
+            setPadding(
+                0,
+                dp(5),
+                0,
+                dp(10)
+            )
+        })
 
         root.addView(TextView(this).apply {
             text =
@@ -516,6 +684,9 @@ class MainActivity : Activity() {
         refreshButtons()
         refreshMemoryStatus()
         refreshDiagnostics()
+        showResponse(
+            Prefs.lastResponse(this)
+        )
 
         voiceStatus.text =
             if (qwenVoiceCheck.isChecked) {
@@ -694,6 +865,99 @@ class MainActivity : Activity() {
         }
     }
 
+
+    private fun showResponse(text: String) {
+        if (!::responseOutput.isInitialized) return
+
+        val value = text.trim()
+
+        responseOutput.setText(value)
+
+        responseStatus.text =
+            if (value.isBlank()) {
+                "No response yet."
+            } else {
+                "Evie response · " +
+                    value.length +
+                    " characters"
+            }
+    }
+
+    private fun copyResponse() {
+        val text =
+            responseOutput.text
+                .toString()
+
+        if (text.isBlank()) {
+            toast(
+                "There is no Evie response to copy."
+            )
+            return
+        }
+
+        val clipboard =
+            getSystemService(
+                Context.CLIPBOARD_SERVICE
+            ) as ClipboardManager
+
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "Evie response",
+                text
+            )
+        )
+
+        toast(
+            "Full Evie response copied."
+        )
+    }
+
+    private fun saveCurrentVoiceScript() {
+        val text =
+            responseOutput.text
+                .toString()
+                .trim()
+
+        if (text.isBlank()) {
+            toast(
+                "There is no Evie response to save."
+            )
+            return
+        }
+
+        val stamp =
+            SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss",
+                Locale.getDefault()
+            ).format(
+                Date()
+            )
+
+        val id =
+            LearningStore.get(this)
+                .saveVoiceScript(
+                    title =
+                        "Evie Voice Script " +
+                            stamp,
+                    content = text,
+                    sourceModel =
+                        Prefs.model(this)
+                )
+
+        if (id > 0) {
+            toast(
+                "Saved as Evie voice script #" +
+                    id +
+                    "."
+            )
+            refreshMemoryStatus()
+        } else {
+            toast(
+                "Could not save the voice script."
+            )
+        }
+    }
+
     private fun refreshMemoryStatus() {
         if (!::memoryStatus.isInitialized) return
 
@@ -841,6 +1105,54 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+
+    override fun onStart() {
+        super.onStart()
+
+        if (!responseReceiverRegistered) {
+            val filter =
+                IntentFilter(
+                    AssistantService.ACTION_RESPONSE
+                )
+
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(
+                    responseReceiver,
+                    filter,
+                    Context.RECEIVER_NOT_EXPORTED
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(
+                    responseReceiver,
+                    filter
+                )
+            }
+
+            responseReceiverRegistered = true
+        }
+
+        val latest =
+            Prefs.lastResponse(this)
+
+        if (latest.isNotBlank()) {
+            showResponse(latest)
+        }
+    }
+
+    override fun onStop() {
+        if (responseReceiverRegistered) {
+            runCatching {
+                unregisterReceiver(
+                    responseReceiver
+                )
+            }
+            responseReceiverRegistered = false
+        }
+
+        super.onStop()
     }
 
     override fun onResume() {
