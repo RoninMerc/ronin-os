@@ -30,11 +30,58 @@ Never pretend an action succeeded. If a tool says it failed, say so briefly and 
     private fun p(context: Context) =
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    fun apiKey(context: Context) =
-        p(context).getString(KEY_API, "").orEmpty()
+    fun apiKey(context: Context): String {
+        val secure =
+            SecretStore.get(
+                context,
+                "featherless_api_key"
+            )
+
+        if (secure.isNotBlank()) {
+            return secure
+        }
+
+        val legacy =
+            p(context)
+                .getString(KEY_API, "")
+                .orEmpty()
+
+        if (legacy.isNotBlank() &&
+            SecretStore.put(
+                context,
+                "featherless_api_key",
+                legacy
+            )
+        ) {
+            p(context)
+                .edit()
+                .remove(KEY_API)
+                .apply()
+        }
+
+        return legacy
+    }
 
     fun setApiKey(context: Context, value: String) {
-        p(context).edit().putString(KEY_API, value.trim()).apply()
+        val clean = value.trim()
+
+        if (clean.isBlank()) {
+            SecretStore.remove(
+                context,
+                "featherless_api_key"
+            )
+        } else {
+            SecretStore.put(
+                context,
+                "featherless_api_key",
+                clean
+            )
+        }
+
+        p(context)
+            .edit()
+            .remove(KEY_API)
+            .apply()
     }
 
     fun model(context: Context) =
@@ -98,11 +145,58 @@ Never pretend an action succeeded. If a tool says it failed, say so briefly and 
         p(context).edit().putString(KEY_QWEN_TTS_URL, value.trim().trimEnd('/')).apply()
     }
 
-    fun qwenTtsApiKey(context: Context) =
-        p(context).getString(KEY_QWEN_TTS_API, "").orEmpty()
+    fun qwenTtsApiKey(context: Context): String {
+        val secure =
+            SecretStore.get(
+                context,
+                "qwen_tts_api_key"
+            )
+
+        if (secure.isNotBlank()) {
+            return secure
+        }
+
+        val legacy =
+            p(context)
+                .getString(KEY_QWEN_TTS_API, "")
+                .orEmpty()
+
+        if (legacy.isNotBlank() &&
+            SecretStore.put(
+                context,
+                "qwen_tts_api_key",
+                legacy
+            )
+        ) {
+            p(context)
+                .edit()
+                .remove(KEY_QWEN_TTS_API)
+                .apply()
+        }
+
+        return legacy
+    }
 
     fun setQwenTtsApiKey(context: Context, value: String) {
-        p(context).edit().putString(KEY_QWEN_TTS_API, value.trim()).apply()
+        val clean = value.trim()
+
+        if (clean.isBlank()) {
+            SecretStore.remove(
+                context,
+                "qwen_tts_api_key"
+            )
+        } else {
+            SecretStore.put(
+                context,
+                "qwen_tts_api_key",
+                clean
+            )
+        }
+
+        p(context)
+            .edit()
+            .remove(KEY_QWEN_TTS_API)
+            .apply()
     }
 
     fun qwenTtsVoice(context: Context) =
