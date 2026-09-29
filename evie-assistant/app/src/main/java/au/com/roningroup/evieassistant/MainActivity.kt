@@ -31,6 +31,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import androidx.core.content.ContextCompat
 
 class MainActivity : Activity() {
     companion object {
@@ -1117,19 +1118,12 @@ class MainActivity : Activity() {
                     AssistantService.ACTION_RESPONSE
                 )
 
-            if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(
-                    responseReceiver,
-                    filter,
-                    Context.RECEIVER_NOT_EXPORTED
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                registerReceiver(
-                    responseReceiver,
-                    filter
-                )
-            }
+            ContextCompat.registerReceiver(
+                this,
+                responseReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
 
             responseReceiverRegistered = true
         }
