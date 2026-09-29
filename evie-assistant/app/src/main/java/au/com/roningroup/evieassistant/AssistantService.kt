@@ -169,6 +169,25 @@ class AssistantService : Service(), RecognitionListener {
         }
     }
 
+    private fun safePromote(
+        content: String,
+        mode: ForegroundMode
+    ): Boolean {
+        return runCatching {
+            promoteForeground(
+                content,
+                mode
+            )
+            true
+        }.getOrElse {
+            toast(
+                "Android blocked Evie's foreground service: " +
+                    (it.message ?: it.javaClass.simpleName)
+            )
+            false
+        }
+    }
+
     override fun onStartCommand(
         intent: Intent?,
         flags: Int,
@@ -179,10 +198,18 @@ class AssistantService : Service(), RecognitionListener {
                 wakeMode = true
                 wakeRunningState.set(true)
                 Prefs.setWakeEnabled(this, true)
-                promoteForeground(
-                    "Hey Evie is listening",
-                    ForegroundMode.MICROPHONE
-                )
+                if (!safePromote(
+                        "Hey Evie is listening",
+                        ForegroundMode.MICROPHONE
+                    )
+                ) {
+                    wakeMode = false
+                    wakeRunningState.set(false)
+                    Prefs.setWakeEnabled(this, false)
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+
                 startWakeListening(250)
             }
 
@@ -198,10 +225,15 @@ class AssistantService : Service(), RecognitionListener {
             }
 
             ACTION_LISTEN_ONCE -> {
-                promoteForeground(
-                    "Evie is listening…",
-                    ForegroundMode.MICROPHONE
-                )
+                if (!safePromote(
+                        "Evie is listening…",
+                        ForegroundMode.MICROPHONE
+                    )
+                ) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+
                 activeCommandMode = true
                 startListeningNow()
             }
@@ -209,10 +241,15 @@ class AssistantService : Service(), RecognitionListener {
             ACTION_COMMAND -> {
                 val text = intent.getStringExtra(EXTRA_TEXT).orEmpty().trim()
                 if (text.isNotBlank()) {
-                    promoteForeground(
-                        "Evie is thinking…",
-                        ForegroundMode.ASSISTANT
-                    )
+                    if (!safePromote(
+                            "Evie is thinking…",
+                            ForegroundMode.ASSISTANT
+                        )
+                    ) {
+                        stopSelf()
+                        return START_NOT_STICKY
+                    }
+
                     submitCommand(text)
                 }
             }
@@ -220,10 +257,15 @@ class AssistantService : Service(), RecognitionListener {
             ACTION_SPEAK_ONLY -> {
                 val text = intent.getStringExtra(EXTRA_TEXT).orEmpty().trim()
                 if (text.isNotBlank()) {
-                    promoteForeground(
-                        "Evie is speaking…",
-                        ForegroundMode.PLAYBACK
-                    )
+                    if (!safePromote(
+                            "Evie is speaking…",
+                            ForegroundMode.PLAYBACK
+                        )
+                    ) {
+                        stopSelf()
+                        return START_NOT_STICKY
+                    }
+
                     if (busy.compareAndSet(false, true)) {
                         speakReply(text)
                     }
@@ -341,6 +383,15 @@ class AssistantService : Service(), RecognitionListener {
         val sr = recognizer
         if (sr == null) {
             toast("Speech recognition is unavailable on this phone.")
+
+            wakeMode = false
+            wakeRunningState.set(false)
+            Prefs.setWakeEnabled(this, false)
+
+            stopForeground(
+                STOP_FOREGROUND_REMOVE
+            )
+            stopSelf()
             return
         }
 
