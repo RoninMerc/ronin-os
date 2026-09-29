@@ -413,8 +413,13 @@ object PhoneTools {
         }
     }
 
-    fun readNotifications(): String =
-        NotificationCache.snapshot(30)
+    fun readNotifications(): String {
+        if (!EvieNotificationService.isConnected()) {
+            return "ERROR: Evie Notification Access is not enabled or connected."
+        }
+
+        return NotificationCache.snapshot(30)
+    }
 
     fun openAssistantSettings(context: Context): String =
         openSettings(context, "accessibility")
