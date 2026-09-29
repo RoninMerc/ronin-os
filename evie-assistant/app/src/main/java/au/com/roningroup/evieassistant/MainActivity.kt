@@ -344,7 +344,7 @@ class MainActivity : Activity() {
             setOnClickListener {
                 saveSettings()
 
-                if (Prefs.wakeEnabled(this@MainActivity)) {
+                if (AssistantService.isWakeRunning()) {
                     Prefs.setWakeEnabled(this@MainActivity, false)
                     AssistantService.stopWake(this@MainActivity)
                     refreshStatus()
