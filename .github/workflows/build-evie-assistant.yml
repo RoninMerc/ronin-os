@@ -54,13 +54,13 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
           sha256sum "$APK"
           mkdir -p dist
-          cp "$APK" dist/Evie-Assistant-Full-0.3.0.apk
-          ls -lh dist/Evie-Assistant-Full-0.3.0.apk
+          cp "$APK" dist/Evie-Assistant-Full-0.3.1.apk
+          ls -lh dist/Evie-Assistant-Full-0.3.1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Evie-Assistant-Full-0.3.0
-          path: dist/Evie-Assistant-Full-0.3.0.apk
+          name: Evie-Assistant-Full-0.3.1
+          path: dist/Evie-Assistant-Full-0.3.1.apk
           if-no-files-found: error
           retention-days: 7
