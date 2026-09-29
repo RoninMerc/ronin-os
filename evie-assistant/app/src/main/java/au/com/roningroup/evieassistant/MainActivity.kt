@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
 
     private lateinit var status: TextView
+    private lateinit var diagnosticsStatus: TextView
     private lateinit var apiKey: EditText
     private lateinit var model: EditText
     private lateinit var userName: EditText
@@ -92,7 +93,7 @@ class MainActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Full pre-OS Android agent · v0.2"
+            text = "Full pre-OS Android agent · v0.3"
             textSize = 14f
             setPadding(0, 0, 0, dp(12))
         })
@@ -102,6 +103,38 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, dp(12))
         }
         root.addView(status)
+
+        root.addView(section("Runtime diagnostics"))
+
+        diagnosticsStatus = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, 0, 0, dp(6))
+        }
+        root.addView(diagnosticsStatus)
+
+        root.addView(Button(this).apply {
+            text = "RUN EVIE DIAGNOSTICS"
+            setOnClickListener {
+                refreshDiagnostics()
+            }
+        }, matchButton())
+
+        root.addView(Button(this).apply {
+            text = "OPEN BATTERY OPTIMIZATION SETTINGS"
+            setOnClickListener {
+                runCatching {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                        )
+                    )
+                }.onFailure {
+                    startActivity(
+                        Intent(Settings.ACTION_SETTINGS)
+                    )
+                }
+            }
+        }, matchButton())
 
         root.addView(section("Brain"))
 
@@ -463,6 +496,7 @@ class MainActivity : Activity() {
         refreshStatus()
         refreshButtons()
         refreshMemoryStatus()
+        refreshDiagnostics()
 
         voiceStatus.text =
             if (qwenVoiceCheck.isChecked) {
@@ -803,6 +837,7 @@ class MainActivity : Activity() {
         refreshStatus()
         refreshButtons()
         refreshMemoryStatus()
+        refreshDiagnostics()
     }
 
     private fun refreshStatus() {
@@ -823,10 +858,13 @@ class MainActivity : Activity() {
             }
 
         val wake =
-            if (Prefs.wakeEnabled(this)) {
-                "Hey Evie ON"
-            } else {
-                "Hey Evie OFF"
+            when {
+                AssistantService.isWakeRunning() ->
+                    "Hey Evie RUNNING"
+                Prefs.wakeEnabled(this) ->
+                    "Hey Evie needs reactivation"
+                else ->
+                    "Hey Evie OFF"
             }
 
         val voice =
@@ -846,7 +884,7 @@ class MainActivity : Activity() {
     private fun refreshButtons() {
         if (::wakeButton.isInitialized) {
             wakeButton.text =
-                if (Prefs.wakeEnabled(this)) {
+                if (AssistantService.isWakeRunning()) {
                     "TURN OFF HEY EVIE"
                 } else {
                     "TURN ON HEY EVIE"
@@ -862,6 +900,18 @@ class MainActivity : Activity() {
                 } else {
                     "TURN ON FLOATING EVIE BUTTON"
                 }
+        }
+    }
+
+
+    private fun refreshDiagnostics() {
+        if (!::diagnosticsStatus.isInitialized) return
+
+        diagnosticsStatus.text = runCatching {
+            Diagnostics.report(this)
+        }.getOrElse {
+            "Diagnostics error: " +
+                (it.message ?: it.javaClass.simpleName)
         }
     }
 
