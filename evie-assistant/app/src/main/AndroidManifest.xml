@@ -26,6 +26,7 @@
 
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:label="Evie Assistant"
         android:theme="@style/Theme.Evie">
 
