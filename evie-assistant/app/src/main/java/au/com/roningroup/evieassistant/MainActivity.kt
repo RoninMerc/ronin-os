@@ -56,6 +56,7 @@ class MainActivity : Activity() {
     private var pendingStartWake = false
     private var pendingStartBubble = false
     private var pendingListenOnce = false
+    private var autoResumeWakePending = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -512,12 +513,11 @@ class MainActivity : Activity() {
             startBubble()
         }
 
-        if (Prefs.wakeEnabled(this) &&
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            runCatching { AssistantService.startWake(this) }
-        }
+        autoResumeWakePending =
+            Prefs.wakeEnabled(this) &&
+                !AssistantService.isWakeRunning() &&
+                checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
     }
 
     private fun saveSettings() {
@@ -827,6 +827,15 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+
+        if (autoResumeWakePending &&
+            !AssistantService.isWakeRunning()
+        ) {
+            autoResumeWakePending = false
+            runCatching {
+                AssistantService.startWake(this)
+            }
+        }
 
         if (pendingStartBubble &&
             Settings.canDrawOverlays(this)
