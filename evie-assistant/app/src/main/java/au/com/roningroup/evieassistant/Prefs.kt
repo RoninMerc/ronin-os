@@ -70,18 +70,30 @@ Never pretend an action succeeded. If a tool says it failed, say so briefly and 
                 context,
                 "featherless_api_key"
             )
-        } else {
-            SecretStore.put(
-                context,
-                "featherless_api_key",
-                clean
-            )
+            p(context)
+                .edit()
+                .remove(KEY_API)
+                .apply()
+            return
         }
 
-        p(context)
-            .edit()
-            .remove(KEY_API)
-            .apply()
+        val secured = SecretStore.put(
+            context,
+            "featherless_api_key",
+            clean
+        )
+
+        if (secured) {
+            p(context)
+                .edit()
+                .remove(KEY_API)
+                .apply()
+        } else {
+            p(context)
+                .edit()
+                .putString(KEY_API, clean)
+                .apply()
+        }
     }
 
     fun model(context: Context) =
@@ -185,18 +197,30 @@ Never pretend an action succeeded. If a tool says it failed, say so briefly and 
                 context,
                 "qwen_tts_api_key"
             )
-        } else {
-            SecretStore.put(
-                context,
-                "qwen_tts_api_key",
-                clean
-            )
+            p(context)
+                .edit()
+                .remove(KEY_QWEN_TTS_API)
+                .apply()
+            return
         }
 
-        p(context)
-            .edit()
-            .remove(KEY_QWEN_TTS_API)
-            .apply()
+        val secured = SecretStore.put(
+            context,
+            "qwen_tts_api_key",
+            clean
+        )
+
+        if (secured) {
+            p(context)
+                .edit()
+                .remove(KEY_QWEN_TTS_API)
+                .apply()
+        } else {
+            p(context)
+                .edit()
+                .putString(KEY_QWEN_TTS_API, clean)
+                .apply()
+        }
     }
 
     fun qwenTtsVoice(context: Context) =
