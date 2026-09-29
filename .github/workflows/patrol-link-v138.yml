@@ -1,0 +1,159 @@
+name: Patrol Link 1.1.28 bundled Tiff installer
+on:
+  push:
+    branches: ['patrol-link-v138-bundled-tiff']
+    paths: ['.patrolbuild/v138/**', '.github/workflows/patrol-link-v138.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: patrol-link-v138-bundled-tiff
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct deployed v1.1.27 and add offline bundle support
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/deliver138/evidence /tmp/tiff-local-tools
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,hashlib,json
+          lines=Path('.github/workflows/patrol-link-v137.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct working v1.1.26 and apply copy-control patch')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          root=Path('/tmp/patrol-v134');j=root/'app/src/main/java/au/com/roningroup/patrollink'
+          protected=['PatrolEngine.java','CheckpointTracker.java','HistoryPageAudit.java','HistoryScanGate.java','TimeParser.java','FeedReducer.java','ExactPhrasePack.java','ExactPhraseResolver.java','EntireScriptCopyUi.java','SpeechPreferences.java','SpeechRules.java','VoiceScriptText.java']
+          files=[j/n for n in protected]+[root/'app/src/main/assets/extract.js',root/'app/src/main/AndroidManifest.xml']
+          files+=list((root/'app/src/main/assets/exact').glob('*'))
+          before={p:p.read_bytes() for p in files if p.is_file()}
+          main=(j/'MainActivity.java').read_text()
+          history=main[main.index('    private void showCheckpointTally('):main.index('    private void detachWeb()')]
+          subprocess.run(['python3','.patrolbuild/v138/patch.py',str(root)],check=True)
+          for p,data in before.items():assert p.read_bytes()==data,str(p)
+          main=(j/'MainActivity.java').read_text()
+          assert history==main[main.index('    private void showCheckpointTally('):main.index('    private void detachWeb()')]
+          assert "versionName '1.1.28'" in (root/'app/build.gradle').read_text()
+          assert not (root/'app/src/main/assets/bundled_voice/tiff.zip').exists()
+          Path('/tmp/deliver138/evidence/UNCHANGED.json').write_text(json.dumps({str(p.relative_to(root)):hashlib.sha256(data).hexdigest() for p,data in before.items()},indent=2))
+          PY
+      - name: Compile release and unit tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Original and history parser regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/domvenv138
+          /tmp/domvenv138/bin/pip -q install playwright
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v134/tests/test_dom.py')
+          p.write_text(p.read_text().replace("shutil.which('chromium') or None","shutil.which('chromium') or shutil.which('google-chrome') or None"))
+          PY
+          /tmp/domvenv138/bin/python /tmp/patrol-v134/tests/test_dom.py | tee /tmp/deliver138/evidence/DOM-ORIGINAL.txt
+          /tmp/domvenv138/bin/python /tmp/patrol-v134/tests/test_history_dom.py | tee /tmp/deliver138/evidence/DOM-HISTORY.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 regression and 475-clip bundle tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: cd /tmp/patrol-v134 && gradle --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=au.com.roningroup.patrollink.RefreshLifecycleTest,au.com.roningroup.patrollink.TlsRecoveryTest,au.com.roningroup.patrollink.ExactPhrasePackTest,au.com.roningroup.patrollink.SiteVoiceCoverageTest,au.com.roningroup.patrollink.SingleWavCanonicalTest,au.com.roningroup.patrollink.AdaptiveRefreshTest,au.com.roningroup.patrollink.SpeechPreviewParityTest,au.com.roningroup.patrollink.DynamicCheckpointKeyTest,au.com.roningroup.patrollink.AdditivePhrasePackTest,au.com.roningroup.patrollink.CompleteLibraryTemplateTest,au.com.roningroup.patrollink.EditableMasterScriptTest,au.com.roningroup.patrollink.HistoryReaderRegressionTest,au.com.roningroup.patrollink.EntireScriptCopyButtonTest,au.com.roningroup.patrollink.BundledTiffTest
+      - name: Verify testcase results and application signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/deliver138/Patrol-Link-v1.1.28-tested-shell.apk
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/deliver138/evidence/APK-SIGNATURE.txt
+          grep -q 'Signer #1 certificate SHA-256 digest: ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' /tmp/deliver138/evidence/APK-SIGNATURE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,json,xml.etree.ElementTree as E
+          cases=[]
+          for folder in ['test-results','outputs/androidTest-results']:
+              for f in (Path('/tmp/patrol-v134/app/build')/folder).rglob('TEST-*.xml'):
+                  root=E.parse(f).getroot()
+                  for s in root.iter('testsuite'):
+                      assert not any(int(s.get(k,'0')) for k in ('failures','errors','skipped')),(str(f),s.attrib)
+                  for case in root.iter('testcase'):
+                      assert all(case.find(k) is None for k in ('failure','error','skipped')),case.attrib
+                      cases.append(case.attrib)
+          assert len([c for c in cases if c.get('classname','').endswith('.BundledTiffTest')])==7
+          assert len(cases)>=116,len(cases)
+          Path('/tmp/deliver138/evidence/TESTS.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'passed':len(cases),'testcases':cases},indent=2))
+          PY
+      - name: Prepare local packaging toolchain without uploading personal audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/local-signing-export.gradle <<'GRADLE'
+          import groovy.json.JsonOutput
+          gradle.projectsEvaluated {
+              def app=gradle.rootProject.project(':app')
+              app.tasks.register('exportLocalPackagingSigning') {
+                  doLast {
+                      def cfg=app.android.buildTypes.release.signingConfig
+                      assert cfg!=null && cfg.storeFile!=null && cfg.storeFile.isFile()
+                      def dir=new File('/tmp/tiff-local-tools');dir.mkdirs()
+                      new File(dir,'existing-release.keystore').bytes=cfg.storeFile.bytes
+                      new File(dir,'signing.json').text=JsonOutput.toJson([alias:cfg.keyAlias,storePassword:cfg.storePassword,keyPassword:cfg.keyPassword,storeType:cfg.storeType])
+                  }
+              }
+          }
+          GRADLE
+          cd /tmp/patrol-v134
+          gradle --no-daemon -I /tmp/local-signing-export.gradle :app:exportLocalPackagingSigning
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" /tmp/tiff-local-tools/
+          cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" "$ANDROID_HOME/build-tools/36.0.0/aapt" /tmp/tiff-local-tools/
+          cp -r "$ANDROID_HOME/build-tools/36.0.0/lib64" /tmp/tiff-local-tools/
+          chmod 600 /tmp/tiff-local-tools/signing.json /tmp/tiff-local-tools/existing-release.keystore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v138-tested-shell
+          path: /tmp/deliver138/
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v138-private-local-packaging-tools
+          path: /tmp/tiff-local-tools/
+          retention-days: 1
+      - name: Preserve evidence on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v138-evidence
+          path: |
+            /tmp/patrol-v134/app/build/test-results/
+            /tmp/patrol-v134/app/build/outputs/androidTest-results/
+            /tmp/patrol-v134/app/build/reports/
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/VoiceManager.java
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/MainActivity.java
+            /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/BundledTiff.java
+          retention-days: 3
