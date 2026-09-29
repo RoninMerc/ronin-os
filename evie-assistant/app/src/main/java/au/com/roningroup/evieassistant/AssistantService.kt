@@ -38,7 +38,10 @@ class AssistantService : Service(), RecognitionListener {
             "au.com.roningroup.evieassistant.COMMAND"
         const val ACTION_SPEAK_ONLY =
             "au.com.roningroup.evieassistant.SPEAK_ONLY"
+        const val ACTION_RESPONSE =
+            "au.com.roningroup.evieassistant.RESPONSE"
         const val EXTRA_TEXT = "text"
+        const val EXTRA_RESPONSE = "response"
 
         private const val CHANNEL = "evie_assistant"
         private const val NOTIFICATION_ID = 501
@@ -593,6 +596,7 @@ class AssistantService : Service(), RecognitionListener {
                     .runCommand(text)
 
                 val reply = result.reply.trim()
+                publishResponse(reply)
 
                 main.post {
                     if (Prefs.speakEnabled(this)) {
@@ -609,11 +613,33 @@ class AssistantService : Service(), RecognitionListener {
                     "I hit an error: " +
                         (t.message ?: t.javaClass.simpleName)
 
+                publishResponse(message)
+
                 main.post {
                     speakReply(message)
                 }
             }
         }
+    }
+
+
+    private fun publishResponse(text: String) {
+        val value = text.trim()
+        if (value.isBlank()) return
+
+        Prefs.setLastResponse(
+            applicationContext,
+            value
+        )
+
+        sendBroadcast(
+            Intent(ACTION_RESPONSE)
+                .setPackage(packageName)
+                .putExtra(
+                    EXTRA_RESPONSE,
+                    value
+                )
+        )
     }
 
     private fun speakReply(text: String) {
