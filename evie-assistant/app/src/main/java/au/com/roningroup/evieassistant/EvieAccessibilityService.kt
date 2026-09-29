@@ -20,6 +20,11 @@ class EvieAccessibilityService : AccessibilityService() {
         currentRef.set(this)
     }
 
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        currentRef.compareAndSet(this, null)
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         currentRef.compareAndSet(this, null)
         super.onDestroy()
@@ -58,12 +63,44 @@ class EvieAccessibilityService : AccessibilityService() {
         val cls = node.className?.toString()?.substringAfterLast('.').orEmpty()
 
         if (text.isNotBlank() || desc.isNotBlank()) {
-            val label = when {
-                text.isNotBlank() && desc.isNotBlank() && text != desc ->
-                    "$cls | text=\"$text\" | desc=\"$desc\""
-                text.isNotBlank() -> "$cls | \"$text\""
-                else -> "$cls | desc=\"$desc\""
+            val flags = buildList {
+                if (node.isClickable) add("clickable")
+                if (node.isEditable) add("editable")
+                if (node.isScrollable) add("scrollable")
+                if (node.isCheckable) add("checkable")
+                if (node.isChecked) add("checked")
+                if (node.isSelected) add("selected")
             }
+
+            val viewId = node.viewIdResourceName.orEmpty()
+
+            val label = buildString {
+                append(cls.ifBlank { "View" })
+
+                if (flags.isNotEmpty()) {
+                    append(" [")
+                    append(flags.joinToString(","))
+                    append("]")
+                }
+
+                if (text.isNotBlank()) {
+                    append(" | text=\"")
+                    append(text)
+                    append("\"")
+                }
+
+                if (desc.isNotBlank() && desc != text) {
+                    append(" | desc=\"")
+                    append(desc)
+                    append("\"")
+                }
+
+                if (viewId.isNotBlank()) {
+                    append(" | id=")
+                    append(viewId)
+                }
+            }
+
             out += label
         }
 
@@ -247,10 +284,12 @@ class EvieAccessibilityService : AccessibilityService() {
 
             val text = node.text?.toString().orEmpty()
             val desc = node.contentDescription?.toString().orEmpty()
+            val viewId = node.viewIdResourceName.orEmpty()
 
             val score = maxOf(
                 matchScore(q, normalise(text)),
-                matchScore(q, normalise(desc))
+                matchScore(q, normalise(desc)),
+                matchScore(q, normalise(viewId.substringAfterLast('/')))
             )
 
             if (score > bestScore) {
