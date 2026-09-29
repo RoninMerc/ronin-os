@@ -1,5 +1,9 @@
 name: Build Evie Assistant APK
 
+concurrency:
+  group: evie-assistant-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
