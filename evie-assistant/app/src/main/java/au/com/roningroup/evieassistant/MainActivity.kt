@@ -182,6 +182,24 @@ class MainActivity : Activity() {
             }
         }, matchButton())
 
+        root.addView(Button(this).apply {
+            text = "TEST FEATHERLESS BRAIN"
+            setOnClickListener {
+                saveSettings()
+                status.text = "Testing Featherless model…"
+
+                worker.execute {
+                    val result = AgentClient(
+                        applicationContext
+                    ).testConnection()
+
+                    runOnUiThread {
+                        status.text = result
+                    }
+                }
+            }
+        }, matchButton())
+
         root.addView(section("Evie voice"))
 
         qwenVoiceCheck = CheckBox(this).apply {
