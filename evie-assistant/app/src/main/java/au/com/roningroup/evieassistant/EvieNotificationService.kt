@@ -3,35 +3,87 @@ package au.com.roningroup.evieassistant
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import java.util.concurrent.ConcurrentHashMap
+import java.util.LinkedHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 object NotificationCache {
-    private val items = ConcurrentHashMap<String, String>()
+    private val lock = Any()
+    private val items = LinkedHashMap<String, String>()
 
     fun put(key: String, value: String) {
-        items[key] = value
-        if (items.size > 80) {
-            items.keys.take(items.size - 80).forEach { items.remove(it) }
+        synchronized(lock) {
+            items.remove(key)
+            items[key] = value
+
+            while (items.size > 80) {
+                val first = items.keys.firstOrNull() ?: break
+                items.remove(first)
+            }
         }
     }
 
     fun remove(key: String) {
-        items.remove(key)
+        synchronized(lock) {
+            items.remove(key)
+        }
+    }
+
+    fun clear() {
+        synchronized(lock) {
+            items.clear()
+        }
     }
 
     fun snapshot(limit: Int = 30): String {
-        val rows = items.values.toList().takeLast(limit)
+        val rows = synchronized(lock) {
+            items.values.toList().takeLast(limit)
+        }
+
         return if (rows.isEmpty()) {
-            "NOTIFICATIONS: none cached."
+            "NOTIFICATIONS: none currently cached."
         } else {
             "NOTIFICATIONS:\n" + rows.joinToString("\n")
         }
     }
+
+    fun count(): Int =
+        synchronized(lock) { items.size }
 }
 
 class EvieNotificationService : NotificationListenerService() {
+    companion object {
+        private val connected = AtomicBoolean(false)
+
+        fun isConnected(): Boolean = connected.get()
+    }
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        connected.set(true)
+
+        NotificationCache.clear()
+
+        runCatching {
+            activeNotifications
+                ?.sortedBy { it.postTime }
+                ?.forEach(::cacheNotification)
+        }
+    }
+
+    override fun onListenerDisconnected() {
+        connected.set(false)
+        super.onListenerDisconnected()
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        val n = sbn ?: return
+        sbn?.let(::cacheNotification)
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        sbn?.key?.let(NotificationCache::remove)
+    }
+
+    private fun cacheNotification(n: StatusBarNotification) {
         val extras = n.notification.extras
 
         val title = extras
@@ -49,7 +101,18 @@ class EvieNotificationService : NotificationListenerService() {
             ?.toString()
             .orEmpty()
 
-        val body = if (bigText.isNotBlank()) bigText else text
+        val subText = extras
+            .getCharSequence(Notification.EXTRA_SUB_TEXT)
+            ?.toString()
+            .orEmpty()
+
+        val body = when {
+            bigText.isNotBlank() -> bigText
+            text.isNotBlank() -> text
+            subText.isNotBlank() -> subText
+            else -> ""
+        }
+
         val packageName = n.packageName.orEmpty()
 
         NotificationCache.put(
@@ -58,9 +121,5 @@ class EvieNotificationService : NotificationListenerService() {
                 title.ifBlank { "(no title)" } +
                 if (body.isBlank()) "" else " | " + body
         )
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        sbn?.key?.let(NotificationCache::remove)
     }
 }
