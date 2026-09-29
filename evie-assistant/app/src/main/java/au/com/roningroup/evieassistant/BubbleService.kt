@@ -151,7 +151,17 @@ class BubbleService : Service() {
 
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
-                        AssistantService.listenOnce(this)
+                        startActivity(
+                            Intent(this, VoiceLaunchActivity::class.java)
+                                .putExtra(
+                                    VoiceLaunchActivity.EXTRA_MODE,
+                                    VoiceLaunchActivity.MODE_LISTEN_ONCE
+                                )
+                                .addFlags(
+                                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                                        Intent.FLAG_ACTIVITY_NO_ANIMATION
+                                )
+                        )
                     }
                     true
                 }
