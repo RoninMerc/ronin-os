@@ -16,6 +16,7 @@ object Prefs {
     private const val KEY_QWEN_TTS_API = "qwen_tts_api"
     private const val KEY_QWEN_TTS_VOICE = "qwen_tts_voice"
     private const val KEY_QWEN_TTS_LANGUAGE = "qwen_tts_language"
+    private const val KEY_LAST_RESPONSE = "last_response"
 
     const val DEFAULT_MODEL =
         "JeffGreen311/eve-qwen3-8b-consciousness-liberated"
@@ -237,6 +238,23 @@ Never pretend an action succeeded. If a tool says it failed, say so briefly and 
 
     fun setQwenTtsLanguage(context: Context, value: String) {
         p(context).edit().putString(KEY_QWEN_TTS_LANGUAGE, value.trim()).apply()
+    }
+
+    fun lastResponse(context: Context) =
+        p(context).getString(KEY_LAST_RESPONSE, "").orEmpty()
+
+    fun setLastResponse(context: Context, value: String) {
+        p(context)
+            .edit()
+            .putString(KEY_LAST_RESPONSE, value)
+            .apply()
+    }
+
+    fun clearLastResponse(context: Context) {
+        p(context)
+            .edit()
+            .remove(KEY_LAST_RESPONSE)
+            .apply()
     }
 
     fun configured(context: Context) =
