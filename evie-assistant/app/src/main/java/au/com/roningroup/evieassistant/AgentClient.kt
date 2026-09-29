@@ -58,6 +58,14 @@ class AgentClient(private val context: Context) {
                 )
         )
 
+        learning.recentConversation(10).forEach { (role, content) ->
+            messages.put(
+                JSONObject()
+                    .put("role", role)
+                    .put("content", content)
+            )
+        }
+
         messages.put(
             JSONObject()
                 .put("role", "user")
@@ -65,6 +73,7 @@ class AgentClient(private val context: Context) {
         )
 
         val trace = mutableListOf<String>()
+        val repeatedFailures = mutableMapOf<String, Int>()
 
         repeat(10) {
             val response = request(messages)
@@ -80,8 +89,20 @@ class AgentClient(private val context: Context) {
 
             if (toolCalls == null || toolCalls.length() == 0) {
                 val content = message.optString("content").trim()
+                val reply =
+                    if (content.isBlank()) "Done." else content
+
+                learning.addConversationTurn(
+                    "user",
+                    userText
+                )
+                learning.addConversationTurn(
+                    "assistant",
+                    reply
+                )
+
                 return Result(
-                    if (content.isBlank()) "Done." else content,
+                    reply,
                     trace
                 )
             }
@@ -109,7 +130,34 @@ class AgentClient(private val context: Context) {
                     JSONObject()
                 }
 
+                val signature =
+                    name + ":" + args.toString()
+
                 val result = executeTool(name, args)
+
+                if (result.startsWith("ERROR") ||
+                    result.startsWith("NOT_FOUND")
+                ) {
+                    val count =
+                        (repeatedFailures[signature] ?: 0) + 1
+
+                    repeatedFailures[signature] = count
+
+                    if (count >= 2) {
+                        messages.put(
+                            JSONObject()
+                                .put("role", "system")
+                                .put(
+                                    "content",
+                                    "Do not repeat the same failed tool call again. " +
+                                        "Inspect the current screen, try a materially different method, " +
+                                        "or tell the user what blocked the action."
+                                )
+                        )
+                    }
+                } else {
+                    repeatedFailures.remove(signature)
+                }
 
                 learning.logAction(
                     userCommand = userText,
@@ -129,8 +177,20 @@ class AgentClient(private val context: Context) {
             }
         }
 
+        val reply =
+            "I hit the tool-step limit before I could finish that."
+
+        learning.addConversationTurn(
+            "user",
+            userText
+        )
+        learning.addConversationTurn(
+            "assistant",
+            reply
+        )
+
         return Result(
-            "I hit the tool-step limit before I could finish that.",
+            reply,
             trace
         )
     }
@@ -154,7 +214,7 @@ class AgentClient(private val context: Context) {
                 .put("messages", messages)
                 .put("tools", toolSchemas())
                 .put("tool_choice", "auto")
-                .put("temperature", 0.68)
+                .put("temperature", 0.45)
                 .put("top_p", 0.92)
                 .put("max_tokens", 1200)
                 .toString()
