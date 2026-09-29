@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Build
@@ -41,6 +42,9 @@ class AssistantService : Service(), RecognitionListener {
 
         private const val CHANNEL = "evie_assistant"
         private const val NOTIFICATION_ID = 501
+        private val wakeRunningState = AtomicBoolean(false)
+
+        fun isWakeRunning(): Boolean = wakeRunningState.get()
 
         fun startWake(context: android.content.Context) {
             val i = Intent(context, AssistantService::class.java)
@@ -87,6 +91,7 @@ class AssistantService : Service(), RecognitionListener {
 
     private var recognizer: SpeechRecognizer? = null
     private lateinit var recognizerIntent: Intent
+    private var recognizerErrorStreak = 0
 
     @Volatile private var wakeMode = false
     @Volatile private var activeCommandMode = false
@@ -107,6 +112,63 @@ class AssistantService : Service(), RecognitionListener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private enum class ForegroundMode {
+        MICROPHONE,
+        ASSISTANT,
+        PLAYBACK
+    }
+
+    private fun promoteForeground(
+        content: String,
+        mode: ForegroundMode
+    ) {
+        val n = notification(content)
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            val type = when (mode) {
+                ForegroundMode.MICROPHONE ->
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                ForegroundMode.ASSISTANT ->
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                ForegroundMode.PLAYBACK ->
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            }
+
+            startForeground(
+                NOTIFICATION_ID,
+                n,
+                type
+            )
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            when (mode) {
+                ForegroundMode.MICROPHONE ->
+                    startForeground(
+                        NOTIFICATION_ID,
+                        n,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    )
+
+                ForegroundMode.PLAYBACK ->
+                    startForeground(
+                        NOTIFICATION_ID,
+                        n,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+
+                ForegroundMode.ASSISTANT ->
+                    startForeground(
+                        NOTIFICATION_ID,
+                        n
+                    )
+            }
+        } else {
+            startForeground(
+                NOTIFICATION_ID,
+                n
+            )
+        }
+    }
+
     override fun onStartCommand(
         intent: Intent?,
         flags: Int,
@@ -115,16 +177,18 @@ class AssistantService : Service(), RecognitionListener {
         when (intent?.action) {
             ACTION_START_WAKE -> {
                 wakeMode = true
+                wakeRunningState.set(true)
                 Prefs.setWakeEnabled(this, true)
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification("Hey Evie is listening")
+                promoteForeground(
+                    "Hey Evie is listening",
+                    ForegroundMode.MICROPHONE
                 )
                 startWakeListening(250)
             }
 
             ACTION_STOP_WAKE -> {
                 wakeMode = false
+                wakeRunningState.set(false)
                 activeCommandMode = false
                 Prefs.setWakeEnabled(this, false)
                 stopRecognizer()
@@ -134,9 +198,9 @@ class AssistantService : Service(), RecognitionListener {
             }
 
             ACTION_LISTEN_ONCE -> {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification("Evie is listening…")
+                promoteForeground(
+                    "Evie is listening…",
+                    ForegroundMode.MICROPHONE
                 )
                 activeCommandMode = true
                 startListeningNow()
@@ -145,9 +209,9 @@ class AssistantService : Service(), RecognitionListener {
             ACTION_COMMAND -> {
                 val text = intent.getStringExtra(EXTRA_TEXT).orEmpty().trim()
                 if (text.isNotBlank()) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification("Evie is thinking…")
+                    promoteForeground(
+                        "Evie is thinking…",
+                        ForegroundMode.ASSISTANT
                     )
                     submitCommand(text)
                 }
@@ -156,9 +220,9 @@ class AssistantService : Service(), RecognitionListener {
             ACTION_SPEAK_ONLY -> {
                 val text = intent.getStringExtra(EXTRA_TEXT).orEmpty().trim()
                 if (text.isNotBlank()) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification("Evie is speaking…")
+                    promoteForeground(
+                        "Evie is speaking…",
+                        ForegroundMode.PLAYBACK
                     )
                     if (busy.compareAndSet(false, true)) {
                         speakReply(text)
@@ -253,6 +317,21 @@ class AssistantService : Service(), RecognitionListener {
 
         main.postDelayed({
             if (!wakeMode || busy.get()) return@postDelayed
+
+            runCatching {
+                promoteForeground(
+                    "Hey Evie is listening",
+                    ForegroundMode.MICROPHONE
+                )
+            }.onFailure {
+                wakeRunningState.set(false)
+                toast(
+                    "Android blocked microphone restart: " +
+                        (it.message ?: it.javaClass.simpleName)
+                )
+                return@postDelayed
+            }
+
             activeCommandMode = false
             startListeningNow()
         }, delay)
@@ -295,6 +374,7 @@ class AssistantService : Service(), RecognitionListener {
 
     override fun onReadyForSpeech(params: Bundle?) {
         listening = true
+        recognizerErrorStreak = 0
     }
 
     override fun onBeginningOfSpeech() = Unit
@@ -305,15 +385,29 @@ class AssistantService : Service(), RecognitionListener {
 
     override fun onError(error: Int) {
         listening = false
+        recognizerErrorStreak =
+            (recognizerErrorStreak + 1).coerceAtMost(8)
 
         if (wakeMode && !busy.get()) {
+            val delay = when (error) {
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY ->
+                    1_500L + recognizerErrorStreak * 350L
+
+                SpeechRecognizer.ERROR_TOO_MANY_REQUESTS ->
+                    (5_000L + recognizerErrorStreak * 1_000L)
+                        .coerceAtMost(15_000L)
+
+                SpeechRecognizer.ERROR_NO_MATCH,
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
+                    900L + recognizerErrorStreak * 200L
+
+                else ->
+                    1_200L + recognizerErrorStreak * 300L
+            }
+
             main.postDelayed(
                 { startWakeListening(0) },
-                when (error) {
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 900L
-                    SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> 2_500L
-                    else -> 500L
-                }
+                delay
             )
         }
     }
@@ -346,6 +440,7 @@ class AssistantService : Service(), RecognitionListener {
 
     override fun onResults(results: Bundle?) {
         listening = false
+        recognizerErrorStreak = 0
 
         val phrases = results
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -431,6 +526,14 @@ class AssistantService : Service(), RecognitionListener {
 
         stopRecognizer()
         stopVoicePlayback()
+
+        runCatching {
+            promoteForeground(
+                "Evie is thinking…",
+                ForegroundMode.ASSISTANT
+            )
+        }
+
         updateNotification("Evie is thinking…")
 
         worker.execute {
@@ -463,6 +566,13 @@ class AssistantService : Service(), RecognitionListener {
     }
 
     private fun speakReply(text: String) {
+        runCatching {
+            promoteForeground(
+                "Evie is speaking…",
+                ForegroundMode.PLAYBACK
+            )
+        }
+
         updateNotification("Evie: " + text.take(80))
 
         if (text.isBlank()) {
@@ -662,11 +772,15 @@ class AssistantService : Service(), RecognitionListener {
             flags
         )
 
-        val listenPi = PendingIntent.getService(
+        val listenPi = PendingIntent.getActivity(
             this,
             2,
-            Intent(this, AssistantService::class.java)
-                .setAction(ACTION_LISTEN_ONCE),
+            Intent(this, VoiceLaunchActivity::class.java)
+                .putExtra(
+                    VoiceLaunchActivity.EXTRA_MODE,
+                    VoiceLaunchActivity.MODE_LISTEN_ONCE
+                )
+                .addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION),
             flags
         )
 
@@ -716,6 +830,7 @@ class AssistantService : Service(), RecognitionListener {
     }
 
     override fun onDestroy() {
+        wakeRunningState.set(false)
         stopRecognizer()
         recognizer?.destroy()
         recognizer = null
