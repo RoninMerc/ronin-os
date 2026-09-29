@@ -161,7 +161,33 @@ object QwenVoiceClient {
                 )
             }
 
-            return connection.inputStream.use { it.readBytes() }
+            val bytes =
+                connection.inputStream.use { it.readBytes() }
+
+            val isWav =
+                bytes.size >= 12 &&
+                    String(
+                        bytes,
+                        0,
+                        4,
+                        Charsets.US_ASCII
+                    ) == "RIFF" &&
+                    String(
+                        bytes,
+                        8,
+                        4,
+                        Charsets.US_ASCII
+                    ) == "WAVE"
+
+            if (!isWav) {
+                throw IllegalStateException(
+                    "Qwen3-TTS server returned HTTP 200 but not a WAV file. " +
+                        "Content-Type=" +
+                        connection.contentType.orEmpty()
+                )
+            }
+
+            return bytes
         } finally {
             connection.disconnect()
         }
