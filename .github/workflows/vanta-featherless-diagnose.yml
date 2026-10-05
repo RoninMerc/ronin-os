@@ -1,0 +1,45 @@
+name: Vanta Featherless live catalogue diagnosis
+on:
+  push:
+    branches: ['fix/vanta-windows-042-featherless-contract']
+    paths: ['.github/workflows/vanta-featherless-diagnose.yml']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - name: Probe official public GET endpoints only
+        shell: python
+        run: |
+          import urllib.request, urllib.error, json, time, pathlib, datetime
+          root=pathlib.Path('diagnosis');root.mkdir(exist_ok=True)
+          probes=[('plain','https://api.featherless.ai/v1/models'),('vanta041_page1','https://api.featherless.ai/v1/models?status=active,pending_deploy,not_deployed&per_page=1000&page=1'),('vanta041_page2','https://api.featherless.ai/v1/models?status=active,pending_deploy,not_deployed&per_page=1000&page=2'),('default_detail','https://api.featherless.ai/v1/models/huihui-ai/Huihui-Qwen3.5-27B-abliterated')]
+          records=[]
+          for name,url in probes:
+              start=time.monotonic()
+              entry={'name':name,'url':url,'timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),'authenticated':False,'generation_requests':0}
+              try:
+                  request=urllib.request.Request(url,headers={'User-Agent':'RoninVantaWindows/0.4.1','Accept':'application/json'})
+                  try: response=urllib.request.urlopen(request,timeout=45)
+                  except urllib.error.HTTPError as error: response=error
+                  with response:
+                      body=response.read(33554433)
+                      entry.update(status=response.status,bytes=len(body),headers={k:v for k,v in response.headers.items() if k.lower() in ['content-type','retry-after','x-ratelimit-limit','x-ratelimit-remaining','x-ratelimit-reset','ratelimit-limit','ratelimit-remaining','ratelimit-reset','cache-control','date','cf-ray','server']})
+                  (root/(name+'.json')).write_bytes(body)
+                  try:
+                      data=json.loads(body)
+                      entry.update(keys=list(data),metadata={k:v for k,v in data.items() if k!='data'},count=len(data.get('data',[])),sample=data.get('data',[])[:1])
+                  except Exception: entry['body_preview']=body[:1000].decode('utf-8',errors='replace')
+              except Exception as error:entry['error']=str(error)
+              entry['seconds']=round(time.monotonic()-start,3);records.append(entry);print(json.dumps(entry,indent=2),flush=True)
+              if entry.get('status')==429:break
+              time.sleep(5)
+          (root/'results.json').write_text(json.dumps(records,indent=2),encoding='utf-8')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: featherless-public-api-diagnosis
+          path: diagnosis/
+          if-no-files-found: error
