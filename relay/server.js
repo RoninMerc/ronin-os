@@ -3,6 +3,7 @@ const { URL } = require('url');
 const PORT = process.env.PORT || 10000;
 const API_KEY = process.env.RONIN_PATROL_KEY || '';
 const fleet = new Map();
+let authBundle = { bundle:'', updatedAt:0, source:'' };
 
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -44,9 +45,13 @@ http.createServer((req,res)=>{
           lat:Number(b.lat), lon:Number(b.lon), accuracy:Number(b.accuracy), speed:Number(b.speed),
           provider:String(b.provider||'').slice(0,32), fixTime:Number(b.fixTime)||now, receivedAt:now,
           state:['MOVING','STATIONARY','UNKNOWN'].includes(String(b.state)) ? String(b.state) : 'UNKNOWN',
-          stateSince:Number(b.stateSince)||now, history:cleanHistory(b.history)
+          stateSince:Number(b.stateSince)||now, history:cleanHistory(b.history),
+          versionCode:Number(b.versionCode)||0, versionName:String(b.versionName||'').slice(0,32), deviceMode:String(b.deviceMode||'USER').slice(0,16)
         };
         if(!Number.isFinite(item.lat)||!Number.isFinite(item.lon)) return send(res,400,{ok:false,error:'invalid coordinates'});
+        if (item.deviceMode === 'MASTER' && typeof b.authBundle === 'string' && b.authBundle.length > 20 && b.authBundle.length < 20000) {
+          authBundle = { bundle:b.authBundle, updatedAt:now, source:id };
+        }
         fleet.set(id,item); return send(res,200,{ok:true,receivedAt:now});
       } catch(e) { return send(res,400,{ok:false,error:'bad json'}); }
     }); return;
@@ -60,6 +65,23 @@ http.createServer((req,res)=>{
         prev.onDuty=false; prev.receivedAt=Date.now(); fleet.set(id,prev); return send(res,200,{ok:true});
       }catch(e){return send(res,400,{ok:false,error:'bad json'});}
     }); return;
+  }
+  if (req.method === 'POST' && u.pathname === '/api/auth-bundle') {
+    let raw=''; req.on('data',d=>{raw+=d;if(raw.length>30000)req.destroy();}); req.on('end',()=>{
+      try{
+        const b=JSON.parse(raw||'{}'), bundle=String(b.bundle||'');
+        if(bundle.length<20 || bundle.length>20000) return send(res,400,{ok:false,error:'invalid bundle'});
+        authBundle={bundle,updatedAt:Date.now(),source:String(b.source||'MASTER').slice(0,16)};
+        return send(res,200,{ok:true,updatedAt:authBundle.updatedAt});
+      }catch(e){return send(res,400,{ok:false,error:'bad json'});}
+    }); return;
+  }
+  if (req.method === 'GET' && u.pathname === '/api/auth-bundle') {
+    return send(res,200,{ok:true,bundle:authBundle.bundle,updatedAt:authBundle.updatedAt,source:authBundle.source});
+  }
+  if (req.method === 'POST' && u.pathname === '/api/auth-clear') {
+    authBundle={bundle:'',updatedAt:Date.now(),source:''};
+    return send(res,200,{ok:true});
   }
   if (req.method === 'GET' && u.pathname === '/api/fleet') {
     const out=['P1','P2','P3'].map(id=>fleet.get(id)||{patrolId:id,onDuty:false,receivedAt:0,state:'UNKNOWN',history:[]});
