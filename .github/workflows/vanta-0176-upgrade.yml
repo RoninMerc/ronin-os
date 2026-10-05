@@ -1,0 +1,75 @@
+name: Vanta 0.17.6 exact-payload upgrade verification
+on:
+  push:
+    branches: ['fix/vanta-0176-stream-progress']
+    paths: ['vanta/v0176-verification/**', '.github/workflows/vanta-0176-upgrade.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+concurrency:
+  group: vanta-0176-exact-upgrade
+  cancel-in-progress: true
+jobs:
+  phone_upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.17.6-build
+          run-id: 37382332420
+          github-token: ${{ github.token }}
+          path: distribution
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.17.5-build
+          run-id: 37365147546
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Compile corrected instrumentation only and retain the exact release payloads
+        run: |
+          set -euo pipefail
+          mkdir source device-evidence
+          unzip -q distribution/Ronin-Vanta-0.17.6-Source.zip -d source
+          python3 vanta/v0176-verification/prepare.py
+          gradle -p source --no-daemon --max-workers=2 assembleDebugAndroidTest --stacktrace 2>&1 | tee device-evidence/instrumentation-build.log
+          cp source/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/tests.apk
+          gradle -p source --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/release-qa.apk distribution/fixed-release-unsigned.apk
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/baseline-qa.apk baseline/fixed-release-unsigned.apk
+          sha256sum distribution/fixed-release-unsigned.apk baseline/fixed-release-unsigned.apk > device-evidence/exact-release-payloads.txt
+          cp source/app/src/androidTest/java/com/ronin/vanta/Vanta175UpgradeDeviceTest.java device-evidence/
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Upgrade the release payload and check saved task, source, credentials and signing identity
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: '3072'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: bash vanta/v0175/device.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.17.6-exact-upgrade-phone
+          path: device-evidence/
+          if-no-files-found: error
