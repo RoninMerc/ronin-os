@@ -1,0 +1,55 @@
+name: Vanta 0.17.5 verified-artifact upgrade
+on:
+  push:
+    branches: ['fix/vanta-0175-forge-reliability']
+    paths: ['.github/workflows/vanta-0175-upgrade.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {api: 29, profile: pixel_6, label: phone}
+          - {api: 36, profile: pixel_c, label: tablet}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.17.5-build
+          run-id: 37365147546
+          github-token: ${{ github.token }}
+          path: distribution
+      - name: Verify the exact already tested build snapshot
+        run: |
+          set -euo pipefail
+          test "$(cat distribution/source-commit.txt)" = ce2f1077442d6bbd6cefb2ecdd3c2a01799250e7
+          sha256sum -c distribution/SHA256SUMS.txt
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Preserve encrypted state and generated-app signing identity across update
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          ram-size: '3072'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: bash vanta/v0175/device.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.17.5-upgrade-${{ matrix.label }}-${{ matrix.api }}
+          path: device-evidence/
+          if-no-files-found: warn
