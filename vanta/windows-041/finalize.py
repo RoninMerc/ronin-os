@@ -17,6 +17,12 @@ edit('src/Vanta.Windows/SettingsPage.cs','0.3.0','0.4.1',2)
 edit('src/Vanta.Windows/MainWindow.cs','Desktop Agent · 0.4.0','Desktop Agent · 0.4.1')
 edit('src/Vanta.Windows/app.manifest','version="0.3.0.0"','version="0.4.1.0"')
 edit('tests/Vanta.Tests/Program.cs','await CatalogueTests(); await WorkflowTests(); await DesktopTests();','await CatalogueTests(); await WorkflowTests(); await DesktopTests(); await CatalogueAcceptanceTests();')
+edit('src/Vanta.Core/Jobs.cs','if (j.Type == "catalogue") j.Remote["catalogue_user_cancelled"] = false;','if (j.Type == "catalogue") { j.Remote["catalogue_user_cancelled"] = false; j.Remote["catalogue_requires_account_action"] = false; }')
+edit('src/Vanta.Core/CatalogueSync.cs','error is HttpRequestException || error is OperationCanceledException','error is HttpRequestException || error is IOException || error is OperationCanceledException')
+edit('src/Vanta.Core/CatalogueSync.cs','catch (Exception error) when (Temporary(error, ct))','catch (Exception) when (ct.IsCancellationRequested) { throw new OperationCanceledException(ct); }\n                catch (Exception error) when (Temporary(error, ct))')
+edit('src/Vanta.Core/CatalogueSync.cs','{due.LocalDateTime:T}','{due.LocalDateTime:g}')
+edit('tests/Vanta.Tests/CatalogueTests.cs','2 => throw new TaskCanceledException("fixture request timeout"), _ => CataloguePage()','2 => throw new TaskCanceledException("fixture request timeout"), 3 => throw new System.IO.IOException("fixture stream disconnected"), _ => CataloguePage()')
+edit('tests/Vanta.Tests/CatalogueTests.cs','CancellationToken.None); Equal(3, calls);','CancellationToken.None); Equal(4, calls);')
 (root/'tests/Vanta.Tests/CatalogueAcceptanceTests.cs').write_text(r'''using System;
 using System.Linq;
 using System.Threading;
@@ -51,6 +57,21 @@ public static partial class Program
             engine.Start(record.Id, async c => await Task.Delay(Timeout.InfiniteTimeSpan, c.Token));
             Reject<VantaException>(() => engine.Start(record.Id, c => Task.CompletedTask));
             engine.Cancel(record.Id); await Finish(engine, record.Id); await engine.StopAsync();
+        });
+        await Test("A deliberate catalogue retry clears the previous account-action block", async () =>
+        {
+            using var store = new Store(Profile()); using var engine = new JobEngine(store);
+            var record = engine.Create("catalogue", "Account repaired", "featherless", new());
+            engine.Update(record.Id, j => { j.State = "Action required"; j.Remote["catalogue_requires_account_action"] = true; });
+            engine.Start(record.Id, async c => await Task.Delay(Timeout.InfiniteTimeSpan, c.Token));
+            True(!engine.Get(record.Id)!.Remote.Flag("catalogue_requires_account_action"));
+            engine.Cancel(record.Id); await Finish(engine, record.Id); await engine.StopAsync();
+        });
+        await Test("Cancellation racing a broken catalogue stream remains cancellation", async () =>
+        {
+            using var store = new Store(Profile()); using var cancel = new CancellationTokenSource();
+            using var api = new ProviderApi(_ => "fixture", Sync(_ => { cancel.Cancel(); throw new System.IO.IOException("fixture stream disconnected during cancel"); }));
+            await RejectAsync<OperationCanceledException>(() => new ModelRegistry(store).RefreshAsync(Provider.Get("featherless"), api, null, cancel.Token));
         });
         await Test("Actual Activity UI shows one recovering task, preserves history, then completes", async () =>
         {
