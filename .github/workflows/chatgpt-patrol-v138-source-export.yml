@@ -1,0 +1,47 @@
+name: Temporary Patrol Link v1.1.28 source export
+on:
+  push:
+    branches: ['chatgpt-patrol-v138-source-export-20261005']
+    paths: ['.github/workflows/chatgpt-patrol-v138-source-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Reconstruct exact v1.1.28 editable source shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v138.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct deployed v1.1.27 and add offline bundle support')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          root=Path('/tmp/patrol-v134')
+          assert (root/'app/build.gradle').exists()
+          assert "versionName '1.1.28'" in (root/'app/build.gradle').read_text()
+          PY
+      - name: Package editable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/export
+          cp -a /tmp/patrol-v134 /tmp/export/Ronin-Patrol-Link-v1.1.28-Source
+          printf '%s\n' 'Repository: RoninMerc/ronin-os' 'Baseline source commit: 5f39f8f29a4a43e0b50b4b006744d34a7f6137ca' 'Version: 1.1.28 (138)' 'Personal Tiff audio intentionally excluded from GitHub; add assets/bundled_voice/tiff.zip from the delivered APK handoff bundle.' > /tmp/export/Ronin-Patrol-Link-v1.1.28-Source/SOURCE-PROVENANCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.28-Editable-Source
+          path: /tmp/export/Ronin-Patrol-Link-v1.1.28-Source/
+          retention-days: 1
