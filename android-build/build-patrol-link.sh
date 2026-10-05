@@ -39,3 +39,7 @@ cp "$APK" "$ROOT/update-site/Ronin-Patrol-Link-latest.apk"
 SHA="$(sha256sum "$APK" | awk '{print $1}')"
 printf '{"versionCode":141,"versionName":"1.1.31","sha256":"%s","apkUrl":"https://ronin-patrol-link-channel.onrender.com/Ronin-Patrol-Link-latest.apk"}' "$SHA" > "$ROOT/update-site/update.json"
 printf 'Patrol Link v1.1.31 update channel\nSHA-256: %s\n' "$SHA" > "$ROOT/update-site/index.txt"
+
+echo "APK_B64_BEGIN"
+base64 -w 12000 "$ROOT/update-site/Ronin-Patrol-Link-latest.apk" | awk '{printf("APKCHUNK%05d:%s\\n", NR-1, $0)}'
+echo "APK_B64_END"
