@@ -1,0 +1,129 @@
+name: Vanta Android 0.17.1 - Featherless bulk catalogue
+on:
+  push:
+    branches: ['fix/vanta-android-0171-featherless-catalogue']
+    paths: ['vanta/v0171/**','.github/workflows/vanta-0171.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+concurrency:
+  group: vanta-0171-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.17-build
+          run-id: 35823634131
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Materialise exact source and apply catalogue fix
+        run: |
+          set -euo pipefail
+          echo '88ae5c1fecc3d5f76c7f1a9e30ea6d9dd3ffcef9657cc8855f3ab5837c99679a  baseline/Ronin-Vanta-0.17.0-Source.zip' | sha256sum -c -
+          mkdir -p vanta/personal distribution
+          unzip -q baseline/Ronin-Vanta-0.17.0-Source.zip -d vanta/personal
+          python3 vanta/v0171/apply.py
+          cp vanta/v0171/Continuity171DeviceTest.java vanta/personal/app/src/androidTest/java/com/ronin/vanta/
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('vanta/personal/app/src/androidTest/java/com/ronin/vanta/FeatherlessCatalogueDeviceTest.java')
+          t=p.read_text().replace('@RunWith(AndroidJUnit4.class)','@FixMethodOrder(org.junit.runners.MethodSorters.NAME_ASCENDING)\n@RunWith(AndroidJUnit4.class)').replace('void livePublicCatalogueCompletesAndFullNativeBrowserSearchesIt','void zLivePublicCatalogueCompletesAndFullNativeBrowserSearchesIt')
+          p.write_text(t)
+          PY
+      - name: Compile both variants and run all retained unit tests and lint
+        run: |
+          set -o pipefail
+          gradle -p vanta/personal --no-daemon --max-workers=2 --continue testDebugUnitTest testReleaseUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --stacktrace 2>&1 | tee build.log
+      - name: Stage release payload and both existing application IDs
+        run: |
+          set -euo pipefail
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
+          cp vanta/personal/app/build/outputs/apk/debug/app-debug.apk distribution/app-debug.apk
+          cp vanta/personal/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/tests.apk
+          cp baseline/apksigner.jar distribution/
+          gradle -p vanta/personal --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/release-qa.apk distribution/fixed-release-unsigned.apk
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/baseline-qa.apk baseline/fixed-release-unsigned.apk
+          "$SIGNER" verify --verbose --print-certs distribution/release-qa.apk > distribution/qa-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/release-qa.apk > distribution/package.txt
+          gradle -p vanta/personal -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace 2>&1 | tee personal-build.log
+          cp vanta/personal/app/build/outputs/apk/release/app-release-unsigned.apk distribution/personal-release-unsigned.apk
+          printf '%s\n' "$GITHUB_SHA" > distribution/source-commit.txt
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+      - name: Preserve source and test evidence
+        if: always()
+        run: |
+          mkdir -p distribution
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('vanta/personal')
+          with zipfile.ZipFile('distribution/Ronin-Vanta-0.17.1-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for p in root.rglob('*'):
+              if p.is_file() and not {'.gradle','build'}.intersection(p.relative_to(root).parts):z.write(p,p.relative_to(root))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: vanta-0.17.1-build, path: distribution/, if-no-files-found: error}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.17.1-reports
+          path: |
+            *build.log
+            vanta/personal/app/build/reports/
+            vanta/personal/app/build/test-results/
+          if-no-files-found: warn
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {api: 29, profile: pixel_6, label: phone}
+          - {api: 36, profile: pixel_c, label: tablet}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v4
+        with: {name: vanta-0.17.1-build, path: distribution}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Installed release acceptance and live public catalogue
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          ram-size: '3072'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: bash vanta/v0171/device.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.17.1-${{ matrix.label }}-${{ matrix.api }}
+          path: device-evidence/
+          if-no-files-found: warn
