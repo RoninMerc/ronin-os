@@ -1,0 +1,1 @@
+The in-place update test must seed a complete Android source snapshot, including its manifest and executable source, before validating managed-gate handling after upgrade. Applied by the companion apply.py revision.
