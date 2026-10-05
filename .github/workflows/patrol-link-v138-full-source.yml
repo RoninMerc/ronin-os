@@ -1,0 +1,61 @@
+name: Patrol Link v1.1.28 full source handover
+on:
+  push:
+    branches: ['patrol-link-v138-bundled-tiff']
+    paths: ['.github/workflows/patrol-link-v138-full-source.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact v1.1.28 project source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v137.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct working v1.1.26 and apply copy-control patch')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          root=Path('/tmp/patrol-v134')
+          subprocess.run(['python3','.patrolbuild/v138/patch.py',str(root)],check=True)
+          assert "versionName '1.1.28'" in (root/'app/build.gradle').read_text()
+          PY
+      - name: Package complete Android Studio project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/patrol-v134
+          rm -rf .gradle app/build build
+          cat > SOURCE-HANDOVER.txt <<'EOF'
+          RONIN PATROL LINK v1.1.28 FULL SOURCE HANDOVER
+
+          This project was reconstructed from the same repository patch chain used by
+          the Patrol Link v1.1.28 tested build.
+
+          Package: au.com.roningroup.patrollink
+          Version: 1.1.28 (138)
+
+          IMPORTANT:
+          The personal Tiff binary asset was intentionally not stored in GitHub.
+          The handover chat will add assets/bundled_voice/tiff.zip from the released
+          v1.1.28 APK after this source archive is downloaded.
+
+          Do not uninstall the existing app or clear app data when testing an update.
+          Preserve package name, version upgrade path, preferences, tally data, and
+          voice-library storage compatibility.
+          EOF
+          zip -qr /tmp/Ronin-Patrol-Link-v1.1.28-Full-Source.zip .             -x '*/build/*' '*/.gradle/*' 'local.properties'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.28-Full-Source
+          path: /tmp/Ronin-Patrol-Link-v1.1.28-Full-Source.zip
+          retention-days: 7
