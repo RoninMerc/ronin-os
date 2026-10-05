@@ -1,4 +1,4 @@
-name: Official Android test downloads
+name: Official Android test image
 on:
   push:
     branches: [trl-breach-fleet-build-tools]
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-slim
     timeout-minutes: 15
     steps:
-      - name: Download official Linux emulator, adb and API 35 test image
+      - name: Download checksum-verified official API35 AOSP image
         uses: actions/github-script@v7
         with:
           script: |
@@ -18,41 +18,36 @@ jobs:
             const {Readable}=require('stream');
             const {pipeline}=require('stream/promises');
             fs.mkdirSync('downloads',{recursive:true});
-            const repos=[
-              {url:'https://dl.google.com/android/repository/repository2-3.xml',items:[['emulator','emulator.zip'],['platform-tools','platform-tools.zip']]},
-              {url:'https://dl.google.com/android/repository/sys-img/android/sys-img2-3.xml',items:[['system-images;android-35;aosp_atd;x86_64','system-image.zip']]}
-            ];
-            const manifest=[];
-            for(const repo of repos){
-              const response=await fetch(repo.url);if(!response.ok)throw Error('Official repository metadata unavailable '+response.status);
-              const xml=await response.text();
-              const blocks=xml.match(/<remotePackage\b[\s\S]*?<\/remotePackage>/g)||[];
-              for(const [id,name] of repo.items){
-                const candidates=blocks.filter(x=>x.includes('path="'+id+'"'));
-                const pkg=candidates.find(x=>x.includes('channel-0'))||candidates[0];
-                if(!pkg)throw Error('Official package missing: '+id);
-                const archives=pkg.match(/<archive>[\s\S]*?<\/archive>/g)||[];
-                const archive=archives.find(x=>x.includes('<host-os>linux</host-os>'))||archives.find(x=>!x.includes('<host-os>'));
-                if(!archive)throw Error('Linux archive missing: '+id);
-                const urlText=archive.match(/<url>([^<]+)<\/url>/)[1];
-                const url=new URL(urlText,repo.url).href;
-                if(!url.startsWith('https://dl.google.com/'))throw Error('Non-official archive host');
-                const expected=archive.match(/<checksum(?:\s[^>]*)?>([^<]+)<\/checksum>/)[1].trim().toLowerCase();
-                const bytes=Number(archive.match(/<size>([^<]+)<\/size>/)[1]);
-                const data=await fetch(url);if(!data.ok)throw Error('Official archive unavailable '+data.status);
-                await pipeline(Readable.fromWeb(data.body),fs.createWriteStream('downloads/'+name));
-                const hash=crypto.createHash(expected.length===64?'sha256':'sha1');
-                for await(const chunk of fs.createReadStream('downloads/'+name))hash.update(chunk);
-                if(hash.digest('hex')!==expected||fs.statSync('downloads/'+name).size!==bytes)throw Error('Archive integrity mismatch '+id);
-                manifest.push({id,name,url,checksum:expected,bytes});
-                core.info('Verified official package '+id+' ('+bytes+' bytes)');
-              }
+            const repo='https://dl.google.com/android/repository/sys-img/android/sys-img2-3.xml';
+            const response=await fetch(repo);if(!response.ok)throw Error('Official repository metadata unavailable '+response.status);
+            const xml=await response.text();
+            const blocks=xml.match(/<remotePackage\b[\s\S]*?<\/remotePackage>/g)||[];
+            const id='system-images;android-35;default;x86_64';
+            const candidates=blocks.filter(x=>x.includes('path="'+id+'"'));
+            const pkg=candidates.find(x=>x.includes('channel-0'))||candidates[0];
+            if(!pkg){
+              fs.writeFileSync('downloads/official-package-metadata.xml',xml);
+              core.info('Available API35 packages: '+blocks.filter(x=>x.includes('android-35')).map(x=>(x.match(/path="([^"]+)"/)||[])[1]).join(', '));
+              throw Error('Official package missing: '+id);
             }
-            fs.writeFileSync('downloads/manifest.json',JSON.stringify(manifest,null,2));
+            const archives=pkg.match(/<archive>[\s\S]*?<\/archive>/g)||[];
+            const archive=archives.find(x=>x.includes('<host-os>linux</host-os>'))||archives.find(x=>!x.includes('<host-os>'));
+            if(!archive)throw Error('Linux archive missing');
+            const url=new URL(archive.match(/<url>([^<]+)<\/url>/)[1],repo).href;
+            if(!url.startsWith('https://dl.google.com/'))throw Error('Non-official archive host');
+            const expected=archive.match(/<checksum(?:\s[^>]*)?>([^<]+)<\/checksum>/)[1].trim().toLowerCase();
+            const bytes=Number(archive.match(/<size>([^<]+)<\/size>/)[1]);
+            const data=await fetch(url);if(!data.ok)throw Error('Official archive unavailable '+data.status);
+            await pipeline(Readable.fromWeb(data.body),fs.createWriteStream('downloads/system-image.zip'));
+            const hash=crypto.createHash(expected.length===64?'sha256':'sha1');
+            for await(const chunk of fs.createReadStream('downloads/system-image.zip'))hash.update(chunk);
+            if(hash.digest('hex')!==expected||fs.statSync('downloads/system-image.zip').size!==bytes)throw Error('Archive integrity mismatch');
+            fs.writeFileSync('downloads/manifest.json',JSON.stringify({id,url,checksum:expected,bytes},null,2));
+            core.info('Verified official package '+id+' ('+bytes+' bytes)');
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: trl-official-android-test-downloads
+          name: trl-official-api35-system-image
           path: downloads/
           retention-days: 1
           compression-level: 0
