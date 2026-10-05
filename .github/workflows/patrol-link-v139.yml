@@ -1,0 +1,73 @@
+name: Patrol Link v1.1.29 compile and unit checks
+on:
+  push:
+    branches: ['patrol-link-v139-local-gps-20261005']
+    paths: ['.patrolbuild/v139/**', '.github/workflows/patrol-link-v139.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct original project and apply requested update
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v138.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct deployed v1.1.27 and add offline bundle support')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          subprocess.run(['python3','.patrolbuild/v139/patch.py','/tmp/patrol-v134'],check=True)
+          subprocess.run(['python3','.patrolbuild/v139/tests.py','/tmp/patrol-v134'],check=True)
+          PY
+      - name: Compile APK and run JVM unit tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebugAndroidTest wrapper --gradle-version 8.13
+      - name: Prepare APK and source without personal audio or signing keys
+        run: |
+          mkdir -p /tmp/deliver139
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk /tmp/deliver139/Patrol-Link-v1.1.29-shell.apk
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" /tmp/deliver139/apksigner.jar
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs /tmp/deliver139/Patrol-Link-v1.1.29-shell.apk > /tmp/deliver139/SHELL-SIGNATURE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,zipfile,xml.etree.ElementTree as E
+          root=Path('/tmp/patrol-v134');cases=[]
+          for p in (root/'app/build/test-results').rglob('TEST-*.xml'):
+              tree=E.parse(p).getroot()
+              for s in tree.iter('testsuite'):
+                  assert not any(int(s.get(k,'0')) for k in ['failures','errors','skipped'])
+              cases.extend(c.attrib for c in tree.iter('testcase'))
+          assert len([c for c in cases if c.get('classname','').endswith('.GpsFixPolicyTest')])==6
+          Path('/tmp/deliver139/TESTS.json').write_text(json.dumps({'passed_jvm_tests':len(cases),'android_instrumentation_run':False,'testcases':cases},indent=2))
+          with zipfile.ZipFile('/tmp/deliver139/Patrol-Link-v1.1.29-Source-No-Key.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in root.rglob('*'):
+                  rel=p.relative_to(root)
+                  if p.is_file() and not any(s in {'build','.gradle','local.properties','bundled_voice'} for s in rel.parts) and p.suffix not in {'.p12','.jks','.keystore'}:
+                      z.write(p,rel)
+          Path('/tmp/deliver139/BUILD-PROVENANCE.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'baseline':'5f39f8f29a4a43e0b50b4b006744d34a7f6137ca','version':'1.1.29','version_code':139,'personal_audio_exported':False,'signing_key_exported':False},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v139-compiled
+          path: /tmp/deliver139/
+          retention-days: 3
+      - name: Preserve unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v139-unit-reports
+          path: /tmp/patrol-v134/app/build/reports/
+          retention-days: 3
