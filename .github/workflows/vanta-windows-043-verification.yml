@@ -1,0 +1,103 @@
+name: Vanta Windows 0.4.3 - Exact artifact acceptance
+on:
+  push:
+    branches: ['fix/vanta-windows-043-forge-reliability']
+    paths: ['vanta/windows-043-verification/**', '.github/workflows/vanta-windows-043-verification.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: vanta-043-exact-artifact-acceptance
+  cancel-in-progress: true
+jobs:
+  installed_upgrade:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: '${{ github.token }}'
+          run-id: 37373633919
+          name: ronin-vanta-windows-0.4.3
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: '${{ github.token }}'
+          run-id: 37292868214
+          name: ronin-vanta-windows-0.4.2
+          path: artifacts/baseline
+      - name: Recover the exact compiled source and correct only the upgrade test window selection
+        shell: pwsh
+        run: |
+          Expand-Archive artifacts/Ronin-Vanta-Windows-0.4.3-Source.zip .
+          python vanta/windows-043-verification/prepare_upgrade_check.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $digest=(Get-FileHash artifacts/installer/Ronin-Vanta-Windows-0.4.3-Setup.exe -Algorithm SHA256).Hash
+          "Exact delivered-candidate installer SHA256: $digest" | Tee-Object artifacts/qa/acceptance-installer-identity.txt
+          dotnet build ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/qa/acceptance-harness-build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Actual predecessor install, main-window launch, update and encrypted-state verification
+        shell: pwsh
+        run: |
+          & vanta/windows-043-verification/upgrade-main-window.ps1 2>&1 | Tee-Object artifacts/qa/exact-upgrade-execution.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-windows-043-exact-upgrade
+          path: |
+            artifacts/qa/upgrade*
+            artifacts/qa/acceptance-*
+            artifacts/qa/exact-upgrade-execution.log
+            vanta/windows-043-verification/upgrade-main-window.ps1
+          if-no-files-found: error
+  android_gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: '${{ github.token }}'
+          run-id: 37373633919
+          name: ronin-vanta-windows-0.4.3
+          path: windows-evidence
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+      - name: Real positive and deliberately failing Android builds from the production-prepared source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p gate-evidence
+          fixture=$(find windows-evidence -type d -name gate-fixture | head -n 1)
+          test -n "$fixture"
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' >/dev/null
+          gradle -p "$fixture" --no-daemon --max-workers=2 :app:assembleDebug :app:projectOwnedCheck --stacktrace 2>&1 | tee gate-evidence/positive.log
+          grep -F 'VANTA_TEST_REPORT|v1|:app:testDebugUnitTest|2|2|0|0' gate-evidence/positive.log
+          grep -F 'FOREIGN_SCRIPT_RETAINED' gate-evidence/positive.log
+          test -f "$fixture/app/build/outputs/apk/debug/app-debug.apk"
+          cp "$fixture/app/build/outputs/apk/debug/app-debug.apk" gate-evidence/gate-positive-debug.apk
+          cp -r "$fixture/app/build/test-results" gate-evidence/test-results-positive
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs gate-evidence/gate-positive-debug.apk >gate-evidence/fixture-apk-signature.txt
+          sed -i 's/assertEquals(4, 2+2)/assertEquals(5, 2+2)/' "$fixture/app/src/test/java/au/com/ronin/gatefixture/GateTest.java"
+          set +e
+          gradle -p "$fixture" --no-daemon --max-workers=2 :app:assembleDebug --stacktrace >gate-evidence/negative.log 2>&1
+          code=$?
+          set -e
+          test "$code" -ne 0
+          grep -F ':app:testDebugUnitTest FAILED' gate-evidence/negative.log
+          cp -r "$fixture/app/build/test-results" gate-evidence/test-results-negative
+          printf 'PASS: exact production-prepared gate compiled an APK, executed 2 passing unit tests, retained the project-owned script, verified the fixture APK signature and rejected a deliberately failing test. Device/runtime and live provider generation tests not performed.\n' >gate-evidence/RESULT.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-windows-043-real-gradle-gate
+          path: gate-evidence/
+          if-no-files-found: error
