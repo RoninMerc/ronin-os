@@ -1,0 +1,84 @@
+name: Ronin Vanta Windows 0.4.1 - Catalogue Recovery
+
+on:
+  push:
+    branches: ['fix/vanta-windows-041-catalogue-recovery']
+    paths:
+      - 'vanta/windows-041/**'
+      - '.github/workflows/vanta-windows-041.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vanta-windows-041-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Reconstruct the exact verified Windows 0.4.0 baseline
+        shell: pwsh
+        run: |
+          $scripts=@('vanta/windows-native/materialize.py','vanta/windows-native/review.py','vanta/windows-native/apply_tests.py','vanta/windows-native/quality_review.py','vanta/windows-native/test_review.py','vanta/windows-native/finish.py','vanta/windows-native/last_review.py','vanta/windows-030/materialize.py','vanta/windows-030/compiler_repair.py','vanta/windows-040/apply.py')
+          foreach($script in $scripts){if(Test-Path $script){python $script; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}}
+      - name: Apply catalogue-only recovery and regression tests
+        shell: pwsh
+        run: |
+          python vanta/windows-041/apply.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile native Windows application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          dotnet build ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile test harness
+        shell: pwsh
+        run: |
+          dotnet build ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/test-build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Run native regressions and desktop tests using isolated providers
+        shell: pwsh
+        run: |
+          dotnet run --project ronin-vanta-windows/tests/Vanta.Tests/Vanta.Tests.csproj -c Release --no-build -- artifacts/qa 2>&1 | Tee-Object artifacts/test-run.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Publish self-contained Windows x64 application
+        shell: pwsh
+        run: |
+          dotnet publish ronin-vanta-windows/src/Vanta.Windows/Vanta.Windows.csproj -c Release -r win-x64 --self-contained true -o artifacts/app --nologo 2>&1 | Tee-Object artifacts/publish.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          if(!(Test-Path artifacts/app/RoninVanta.exe)){throw 'Published executable missing'}
+      - name: Build and smoke-test installer and data preservation
+        shell: pwsh
+        run: |
+          & vanta/windows-041/package.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Preserve exact source and checksums
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          python -c "from pathlib import Path;import zipfile;root=Path('ronin-vanta-windows');z=zipfile.ZipFile('artifacts/Ronin-Vanta-Windows-0.4.1-Source.zip','w',zipfile.ZIP_DEFLATED);[(z.write(p,'ronin-vanta-windows/'+str(p.relative_to(root)))) for p in root.rglob('*') if p.is_file() and not {'bin','obj'}.intersection(p.parts)];z.close()"
+          if(Test-Path artifacts/installer/Ronin-Vanta-Windows-0.4.1-Setup.exe){Get-FileHash artifacts/installer/Ronin-Vanta-Windows-0.4.1-Setup.exe | Format-List | Out-File artifacts/Ronin-Vanta-Windows-0.4.1-SHA256.txt}
+          if(Test-Path artifacts/qa/private-test-profiles){Remove-Item artifacts/qa/private-test-profiles -Recurse -Force}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ronin-vanta-windows-0.4.1
+          path: |
+            artifacts/*.log
+            artifacts/*.zip
+            artifacts/*.txt
+            artifacts/qa/
+            artifacts/installer/
+          if-no-files-found: error
