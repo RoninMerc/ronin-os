@@ -6,7 +6,7 @@ rm -rf "$WORK"
 mkdir -p "$WORK/src" "$ROOT/update-site"
 
 cat "$ROOT"/android-build/patrol131/part* | base64 -d > "$WORK/source.tar.gz"
-echo "83f8be3a9d925704dbac516e3443c8ce1c36894529dbf5169627c6b97e1e4b41  $WORK/source.tar.gz" | sha256sum -c -
+echo "a1a79c4c390c5cd8938cdb87393201becef3453e4a14f9002331b49b733ebe82  $WORK/source.tar.gz" | sha256sum -c -
 tar -xzf "$WORK/source.tar.gz" -C "$WORK/src"
 
 JDK="$WORK/jdk"
@@ -37,5 +37,5 @@ gradle --no-daemon :app:assembleDebug
 APK="$WORK/src/app/build/outputs/apk/debug/app-debug.apk"
 cp "$APK" "$ROOT/update-site/Ronin-Patrol-Link-latest.apk"
 SHA="$(sha256sum "$APK" | awk '{print $1}')"
-printf '{"versionCode":141,"versionName":"1.1.31","sha256":"%s","apkUrl":"https://ronin-patrol-link-updates.onrender.com/Ronin-Patrol-Link-latest.apk"}' "$SHA" > "$ROOT/update-site/update.json"
+printf '{"versionCode":141,"versionName":"1.1.31","sha256":"%s","apkUrl":"https://ronin-patrol-link-channel.onrender.com/Ronin-Patrol-Link-latest.apk"}' "$SHA" > "$ROOT/update-site/update.json"
 printf 'Patrol Link v1.1.31 update channel\nSHA-256: %s\n' "$SHA" > "$ROOT/update-site/index.txt"
