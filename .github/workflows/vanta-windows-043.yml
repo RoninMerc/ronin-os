@@ -2,9 +2,7 @@ name: Ronin Vanta Windows 0.4.3 - Forge Reliability
 on:
   push:
     branches: ['fix/vanta-windows-043-forge-reliability']
-    paths:
-      - 'vanta/windows-043/**'
-      - '.github/workflows/vanta-windows-043.yml'
+    paths: ['vanta/windows-043/**', '.github/workflows/vanta-windows-043.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,16 +16,18 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+        with: {persist-credentials: false}
       - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+        with: {dotnet-version: '10.0.x'}
       - name: Reconstruct exact delivered Windows 0.4.2 and apply native fixes
         shell: pwsh
         run: |
-          $scripts=@('vanta/windows-native/materialize.py','vanta/windows-native/review.py','vanta/windows-native/apply_tests.py','vanta/windows-native/quality_review.py','vanta/windows-native/test_review.py','vanta/windows-native/finish.py','vanta/windows-native/last_review.py','vanta/windows-030/materialize.py','vanta/windows-030/compiler_repair.py','vanta/windows-040/apply.py','vanta/windows-041/apply.py','vanta/windows-041/finalize.py','vanta/windows-041/stabilize.py','vanta/windows-042/apply.py','vanta/windows-043/apply.py','vanta/windows-043/finalize.py')
-          foreach($script in $scripts){if(Test-Path $script){python $script;if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}else{throw "Missing reconstruction script $script"}}
+          $scripts=@('vanta/windows-native/materialize.py','vanta/windows-native/review.py','vanta/windows-native/apply_tests.py','vanta/windows-native/quality_review.py','vanta/windows-native/test_review.py','vanta/windows-native/finish.py','vanta/windows-native/last_review.py','vanta/windows-030/materialize.py','vanta/windows-030/compiler_repair.py','vanta/windows-040/apply.py','vanta/windows-041/apply.py','vanta/windows-041/finalize.py','vanta/windows-041/stabilize.py','vanta/windows-042/apply.py')
+          foreach($script in $scripts){if(Test-Path $script){python $script;if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}}
+          python vanta/windows-043/apply.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          python vanta/windows-043/finalize.py
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
       - name: Compile native Windows client and test harness
         shell: pwsh
         run: |
@@ -53,8 +53,7 @@ jobs:
           & vanta/windows-043/package.ps1
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
       - name: Retrieve the actual verified predecessor installer
-        env:
-          GH_TOKEN: ${{ github.token }}
+        env: {GH_TOKEN: '${{ github.token }}'}
         shell: pwsh
         run: |
           gh run download 37292868214 --repo RoninMerc/ronin-os --name ronin-vanta-windows-0.4.2 --dir artifacts/baseline
@@ -90,16 +89,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
-        with:
-          name: ronin-vanta-windows-0.4.3
-          path: windows-evidence
+        with: {name: ronin-vanta-windows-0.4.3, path: windows-evidence}
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+        with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
+        with: {gradle-version: '8.13'}
       - uses: android-actions/setup-android@v3
       - name: Real positive and deliberately failing Android gate builds from production-prepared source
         shell: bash
