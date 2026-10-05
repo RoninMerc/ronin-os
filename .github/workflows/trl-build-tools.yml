@@ -1,0 +1,29 @@
+name: TRL Android tooling
+on:
+  push:
+    branches: [trl-breach-fleet-build-tools]
+    paths: [.github/workflows/trl-build-tools.yml]
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Package Android build and inspection tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+          cp -a "$ANDROID_HOME/build-tools/35.0.0" export/build-tools
+          cp "$ANDROID_HOME/platforms/android-35/android.jar" export/android.jar
+          cp -a "$ANDROID_HOME/platform-tools" export/platform-tools
+          curl --fail --location --retry 3 -o export/apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar
+          curl --fail --location --retry 3 -o export/jadx.zip https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.zip
+          (cd export && sha256sum apktool.jar android.jar jadx.zip > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trl-android-tooling
+          path: export/
+          retention-days: 2
