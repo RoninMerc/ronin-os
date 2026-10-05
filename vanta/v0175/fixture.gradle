@@ -1,0 +1,14 @@
+allprojects {
+  afterEvaluate { p ->
+    if (p.path == ':app') {
+      p.tasks.register('forge175Fixture', JavaExec) {
+        dependsOn p.tasks.named('compileDebugUnitTestJavaWithJavac')
+        classpath = p.files(p.tasks.named('compileDebugUnitTestJavaWithJavac').get().destinationDirectory)
+        classpath += p.files(p.tasks.named('compileDebugJavaWithJavac').get().destinationDirectory)
+        classpath += p.configurations.getByName('debugUnitTestRuntimeClasspath')
+        mainClass = 'com.ronin.vanta.Forge175CompilerFixture'
+        args System.getenv('FORGE175_FIXTURE_OUT')
+      }
+    }
+  }
+}
