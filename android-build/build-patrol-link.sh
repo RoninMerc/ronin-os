@@ -6,7 +6,7 @@ rm -rf "$WORK"
 mkdir -p "$WORK/src" "$ROOT/update-site"
 
 cat "$ROOT"/android-build/patrol131/part* | base64 -d > "$WORK/source.tar.gz"
-echo "a1a79c4c390c5cd8938cdb87393201becef3453e4a14f9002331b49b733ebe82  $WORK/source.tar.gz" | sha256sum -c -
+echo "b37e951c9e65c5c8322bb0636ad552f86a0180d0ead634610d52423fc49230b9  $WORK/source.tar.gz" | sha256sum -c -
 tar -xzf "$WORK/source.tar.gz" -C "$WORK/src"
 
 JDK="$WORK/jdk"
