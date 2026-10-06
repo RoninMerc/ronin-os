@@ -6,6 +6,7 @@ const fleet = new Map();
 const vehicles = new Map();
 const vehicleDeletes = new Map();
 const observations = new Map();
+let reportTemplate = { text:'', updatedAt:0, source:'' };
 let authBundle = { bundle:'', updatedAt:0, source:'' };
 
 function send(res, code, obj) {
@@ -87,13 +88,14 @@ function vehicleSnapshot() {
     ok:true, serverTime:Date.now(),
     vehicles:[...vehicles.values()].sort((a,b)=>a.plate_key.localeCompare(b.plate_key)),
     tombstones:[...vehicleDeletes.entries()].map(([plate_key,deleted_at])=>({plate_key,deleted_at})),
-    observations:[...observations.values()].sort((a,b)=>a.observed_at-b.observed_at)
+    observations:[...observations.values()].sort((a,b)=>a.observed_at-b.observed_at),
+    template: reportTemplate.updatedAt>0 ? reportTemplate : null
   };
 }
 http.createServer((req,res)=>{
   if (req.method === 'OPTIONS') return send(res,200,{ok:true});
   const u = new URL(req.url,'http://localhost');
-  if (u.pathname === '/health') return send(res,200,{ok:true,service:'ronin-patrol-link-relay',sharedVehicleSync:true,vehicleCount:vehicles.size,observationCount:observations.size});
+  if (u.pathname === '/health') return send(res,200,{ok:true,service:'ronin-patrol-link-relay',sharedVehicleSync:true,sharedTemplateSync:true,vehicleCount:vehicles.size,observationCount:observations.size,templateUpdatedAt:reportTemplate.updatedAt});
   if (!okKey(req)) return send(res,401,{ok:false,error:'unauthorised'});
   if (req.method === 'POST' && u.pathname === '/api/update') {
     let raw='';
@@ -141,6 +143,12 @@ http.createServer((req,res)=>{
         for(const row of rows) mergeVehicle(cleanVehicle(row));
         for(const t of tombs) mergeDelete(t && t.plate_key,t && t.deleted_at);
         for(const item of obs){const clean=cleanObservation(item);if(!observations.has(clean.sync_key)) observations.set(clean.sync_key,clean);}
+        if(String(b.role||'').toUpperCase()==='MASTER' && b.template && typeof b.template==='object'){
+          const text=String(b.template.text||''), updatedAt=Number(b.template.updatedAt)||0;
+          if(text.length>=80 && text.length<=12000 && updatedAt>reportTemplate.updatedAt && updatedAt<=Date.now()+86400000){
+            reportTemplate={text,updatedAt,source:String(b.deviceId||'MASTER').slice(0,96)};
+          }
+        }
         return send(res,200,vehicleSnapshot());
       }catch(e){return send(res,400,{ok:false,error:'invalid shared sync payload'});}
     }); return;
