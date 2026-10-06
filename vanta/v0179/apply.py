@@ -69,6 +69,7 @@ edit('app/src/test/java/com/ronin/vanta/Planning178RegressionTest.java','normalC
 edit('app/src/test/java/com/ronin/vanta/Planning178RegressionTest.java','"chat","analysis","analysis_compact_1","author_file_0_part_0",PREFIX+"_file_1_part_0_expanded_1"','"chat","analysis","analysis_compact_1"')
 edit('app/src/androidTest/java/com/ronin/vanta/Planning178DeviceTest.java','assertFalse(call.inferenceOptions.has("chat_template_kwargs"));return correct;','assertFalse(call.inferenceOptions.getJSONObject("chat_template_kwargs").getBoolean("enable_thinking"));return correct;')
 edit('app/build.gradle','versionCode 178','versionCode 179');edit('app/build.gradle',"versionName '0.17.8'","versionName '0.17.9'")
+edit('app/src/androidTest/java/com/ronin/vanta/Vanta175UpgradeDeviceTest.java','"0.17.8"','"0.17.9"')
 for filename, dest in [('GenerationWatchdog.java',base),('Source179RegressionTest.java','app/src/test/java/com/ronin/vanta/'),('Source179DeviceTest.java','app/src/androidTest/java/com/ronin/vanta/')]:
     shutil.copyfile(here/filename,root/(dest+filename))
 # Revise the two old expansion assertions to the new no-empty-replay contract, retaining all tests.
