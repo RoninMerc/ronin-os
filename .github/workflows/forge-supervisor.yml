@@ -1,0 +1,53 @@
+name: Ronin Forge Supervisor Windows
+on:
+  push:
+    branches: ['feature/ronin-forge-supervisor-v010']
+    paths: ['forge-supervisor/**', '.github/workflows/forge-supervisor.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '10.0.x'}
+      - name: Build
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          dotnet build forge-supervisor/RoninForgeSupervisor.csproj -c Release --nologo 2>&1 | Tee-Object artifacts/build.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          dotnet publish forge-supervisor/RoninForgeSupervisor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts/publish --nologo 2>&1 | Tee-Object artifacts/publish.log
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Smoke launch
+        shell: pwsh
+        run: |
+          $p=Start-Process artifacts/publish/RoninForgeSupervisor.exe -PassThru
+          $ok=$false
+          for($i=0;$i -lt 50;$i++){Start-Sleep -Milliseconds 250;try{$r=Invoke-WebRequest http://127.0.0.1:8765/api/state -UseBasicParsing -TimeoutSec 2;if($r.StatusCode -eq 200){$ok=$true;break}}catch{}}
+          if(!$ok){throw 'Supervisor API did not start'}
+          $p.Kill();$p.WaitForExit()
+      - name: Package installer
+        shell: pwsh
+        run: |
+          $iscc=(Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if(!$iscc){$iscc="${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"}
+          if(!(Test-Path $iscc)){choco install innosetup -y --no-progress;$iscc="${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"}
+          & $iscc forge-supervisor/installer.iss
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Compress-Archive artifacts/publish/* artifacts/Ronin-Forge-Supervisor-0.1.0-Portable.zip -Force
+          Get-FileHash artifacts/Ronin-Forge-Supervisor-0.1.0-Setup.exe,artifacts/Ronin-Forge-Supervisor-0.1.0-Portable.zip | Format-Table -AutoSize | Out-File artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ronin-forge-supervisor-0.1.0
+          path: |
+            artifacts/Ronin-Forge-Supervisor-0.1.0-Setup.exe
+            artifacts/Ronin-Forge-Supervisor-0.1.0-Portable.zip
+            artifacts/SHA256SUMS.txt
+            artifacts/build.log
+            artifacts/publish.log
+          if-no-files-found: error
