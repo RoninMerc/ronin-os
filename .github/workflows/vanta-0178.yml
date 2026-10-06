@@ -1,0 +1,128 @@
+name: Vanta Android 0.17.8 - Scoped planning recovery
+on:
+  push:
+    branches: ['fix/vanta-0178-planning-recovery']
+    paths: ['vanta/v0178/**', '.github/workflows/vanta-0178.yml']
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+concurrency:
+  group: vanta-0178-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.17.7-build
+          run-id: 37417377570
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Apply scoped repair to exact compiled 0.17.7 source
+        run: |
+          set -euo pipefail
+          echo 'ac2baadf07bc411a060f6ed258ac359848e6187fd63d813a1639b7ee891ac22e  baseline/Ronin-Vanta-0.17.7-Source.zip' | sha256sum -c -
+          mkdir source distribution
+          unzip -q baseline/Ronin-Vanta-0.17.7-Source.zip -d source
+          python3 vanta/v0178/apply.py source
+      - name: Compile release and execute all retained and new JVM tests
+        run: |
+          set -o pipefail
+          gradle -p source --no-daemon --max-workers=2 --continue testDebugUnitTest testReleaseUnitTest lintDebug assembleRelease assembleDebugAndroidTest --stacktrace 2>&1 | tee build.log
+      - name: Stage compiled standard and Personal releases and the matched QA upgrade pair
+        run: |
+          set -euo pipefail
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk distribution/fixed-release-unsigned.apk
+          cp source/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/tests.apk
+          cp baseline/apksigner.jar distribution/
+          gradle -p source --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/release-qa.apk distribution/fixed-release-unsigned.apk
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out distribution/baseline-qa.apk baseline/fixed-release-unsigned.apk
+          "$SIGNER" verify --verbose --print-certs distribution/release-qa.apk > distribution/qa-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/release-qa.apk > distribution/package.txt
+          gradle -p source -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace 2>&1 | tee personal-build.log
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk distribution/personal-release-unsigned.apk
+          printf '%s\n' "$GITHUB_SHA" > distribution/source-commit.txt
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+      - name: Preserve exact source compiled in this run
+        if: always()
+        run: |
+          mkdir -p distribution
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('source')
+          with zipfile.ZipFile('distribution/Ronin-Vanta-0.17.8-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for p in root.rglob('*'):
+              if p.is_file() and not {'.gradle','build'}.intersection(p.relative_to(root).parts): z.write(p,p.relative_to(root))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: vanta-0.17.8-build, path: distribution/, if-no-files-found: error}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.17.8-reports
+          path: |
+            *build.log
+            source/app/build/reports/
+            source/app/build/test-results/
+          if-no-files-found: warn
+  device_upgrade:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {api: 29, profile: pixel_6, name: phone-29}
+          - {api: 36, profile: Nexus 9, name: tablet-36}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v4
+        with: {name: vanta-0.17.8-build, path: distribution}
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual previous-version upgrade and retained-source planning recovery
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          ram-size: '3072'
+          disk-size: 4096M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          pre-emulator-launch-script: sed -i -e '/^vm.heapSize=/d' -e '/^hw.heapSize=/d' "${ANDROID_AVD_HOME}/test.avd/config.ini" && printf '\nvm.heapSize=256\n' >> "${ANDROID_AVD_HOME}/test.avd/config.ini"
+          script: |
+            bash vanta/v0175/device.sh
+            adb shell am instrument -w -r -e class com.ronin.vanta.Planning178DeviceTest com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee device-evidence/planning-controller.txt
+            grep -q 'OK (8 tests)' device-evidence/planning-controller.txt
+            adb shell am instrument -w -r -e class com.ronin.vanta.Capacity177DeviceTest com.ronin.vanta.fixed.test/androidx.test.runner.AndroidJUnitRunner | tee device-evidence/retained-capacity-controller.txt
+            grep -q 'OK (6 tests)' device-evidence/retained-capacity-controller.txt
+            adb logcat -d -s AndroidRuntime:E > device-evidence/runtime-errors-after-planning.txt
+            if grep -q 'FATAL EXCEPTION' device-evidence/runtime-errors-after-planning.txt; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.17.8-${{ matrix.name }}-upgrade
+          path: device-evidence/
+          if-no-files-found: warn
