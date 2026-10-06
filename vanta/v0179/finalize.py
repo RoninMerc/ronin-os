@@ -22,4 +22,8 @@ t=t.replace(old,'''      if (ForgeCodeDiagnostics.errors(refreshed.log).isEmpty(
         throw new Blocked("Compiler diagnosis: the worker still supplied no actionable Kotlin file/line errors. "
             + "The original failure and diagnostic recompile are saved. No AI repair was purchased; check the worker diagnostics update.");
       }''');p.write_text(t)
-print('Finalised retained recovery test expectations and no-actionable-diagnostics repeat guard.')
+p=root/'app/src/main/java/com/ronin/vanta/ForgeCodeDiagnostics.java';t=p.read_text();old=r')):(?:\\((\\d+)';new=r')):\\s*(?:\\((\\d+)'
+assert t.count(old)==1,(old,t[:750]);p.write_text(t.replace(old,new))
+p=root/'app/src/test/java/com/ronin/vanta/Source179RegressionTest.java';t=p.read_text();old='JSONObject p=project("app/src/main/java/qa/A.kt","package qa; class A {}");String first=ForgeDiagnosticRefresh.key(p,4);';new='JSONObject p=Pipeline090Test.project();String first=ForgeDiagnosticRefresh.key(p,4);'
+assert t.count(old)==1;p.write_text(t.replace(old,new))
+print('Finalised retained recovery expectations, no-actionable repeat guard, Kotlin coordinates and complete fingerprint fixture.')
