@@ -26,4 +26,5 @@ p=root/'app/src/main/java/com/ronin/vanta/ForgeCodeDiagnostics.java';t=p.read_te
 assert t.count(old)==1,(old,t[:750]);p.write_text(t.replace(old,new))
 p=root/'app/src/test/java/com/ronin/vanta/Source179RegressionTest.java';t=p.read_text();old='JSONObject p=project("app/src/main/java/qa/A.kt","package qa; class A {}");String first=ForgeDiagnosticRefresh.key(p,4);';new='JSONObject p=Pipeline090Test.project();String first=ForgeDiagnosticRefresh.key(p,4);'
 assert t.count(old)==1;p.write_text(t.replace(old,new))
-print('Finalised retained recovery expectations, no-actionable repeat guard, Kotlin coordinates and complete fingerprint fixture.')
+p=root/'app/src/androidTest/java/com/ronin/vanta/Vanta175UpgradeDeviceTest.java';t=p.read_text();assert t.count('assertEquals("0.17.8",')==1;p.write_text(t.replace('assertEquals("0.17.8",','assertEquals("0.17.9",'))
+print('Finalised source recovery, compiler coordinates and the exact 0.17.9 upgrade-version assertion.')
