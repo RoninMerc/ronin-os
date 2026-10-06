@@ -1,0 +1,41 @@
+name: Build Evie Assistant 0.4.0
+
+on:
+  push:
+    branches: [ "evie-assistant-0.4.0-build" ]
+    paths:
+      - "evie-assistant-0.4.0/**"
+      - ".github/workflows/evie-assistant-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build debug APK
+        working-directory: evie-assistant-0.4.0
+        run: gradle --no-daemon clean assembleDebug
+      - name: Rename APK
+        run: |
+          cp evie-assistant-0.4.0/app/build/outputs/apk/debug/app-debug.apk Evie-Assistant-Full-0.4.0.apk
+      - name: Verification
+        run: |
+          sha256sum Evie-Assistant-Full-0.4.0.apk > Evie-Assistant-Full-0.4.0.sha256.txt
+          unzip -l Evie-Assistant-Full-0.4.0.apk | head -80 > Evie-Assistant-Full-0.4.0-contents.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Evie-Assistant-Full-0.4.0
+          path: |
+            Evie-Assistant-Full-0.4.0.apk
+            Evie-Assistant-Full-0.4.0.sha256.txt
+            Evie-Assistant-Full-0.4.0-contents.txt
+          if-no-files-found: error
