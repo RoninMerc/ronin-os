@@ -5,6 +5,7 @@ const API_KEY = process.env.RONIN_PATROL_KEY || '';
 const fleet = new Map();
 const vehicles = new Map();
 const vehicleDeletes = new Map();
+const observations = new Map();
 let authBundle = { bundle:'', updatedAt:0, source:'' };
 
 function send(res, code, obj) {
@@ -69,17 +70,30 @@ function mergeDelete(key,when) {
   const current=vehicles.get(key);
   if(current && when>=current.saved_at) vehicles.delete(key);
 }
+function cleanObservation(v) {
+  const key=cleanText(v && v.sync_key,96), plate=cleanText(v && v.plate,24).toUpperCase(), observed=Number(v && v.observed_at);
+  if(key.length<8 || !plateKey(plate) || !Number.isFinite(observed) || observed<=0 || observed>Date.now()+86400000) throw new Error('invalid observation');
+  const lat=v && v.latitude!=null?Number(v.latitude):null, lon=v && v.longitude!=null?Number(v.longitude):null, accuracy=v && v.accuracy!=null?Number(v.accuracy):null;
+  if((lat!==null&&!Number.isFinite(lat))||(lon!==null&&!Number.isFinite(lon))||(accuracy!==null&&!Number.isFinite(accuracy))) throw new Error('invalid observation coordinates');
+  return {
+    sync_key:key, plate, vin:cleanText(v && v.vin,40).toUpperCase(), year:cleanText(v && v.year,8),
+    colour:cleanText(v && v.colour,48).toLowerCase(), vehicle:cleanText(v && v.vehicle,160),
+    address:cleanText(v && v.address,240), latitude:lat, longitude:lon, accuracy,
+    observed_at:observed, uncertain:!!(v && v.uncertain)
+  };
+}
 function vehicleSnapshot() {
   return {
     ok:true, serverTime:Date.now(),
     vehicles:[...vehicles.values()].sort((a,b)=>a.plate_key.localeCompare(b.plate_key)),
-    tombstones:[...vehicleDeletes.entries()].map(([plate_key,deleted_at])=>({plate_key,deleted_at}))
+    tombstones:[...vehicleDeletes.entries()].map(([plate_key,deleted_at])=>({plate_key,deleted_at})),
+    observations:[...observations.values()].sort((a,b)=>a.observed_at-b.observed_at)
   };
 }
 http.createServer((req,res)=>{
   if (req.method === 'OPTIONS') return send(res,200,{ok:true});
   const u = new URL(req.url,'http://localhost');
-  if (u.pathname === '/health') return send(res,200,{ok:true,service:'ronin-patrol-link-relay',vehicleSync:true,vehicleCount:vehicles.size});
+  if (u.pathname === '/health') return send(res,200,{ok:true,service:'ronin-patrol-link-relay',sharedVehicleSync:true,vehicleCount:vehicles.size,observationCount:observations.size});
   if (!okKey(req)) return send(res,401,{ok:false,error:'unauthorised'});
   if (req.method === 'POST' && u.pathname === '/api/update') {
     let raw='';
@@ -116,21 +130,22 @@ http.createServer((req,res)=>{
       }catch(e){return send(res,400,{ok:false,error:'bad json'});}
     }); return;
   }
-  if (req.method === 'POST' && u.pathname === '/api/vehicles/sync') {
+  if (req.method === 'POST' && u.pathname === '/api/shared/sync') {
     let raw=''; let tooLarge=false;
     req.on('data',d=>{ if(tooLarge)return; raw+=d; if(raw.length>8*1024*1024){tooLarge=true;req.destroy();} });
     req.on('end',()=>{
       if(tooLarge) return;
       try{
-        const b=JSON.parse(raw||'{}'), rows=Array.isArray(b.vehicles)?b.vehicles:[], tombs=Array.isArray(b.tombstones)?b.tombstones:[];
-        if(rows.length>50000 || tombs.length>50000) return send(res,413,{ok:false,error:'vehicle register too large'});
+        const b=JSON.parse(raw||'{}'), rows=Array.isArray(b.vehicles)?b.vehicles:[], tombs=Array.isArray(b.tombstones)?b.tombstones:[], obs=Array.isArray(b.observations)?b.observations:[];
+        if(rows.length>50000 || tombs.length>50000 || obs.length>20000) return send(res,413,{ok:false,error:'shared register too large'});
         for(const row of rows) mergeVehicle(cleanVehicle(row));
         for(const t of tombs) mergeDelete(t && t.plate_key,t && t.deleted_at);
+        for(const item of obs){const clean=cleanObservation(item);if(!observations.has(clean.sync_key)) observations.set(clean.sync_key,clean);}
         return send(res,200,vehicleSnapshot());
-      }catch(e){return send(res,400,{ok:false,error:'invalid vehicle sync payload'});}
+      }catch(e){return send(res,400,{ok:false,error:'invalid shared sync payload'});}
     }); return;
   }
-  if (req.method === 'GET' && u.pathname === '/api/vehicles') return send(res,200,vehicleSnapshot());
+  if (req.method === 'GET' && u.pathname === '/api/shared') return send(res,200,vehicleSnapshot());
   if (req.method === 'POST' && u.pathname === '/api/auth-bundle') {
     let raw=''; req.on('data',d=>{raw+=d;if(raw.length>30000)req.destroy();}); req.on('end',()=>{
       try{
