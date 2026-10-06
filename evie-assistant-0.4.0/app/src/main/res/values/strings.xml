@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Evie Assistant</string>
+    <string name="accessibility_desc">Allows Evie to operate ChatGPT and supported Android apps hands-free, read visible text, and carry out user-requested UI actions.</string>
+</resources>

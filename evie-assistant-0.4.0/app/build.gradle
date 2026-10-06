@@ -1,0 +1,30 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'au.com.ronin.evie'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "au.com.ronin.evie"
+        minSdk 26
+        targetSdk 36
+        versionCode 40
+        versionName "0.4.0"
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies { }
