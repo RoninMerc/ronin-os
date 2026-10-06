@@ -3,6 +3,8 @@ const { URL } = require('url');
 const PORT = process.env.PORT || 10000;
 const API_KEY = process.env.RONIN_PATROL_KEY || '';
 const fleet = new Map();
+const vehicles = new Map();
+const vehicleDeletes = new Map();
 let authBundle = { bundle:'', updatedAt:0, source:'' };
 
 function send(res, code, obj) {
@@ -26,10 +28,58 @@ function cleanHistory(v) {
     durationMs: Math.max(0, Number(x && x.durationMs) || 0)
   }));
 }
+function plateKey(v) { return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,24); }
+function cleanText(v,max) {
+  const s=String(v==null?'':v).trim();
+  if(s.length>max || /[\r\n\0]/.test(s)) throw new Error('invalid text');
+  return s;
+}
+function cleanVehicle(v) {
+  const now=Date.now(), key=plateKey(v && v.plate);
+  const relation=cleanText(v && v.relation,20), parking=cleanText(v && v.parking,16);
+  const saved=Number(v && v.saved_at), level=Number(v && v.breach_level)||0, last=Number(v && v.last_breach_at)||0;
+  if(key.length<2 || !Number.isFinite(saved) || saved<0 || saved>now+86400000 || !Number.isInteger(level) || level<0 || level>3 || !Number.isFinite(last) || last<0) throw new Error('invalid vehicle');
+  if(!['at','on','across from','in front of'].includes(relation)) throw new Error('invalid relation');
+  if(!['common','visitor'].includes(parking)) throw new Error('invalid parking');
+  return {
+    plate_key:key, plate:cleanText(v.plate,24).toUpperCase(), colour:cleanText(v.colour,48).toLowerCase(),
+    vehicle:cleanText(v.vehicle,160), address:cleanText(v.address,240), relation, parking,
+    saved_at:saved, breach_level:level, last_breach_at:level===0?0:last
+  };
+}
+function newerVehicle(a,b) {
+  if(!b) return true;
+  if(a.saved_at!==b.saved_at) return a.saved_at>b.saved_at;
+  if(a.last_breach_at!==b.last_breach_at) return a.last_breach_at>b.last_breach_at;
+  if(a.breach_level!==b.breach_level) return a.breach_level>b.breach_level;
+  return JSON.stringify(a)>JSON.stringify(b);
+}
+function mergeVehicle(v) {
+  const tomb=vehicleDeletes.get(v.plate_key)||0;
+  if(tomb>=v.saved_at) return;
+  const old=vehicles.get(v.plate_key);
+  if(newerVehicle(v,old)) vehicles.set(v.plate_key,v);
+  if(vehicleDeletes.has(v.plate_key) && v.saved_at>tomb) vehicleDeletes.delete(v.plate_key);
+}
+function mergeDelete(key,when) {
+  key=plateKey(key); when=Number(when)||0;
+  if(!key || when<=0 || when>Date.now()+86400000) return;
+  const oldDelete=vehicleDeletes.get(key)||0;
+  if(when>oldDelete) vehicleDeletes.set(key,when);
+  const current=vehicles.get(key);
+  if(current && when>=current.saved_at) vehicles.delete(key);
+}
+function vehicleSnapshot() {
+  return {
+    ok:true, serverTime:Date.now(),
+    vehicles:[...vehicles.values()].sort((a,b)=>a.plate_key.localeCompare(b.plate_key)),
+    tombstones:[...vehicleDeletes.entries()].map(([plate_key,deleted_at])=>({plate_key,deleted_at}))
+  };
+}
 http.createServer((req,res)=>{
   if (req.method === 'OPTIONS') return send(res,200,{ok:true});
   const u = new URL(req.url,'http://localhost');
-  if (u.pathname === '/health') return send(res,200,{ok:true,service:'ronin-patrol-link-relay'});
+  if (u.pathname === '/health') return send(res,200,{ok:true,service:'ronin-patrol-link-relay',vehicleSync:true,vehicleCount:vehicles.size});
   if (!okKey(req)) return send(res,401,{ok:false,error:'unauthorised'});
   if (req.method === 'POST' && u.pathname === '/api/update') {
     let raw='';
@@ -66,6 +116,21 @@ http.createServer((req,res)=>{
       }catch(e){return send(res,400,{ok:false,error:'bad json'});}
     }); return;
   }
+  if (req.method === 'POST' && u.pathname === '/api/vehicles/sync') {
+    let raw=''; let tooLarge=false;
+    req.on('data',d=>{ if(tooLarge)return; raw+=d; if(raw.length>8*1024*1024){tooLarge=true;req.destroy();} });
+    req.on('end',()=>{
+      if(tooLarge) return;
+      try{
+        const b=JSON.parse(raw||'{}'), rows=Array.isArray(b.vehicles)?b.vehicles:[], tombs=Array.isArray(b.tombstones)?b.tombstones:[];
+        if(rows.length>50000 || tombs.length>50000) return send(res,413,{ok:false,error:'vehicle register too large'});
+        for(const row of rows) mergeVehicle(cleanVehicle(row));
+        for(const t of tombs) mergeDelete(t && t.plate_key,t && t.deleted_at);
+        return send(res,200,vehicleSnapshot());
+      }catch(e){return send(res,400,{ok:false,error:'invalid vehicle sync payload'});}
+    }); return;
+  }
+  if (req.method === 'GET' && u.pathname === '/api/vehicles') return send(res,200,vehicleSnapshot());
   if (req.method === 'POST' && u.pathname === '/api/auth-bundle') {
     let raw=''; req.on('data',d=>{raw+=d;if(raw.length>30000)req.destroy();}); req.on('end',()=>{
       try{
