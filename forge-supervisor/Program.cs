@@ -40,72 +40,203 @@ await app.RunAsync();
 static class Dashboard
 {
     public const string Html = """
-<!doctype html><html><head><meta charset="utf-8"><title>Ronin Forge Supervisor</title>
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ronin Forge Supervisor</title>
 <style>
 body{font-family:Segoe UI,Arial;background:#0d0f12;color:#eee;margin:0}
 header{padding:24px 32px;background:#14171c;border-bottom:1px solid #2b3038}
-main{max-width:1100px;margin:auto;padding:24px}.card{background:#15191f;border:1px solid #2d333d;border-radius:14px;padding:18px;margin:14px 0}
+main{max-width:1100px;margin:auto;padding:24px}
+.card{background:#15191f;border:1px solid #2d333d;border-radius:14px;padding:18px;margin:14px 0}
 input,select,button{background:#0f1216;color:#eee;border:1px solid #3a414d;border-radius:8px;padding:10px;margin:5px}
-input{min-width:290px}button{cursor:pointer;background:#c79a43;color:#111;font-weight:700}.secondary{background:#252a32;color:#eee}
-pre{white-space:pre-wrap;max-height:360px;overflow:auto;background:#090b0e;padding:12px;border-radius:8px}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-small{color:#aab2bd}</style></head>
-<body><header><h1>Ronin Forge Supervisor</h1><div>Autonomous compile → diagnose → repair → rebuild</div></header><main>
-<div class="card"><h2>1. Provider + worker</h2>
-<div class="row"><input id="pname" value="OpenRouter" placeholder="Provider"><input id="base" value="https://openrouter.ai/api/v1" placeholder="Base URL"><input id="model" value="qwen/qwen3-coder-next" placeholder="Model"></div>
-<div class="row"><input id="pkey" type="password" placeholder="Provider API key"><input id="repo" value="RoninMerc/RonisOS-BPlus" placeholder="GitHub worker repo"><input id="branch" value="vanta-forge-worker" placeholder="Worker branch"><input id="gtoken" type="password" placeholder="GitHub token"></div>
-<div class="row"><select id="platform"><option value="android">Android APK</option><option value="windows">Windows</option></select><label>Max cycles <input id="max" type="number" value="50" min="1" max="500" style="min-width:80px"></label><button onclick="save()">Save settings</button></div>
-<small>Keys are protected with Windows DPAPI for the current Windows user.</small></div>
-<div class="card"><h2>2. Import project</h2>
-<div class="row"><input id="projectName" placeholder="Project name"><input id="zip" type="file" accept=".zip"><button onclick="upload()">Import Vanta/source ZIP</button></div><div id="projects"></div></div>
-<div class="card"><h2>3. Supervisor</h2>
-<div class="row"><button onclick="start()">Run until success</button><button class="secondary" onclick="pause()">Pause</button><button class="secondary" onclick="stop()">Stop</button></div>
-<pre id="state">Loading...</pre></div>
+input{min-width:290px}button{cursor:pointer;background:#c79a43;color:#111;font-weight:700}
+.secondary{background:#252a32;color:#eee}
+pre{white-space:pre-wrap;max-height:360px;overflow:auto;background:#090b0e;padding:12px;border-radius:8px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+small{color:#aab2bd}.project-row{padding:6px 0}
+</style>
+</head>
+<body>
+<header><h1>Ronin Forge Supervisor</h1><div>Autonomous compile → diagnose → repair → rebuild</div></header>
+<main>
+<div class="card">
+<h2>1. Provider + worker</h2>
+<div class="row">
+<input id="pname" value="OpenRouter" placeholder="Provider">
+<input id="base" value="https://openrouter.ai/api/v1" placeholder="Base URL">
+<input id="model" value="qwen/qwen3-coder-next" placeholder="Model">
+</div>
+<div class="row">
+<input id="pkey" type="password" placeholder="Provider API key">
+<input id="repo" value="RoninMerc/RonisOS-BPlus" placeholder="GitHub worker repo">
+<input id="branch" value="vanta-forge-worker" placeholder="Worker branch">
+<input id="gtoken" type="password" placeholder="GitHub token">
+</div>
+<div class="row">
+<select id="platform"><option value="android">Android APK</option><option value="windows">Windows</option></select>
+<label>Max cycles <input id="max" type="number" value="50" min="1" max="500" style="min-width:80px"></label>
+<button id="saveBtn" type="button">Save settings</button>
+</div>
+<small>Keys are protected with Windows DPAPI for the current Windows user.</small>
+</div>
+
+<div class="card">
+<h2>2. Import project</h2>
+<div class="row">
+<input id="projectName" placeholder="Project name">
+<input id="zip" type="file" accept=".zip">
+<button id="importBtn" type="button">Import Vanta/source ZIP</button>
+</div>
+<div id="projects"></div>
+</div>
+
+<div class="card">
+<h2>3. Supervisor</h2>
+<div class="row">
+<button id="runBtn" type="button">Run until success</button>
+<button id="pauseBtn" class="secondary" type="button">Pause</button>
+<button id="stopBtn" class="secondary" type="button">Stop</button>
+</div>
+<pre id="state">Starting dashboard...</pre>
+</div>
+</main>
+
 <script>
-let current="";
-const el=id=>document.getElementById(id);
-async function save(){
-  await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
-    providerName:el('pname').value,providerBaseUrl:el('base').value,providerApiKey:el('pkey').value,
-    model:el('model').value,githubRepo:el('repo').value,githubBranch:el('branch').value,
-    githubToken:el('gtoken').value,platform:el('platform').value,maxCycles:+el('max').value
-  })});
-  alert('Saved');
-}
-async function upload(){
-  const f=el('zip').files[0]; if(!f){alert('Select a ZIP');return;}
-  const d=new FormData(); d.append('file',f); d.append('name',el('projectName').value||f.name);
-  const r=await fetch('/api/project/import',{method:'POST',body:d});
-  if(!r.ok){alert(await r.text());return;}
-  const j=await r.json(); current=j.id; await loadProjects();
-}
-async function loadProjects(){
-  const r=await fetch('/api/projects'); const j=await r.json();
-  el('projects').innerHTML=j.map(x=>'<label><input type="radio" name="p" '+(x.id==current?'checked':'')+' onclick="current=\\''+x.id+'\\'"> '+x.name+' ('+x.files.length+' files)</label><br>').join('');
-  if(!current&&j.length)current=j[j.length-1].id;
-}
-async function start(){if(!current){alert('Import/select a project');return;}const r=await fetch('/api/run/start/'+current,{method:'POST'});if(!r.ok)alert(await r.text());}
-async function pause(){await fetch('/api/run/pause',{method:'POST'});}
-async function stop(){await fetch('/api/run/stop',{method:'POST'});}
-async function loadSaved(){
-  try{
-    const r=await fetch('/api/settings'); const j=await r.json();
-    el('pname').value=j.providerName||'OpenRouter'; el('base').value=j.providerBaseUrl||'https://openrouter.ai/api/v1';
-    el('model').value=j.model||'qwen/qwen3-coder-next'; el('repo').value=j.githubRepo||'RoninMerc/RonisOS-BPlus';
-    el('branch').value=j.githubBranch||'vanta-forge-worker'; el('platform').value=j.platform||'android'; el('max').value=j.maxCycles||50;
-    if(j.providerKeySaved) el('pkey').placeholder='Provider key saved'; if(j.githubTokenSaved) el('gtoken').placeholder='GitHub token saved';
-  }catch{}
-}
-async function tick(){
-  try{
-    const r=await fetch('/api/state',{cache:'no-store'});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const j=await r.json(); el('state').textContent=JSON.stringify(j,null,2);
-  }catch(e){
-    el('state').textContent='Supervisor API error: '+e.message;
+(function(){
+  "use strict";
+
+  let current = "";
+  const byId = function(id){ return document.getElementById(id); };
+
+  async function api(url, options){
+    const response = await fetch(url, options || {});
+    if(!response.ok){
+      const text = await response.text();
+      throw new Error("HTTP " + response.status + (text ? ": " + text : ""));
+    }
+    return response;
   }
-  setTimeout(tick,1500);
-}
-loadSaved();loadProjects();tick();
-</script></main></body></html>
+
+  async function loadSaved(){
+    const response = await api("/api/settings", {cache:"no-store"});
+    const j = await response.json();
+    byId("pname").value = j.providerName || "OpenRouter";
+    byId("base").value = j.providerBaseUrl || "https://openrouter.ai/api/v1";
+    byId("model").value = j.model || "qwen/qwen3-coder-next";
+    byId("repo").value = j.githubRepo || "RoninMerc/RonisOS-BPlus";
+    byId("branch").value = j.githubBranch || "vanta-forge-worker";
+    byId("platform").value = j.platform || "android";
+    byId("max").value = j.maxCycles || 50;
+    if(j.providerKeySaved) byId("pkey").placeholder = "Provider key saved";
+    if(j.githubTokenSaved) byId("gtoken").placeholder = "GitHub token saved";
+  }
+
+  async function saveSettings(){
+    const payload = {
+      providerName: byId("pname").value,
+      providerBaseUrl: byId("base").value,
+      providerApiKey: byId("pkey").value,
+      model: byId("model").value,
+      githubRepo: byId("repo").value,
+      githubBranch: byId("branch").value,
+      githubToken: byId("gtoken").value,
+      platform: byId("platform").value,
+      maxCycles: Number(byId("max").value || 50)
+    };
+    await api("/api/settings", {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    alert("Settings saved");
+    await loadSaved();
+  }
+
+  async function loadProjects(){
+    const response = await api("/api/projects", {cache:"no-store"});
+    const list = await response.json();
+    const holder = byId("projects");
+    holder.textContent = "";
+
+    list.forEach(function(project){
+      const row = document.createElement("div");
+      row.className = "project-row";
+
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "project";
+      radio.value = project.id;
+      radio.checked = current === project.id;
+      radio.addEventListener("change", function(){ current = project.id; });
+
+      const label = document.createElement("span");
+      label.textContent = " " + project.name + " (" + project.files.length + " files)";
+
+      row.appendChild(radio);
+      row.appendChild(label);
+      holder.appendChild(row);
+    });
+
+    if(!current && list.length){
+      current = list[list.length - 1].id;
+      const radios = holder.querySelectorAll('input[type="radio"]');
+      if(radios.length) radios[radios.length - 1].checked = true;
+    }
+  }
+
+  async function importProject(){
+    const file = byId("zip").files[0];
+    if(!file){ alert("Select a ZIP first."); return; }
+
+    const data = new FormData();
+    data.append("file", file);
+    data.append("name", byId("projectName").value || file.name);
+
+    const response = await api("/api/project/import", {method:"POST", body:data});
+    const result = await response.json();
+    current = result.id;
+    await loadProjects();
+  }
+
+  async function runSupervisor(){
+    if(!current){ alert("Import or select a project first."); return; }
+    await api("/api/run/start/" + encodeURIComponent(current), {method:"POST"});
+  }
+
+  async function pauseSupervisor(){ await api("/api/run/pause", {method:"POST"}); }
+  async function stopSupervisor(){ await api("/api/run/stop", {method:"POST"}); }
+
+  async function poll(){
+    try{
+      const response = await api("/api/state", {cache:"no-store"});
+      const value = await response.json();
+      byId("state").textContent = JSON.stringify(value, null, 2);
+    }catch(error){
+      byId("state").textContent = "Supervisor API error: " + error.message;
+    }
+    window.setTimeout(poll, 1500);
+  }
+
+  window.addEventListener("DOMContentLoaded", async function(){
+    byId("saveBtn").addEventListener("click", function(){ saveSettings().catch(function(e){ alert(e.message); }); });
+    byId("importBtn").addEventListener("click", function(){ importProject().catch(function(e){ alert(e.message); }); });
+    byId("runBtn").addEventListener("click", function(){ runSupervisor().catch(function(e){ alert(e.message); }); });
+    byId("pauseBtn").addEventListener("click", function(){ pauseSupervisor().catch(function(e){ alert(e.message); }); });
+    byId("stopBtn").addEventListener("click", function(){ stopSupervisor().catch(function(e){ alert(e.message); }); });
+
+    try{
+      await loadSaved();
+      await loadProjects();
+    }catch(error){
+      byId("state").textContent = "Dashboard startup error: " + error.message;
+    }
+    poll();
+  });
+})();
+</script>
+</body>
+</html>
 """;
 }
