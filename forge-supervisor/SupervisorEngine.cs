@@ -70,11 +70,19 @@ sealed class SupervisorEngine
 
                 State.LastError = br.Log;
                 var classification = Classify(br.Log);
-                var errorHash = Sha(br.Log);
-                var same = store.LoadLedger(p.Id).Count(x => x.SourceHash == sourceHash && x.ErrorHash == errorHash);
-                if (same >= 2)
+                var errorSignature = ErrorSignature(br.Log);
+                var errorHash = Sha(errorSignature);
+                var ledger = store.LoadLedger(p.Id);
+                var sameExact = ledger.Count(x => x.SourceHash == sourceHash && x.ErrorHash == errorHash);
+                var sameSemantic = ledger.Count(x => x.ErrorHash == errorHash);
+                if (sameExact >= 2)
                 {
-                    Set("BLOCKED", "Same source and same error repeated twice. Human review required.", "CIRCUIT_BREAKER");
+                    Set("BLOCKED", "Same source and same compiler failure repeated twice. Repair loop stopped to prevent wasted builds.", "CIRCUIT_BREAKER");
+                    return;
+                }
+                if (sameSemantic >= 6)
+                {
+                    Set("BLOCKED", "The same underlying compiler failure survived six repair cycles. Automatic churn stopped; source and ledger are retained.", "CIRCUIT_BREAKER");
                     return;
                 }
 
@@ -148,6 +156,30 @@ sealed class SupervisorEngine
     }
 
     static string Sha(string s) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
+
+    static string ErrorSignature(string log)
+    {
+        var lines = log.Replace("\r", "").Split('\n');
+        var selected = lines
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .Where(x =>
+                x.Contains("error:", StringComparison.OrdinalIgnoreCase) ||
+                x.StartsWith("e:", StringComparison.OrdinalIgnoreCase) ||
+                x.Contains("FAILED", StringComparison.OrdinalIgnoreCase) ||
+                x.Contains("Execution failed for task", StringComparison.OrdinalIgnoreCase) ||
+                x.Contains("Unresolved reference", StringComparison.OrdinalIgnoreCase) ||
+                x.Contains("cannot find", StringComparison.OrdinalIgnoreCase) ||
+                x.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+                x.Contains("What went wrong", StringComparison.OrdinalIgnoreCase))
+            .Select(x => Regex.Replace(x, @"\b\d+(?:\.\d+)?(?:ms|s|m)?\b", "#"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(100)
+            .ToList();
+        if (selected.Count == 0)
+            selected = lines.Select(x => x.Trim()).Where(x => x.Length > 0).TakeLast(80).ToList();
+        return string.Join("\n", selected);
+    }
 
     async Task<BuildResult> BuildWindows(ProjectInfo p, int cycle, CancellationToken token)
     {
