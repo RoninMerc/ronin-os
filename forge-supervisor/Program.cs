@@ -25,6 +25,11 @@ app.MapPost("/api/project/import", async (HttpRequest req, AppStore s) => {
     return Results.Ok(new { p.Id, p.Name, files = p.Files.Count, p.Root });
 });
 app.MapGet("/api/projects", (AppStore s) => Results.Json(s.ListProjects()));
+app.MapPost("/api/project/reset/{projectId}", (string projectId, AppStore s) => {
+    var p = s.RestoreOriginal(projectId);
+    return Results.Ok(new { p.Id, p.Name, files = p.Files.Count });
+});
+
 app.MapPost("/api/run/start/{projectId}", (string projectId, SupervisorEngine e) => e.Start(projectId) ? Results.Ok() : Results.Conflict(e.State));
 app.MapPost("/api/run/pause", (SupervisorEngine e) => { e.Pause(); return Results.Ok(); });
 app.MapPost("/api/run/stop", (SupervisorEngine e) => { e.Stop(); return Results.Ok(); });
@@ -88,6 +93,7 @@ small{color:#aab2bd}.project-row{padding:6px 0}
 <input id="projectName" placeholder="Project name">
 <input id="zip" type="file" accept=".zip">
 <button id="importBtn" type="button">Import Vanta/source ZIP</button>
+<button id="resetBtn" class="secondary" type="button">Restore selected to original import</button>
 </div>
 <div id="projects"></div>
 </div>
@@ -200,6 +206,14 @@ small{color:#aab2bd}.project-row{padding:6px 0}
     await loadProjects();
   }
 
+  async function resetProject(){
+    if(!current){ alert("Select a project first."); return; }
+    if(!confirm("Restore this project to the exact originally imported ZIP? Current repaired source will be replaced; the repair ledger will be archived.")) return;
+    await api("/api/project/reset/" + encodeURIComponent(current), {method:"POST"});
+    await loadProjects();
+    alert("Project restored to original import.");
+  }
+
   async function runSupervisor(){
     if(!current){ alert("Import or select a project first."); return; }
     await api("/api/run/start/" + encodeURIComponent(current), {method:"POST"});
@@ -222,6 +236,7 @@ small{color:#aab2bd}.project-row{padding:6px 0}
   window.addEventListener("DOMContentLoaded", async function(){
     byId("saveBtn").addEventListener("click", function(){ saveSettings().catch(function(e){ alert(e.message); }); });
     byId("importBtn").addEventListener("click", function(){ importProject().catch(function(e){ alert(e.message); }); });
+    byId("resetBtn").addEventListener("click", function(){ resetProject().catch(function(e){ alert(e.message); }); });
     byId("runBtn").addEventListener("click", function(){ runSupervisor().catch(function(e){ alert(e.message); }); });
     byId("pauseBtn").addEventListener("click", function(){ pauseSupervisor().catch(function(e){ alert(e.message); }); });
     byId("stopBtn").addEventListener("click", function(){ stopSupervisor().catch(function(e){ alert(e.message); }); });
