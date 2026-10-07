@@ -79,13 +79,33 @@ sealed class SupervisorEngine
                 }
 
                 Set("RUNNING", classification + ": requesting targeted repair", "REPAIR");
-                var repair = await AskRepair(p, cfg, br.Log, classification, token);
-                if (repair.Files.Count == 0) { Set("BLOCKED", "Coding model returned no file changes.", "REPAIR"); return; }
+                RepairResponse repair = new();
+                ApplyResult applied = new([], []);
+                string rejectionContext = "";
+                for (int repairAttempt = 1; repairAttempt <= 3; repairAttempt++)
+                {
+                    repair = await AskRepair(p, cfg, br.Log + rejectionContext, classification, token);
+                    if (repair.Files.Count == 0)
+                    {
+                        rejectionContext = "\nPREVIOUS REPAIR RESPONSE CONTAINED NO FILES. Return implementation files only.";
+                        continue;
+                    }
 
-                var changed = ApplyRepair(p, repair);
-                if (changed.Count == 0) { Set("BLOCKED", "Repair made no safe source changes.", "REPAIR"); return; }
+                    applied = ApplyRepair(p, repair);
+                    if (applied.ChangedFiles.Count > 0) break;
 
-                store.AppendLedger(p.Id, new(cycle, DateTimeOffset.UtcNow, sourceHash, errorHash, classification, repair.Summary, changed, "REPAIRED"));
+                    rejectionContext = "\nPREVIOUS REPAIR WAS REJECTED BY THE SUPERVISOR. " +
+                        "Rejected paths: " + string.Join(", ", applied.RejectedFiles) + ". " +
+                        "Do not modify tests, androidTest, .git, or unsafe paths. Repair production implementation/configuration files instead.";
+                }
+
+                if (applied.ChangedFiles.Count == 0)
+                {
+                    Set("BLOCKED", "Repair attempts only proposed unsafe/protected changes. Source and tests were preserved.", "REPAIR_GUARD");
+                    return;
+                }
+
+                store.AppendLedger(p.Id, new(cycle, DateTimeOffset.UtcNow, sourceHash, errorHash, classification, repair.Summary, applied.ChangedFiles, "REPAIRED"));
             }
             Set("BLOCKED", "Maximum configured build cycles reached.", "LIMIT");
         }
@@ -342,24 +362,40 @@ sealed class SupervisorEngine
         return result.Take(18).ToList();
     }
 
-    static List<string> ApplyRepair(ProjectInfo p, RepairResponse repair)
+    static ApplyResult ApplyRepair(ProjectInfo p, RepairResponse repair)
     {
         var changed = new List<string>();
+        var rejected = new List<string>();
         foreach (var item in repair.Files)
         {
             var rel = item.Path.Replace('\\', '/').TrimStart('/');
-            if (rel.Contains("..") || rel.StartsWith(".git/")) continue;
-            if (rel.Contains("/src/test/", StringComparison.OrdinalIgnoreCase) ||
-                rel.Contains("/src/androidTest/", StringComparison.OrdinalIgnoreCase) ||
-                rel.StartsWith("src/test/", StringComparison.OrdinalIgnoreCase)) continue;
+            bool unsafe = rel.Contains("..") || rel.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
+                          rel.Contains("/src/test/", StringComparison.OrdinalIgnoreCase) ||
+                          rel.Contains("/src/androidTest/", StringComparison.OrdinalIgnoreCase) ||
+                          rel.StartsWith("src/test/", StringComparison.OrdinalIgnoreCase) ||
+                          rel.StartsWith("src/androidTest/", StringComparison.OrdinalIgnoreCase);
+            if (unsafe) { rejected.Add(rel); continue; }
 
             var dest = Path.GetFullPath(Path.Combine(p.Root, rel.Replace('/', Path.DirectorySeparatorChar)));
             var prefix = Path.GetFullPath(p.Root) + Path.DirectorySeparatorChar;
-            if (!dest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!dest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                rejected.Add(rel);
+                continue;
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            var before = File.Exists(dest) ? File.ReadAllText(dest) : null;
+            if (before == item.Content)
+            {
+                rejected.Add(rel + " [unchanged]");
+                continue;
+            }
+
             File.WriteAllText(dest, item.Content);
             changed.Add(rel);
         }
-        return changed;
+        return new(changed, rejected);
     }
+}
 }
