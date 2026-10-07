@@ -168,38 +168,165 @@ sealed class SupervisorEngine
         }
 
         var diag = diagnostics[..Math.Min(diagnostics.Length, 30000)];
-        var prompt = "You are the coding repair engine for Ronin Forge Supervisor.\n" +
-                     "Classification: " + classification + "\n" +
-                     "Repair the implementation without weakening verification.\n" +
-                     "IMMUTABLE RULES:\n" +
-                     "- Do not delete, skip, disable, rename away, or weaken tests.\n" +
-                     "- Do not set ignoreFailures=true or disable lint/build gates.\n" +
-                     "- Do not remove requested functionality merely to compile.\n" +
-                     "- Prefer the smallest coherent repair.\n" +
-                     "- Return JSON only with summary and complete replacement files.\n" +
-                     "Expected shape: {\"summary\":\"...\",\"files\":[{\"path\":\"relative/path\",\"content\":\"COMPLETE FILE\"}]}\n" +
-                     "BUILD DIAGNOSTICS:\n" + diag + "\nRELEVANT SOURCE:\n" + source;
+        var basePrompt = "You are the coding repair engine for Ronin Forge Supervisor.\n" +
+                         "Classification: " + classification + "\n" +
+                         "Repair the implementation without weakening verification.\n" +
+                         "IMMUTABLE RULES:\n" +
+                         "- Do not delete, skip, disable, rename away, or weaken tests.\n" +
+                         "- Do not set ignoreFailures=true or disable lint/build gates.\n" +
+                         "- Do not remove requested functionality merely to compile.\n" +
+                         "- Prefer the smallest coherent repair.\n" +
+                         "- Return one JSON object only. No prose before or after it.\n" +
+                         "Expected shape: {\"summary\":\"...\",\"files\":[{\"path\":\"relative/path\",\"content\":\"COMPLETE FILE\"}]}\n" +
+                         "BUILD DIAGNOSTICS:\n" + diag + "\nRELEVANT SOURCE:\n" + source;
 
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.ProviderApiKey);
         var endpoint = cfg.ProviderBaseUrl.TrimEnd('/') + "/chat/completions";
-        var req = new JsonObject
+
+        string lastProblem = "No provider attempt was made.";
+        for (int attempt = 1; attempt <= 3; attempt++)
         {
-            ["model"] = cfg.Model,
-            ["temperature"] = 0.1,
-            ["max_tokens"] = 16384,
-            ["messages"] = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt })
-        };
+            token.ThrowIfCancellationRequested();
+            var prompt = basePrompt + (attempt == 1 ? "" :
+                "\nPREVIOUS RESPONSE WAS NOT A VALID REPAIR JSON OBJECT. Return the required JSON object directly now. Do not emit reasoning, markdown, commentary, or an empty answer.");
 
-        using var resp = await http.PostAsync(endpoint, new StringContent(req.ToJsonString(), Encoding.UTF8, "application/json"), token);
-        var raw = await resp.Content.ReadAsStringAsync(token);
-        if (!resp.IsSuccessStatusCode) throw new Exception("Provider HTTP " + (int)resp.StatusCode + ": " + raw);
+            var req = new JsonObject
+            {
+                ["model"] = cfg.Model,
+                ["temperature"] = 0.05,
+                ["max_tokens"] = 16384,
+                ["messages"] = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt })
+            };
 
-        var json = JsonNode.Parse(raw) ?? throw new Exception("Invalid provider JSON");
-        var answer = json["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? "";
+            if (cfg.ProviderName.Equals("Featherless", StringComparison.OrdinalIgnoreCase) ||
+                cfg.ProviderBaseUrl.Contains("featherless.ai", StringComparison.OrdinalIgnoreCase))
+                req["chat_template_kwargs"] = new JsonObject { ["enable_thinking"] = false };
+
+            using var resp = await http.PostAsync(endpoint, new StringContent(req.ToJsonString(), Encoding.UTF8, "application/json"), token);
+            var raw = await resp.Content.ReadAsStringAsync(token);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                lastProblem = "Provider HTTP " + (int)resp.StatusCode + ": " + raw[..Math.Min(raw.Length, 4000)];
+                if (((int)resp.StatusCode == 429 || (int)resp.StatusCode >= 500) && attempt < 3)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(attempt * 20), token);
+                    continue;
+                }
+                throw new Exception(lastProblem);
+            }
+
+            JsonNode json;
+            try { json = JsonNode.Parse(raw) ?? throw new JsonException("Empty provider envelope"); }
+            catch (Exception ex)
+            {
+                lastProblem = "Provider returned invalid JSON envelope: " + ex.Message;
+                if (attempt < 3) { await Task.Delay(TimeSpan.FromSeconds(5), token); continue; }
+                throw new Exception(lastProblem);
+            }
+
+            var message = json["choices"]?[0]?["message"];
+            var answer = message?["content"]?.GetValue<string>() ?? "";
+            var finishReason = json["choices"]?[0]?["finish_reason"]?.GetValue<string>() ?? "";
+            int reasoningChars = 0;
+            try
+            {
+                var reasoning = message?["reasoning"]?.GetValue<string>() ?? message?["reasoning_content"]?.GetValue<string>() ?? "";
+                reasoningChars = reasoning.Length;
+            }
+            catch { }
+
+            if (string.IsNullOrWhiteSpace(answer))
+            {
+                lastProblem = "Provider returned no usable answer content" +
+                    (reasoningChars > 0 ? " (" + reasoningChars + " reasoning characters, zero source-answer characters)" : "") +
+                    (finishReason.Length > 0 ? "; finish_reason=" + finishReason : "") + ".";
+                if (attempt < 3) { await Task.Delay(TimeSpan.FromSeconds(5), token); continue; }
+                throw new Exception(lastProblem);
+            }
+
+            if (TryParseRepair(answer, out var repair, out var parseProblem))
+            {
+                if (repair.Files.Count > 0) return repair;
+                lastProblem = "Provider returned valid JSON but no repair files.";
+            }
+            else lastProblem = "Provider answer was not valid repair JSON: " + parseProblem;
+
+            if (attempt < 3) { await Task.Delay(TimeSpan.FromSeconds(5), token); continue; }
+        }
+        throw new Exception(lastProblem);
+    }
+
+    static bool TryParseRepair(string answer, out RepairResponse repair, out string problem)
+    {
+        repair = new RepairResponse();
+        problem = "";
+        var cleaned = answer.Trim();
         var ticks = new string(char.ConvertFromUtf32(96)[0], 3);
-        answer = answer.Trim().Replace(ticks + "json", "").Replace(ticks, "").Trim();
-        return JsonSerializer.Deserialize<RepairResponse>(answer, JsonOpts.Options) ?? new();
+        if (cleaned.StartsWith(ticks, StringComparison.Ordinal))
+        {
+            cleaned = cleaned[ticks.Length..];
+            if (cleaned.StartsWith("json", StringComparison.OrdinalIgnoreCase))
+                cleaned = cleaned[4..];
+            cleaned = cleaned.TrimStart();
+            if (cleaned.EndsWith(ticks, StringComparison.Ordinal))
+                cleaned = cleaned[..^ticks.Length];
+            cleaned = cleaned.Trim();
+        }
+
+        foreach (var candidate in JsonCandidates(cleaned))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<RepairResponse>(candidate, JsonOpts.Options);
+                if (parsed != null && (parsed.Files.Count > 0 || parsed.Summary.Length > 0))
+                {
+                    repair = parsed;
+                    return true;
+                }
+            }
+            catch (JsonException ex) { problem = ex.Message; }
+        }
+
+        if (problem.Length == 0)
+            problem = cleaned.Length == 0 ? "empty content" : "no complete JSON object found in provider content";
+        return false;
+    }
+
+    static IEnumerable<string> JsonCandidates(string text)
+    {
+        if (text.Length == 0) yield break;
+        if (text[0] == '{' && text[^1] == '}') yield return text;
+
+        bool inString = false, escape = false;
+        int depth = 0, start = -1;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (inString)
+            {
+                if (escape) { escape = false; continue; }
+                if (c == '\\') { escape = true; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            if (c == '"') { inString = true; continue; }
+            if (c == '{')
+            {
+                if (depth == 0) start = i;
+                depth++;
+            }
+            else if (c == '}' && depth > 0)
+            {
+                depth--;
+                if (depth == 0 && start >= 0)
+                {
+                    yield return text[start..(i + 1)];
+                    start = -1;
+                }
+            }
+        }
     }
 
     static List<string> RelevantFiles(string root, string diagnostics)
