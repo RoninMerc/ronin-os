@@ -39,14 +39,14 @@ jobs:
           if(!(Test-Path $iscc)){choco install innosetup -y --no-progress;$iscc="${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"}
           & $iscc forge-supervisor/installer.iss
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          Compress-Archive artifacts/publish/* artifacts/Ronin-Forge-Supervisor-0.1.2-Portable.zip -Force
-          Get-FileHash artifacts/Ronin-Forge-Supervisor-0.1.2-Setup.exe,artifacts/Ronin-Forge-Supervisor-0.1.2-Portable.zip | Format-Table -AutoSize | Out-File artifacts/SHA256SUMS.txt
+          Compress-Archive artifacts/publish/* artifacts/Ronin-Forge-Supervisor-0.1.3-Portable.zip -Force
+          Get-FileHash artifacts/Ronin-Forge-Supervisor-0.1.3-Setup.exe,artifacts/Ronin-Forge-Supervisor-0.1.3-Portable.zip | Format-Table -AutoSize | Out-File artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ronin-forge-supervisor-0.1.2
+          name: ronin-forge-supervisor-0.1.3
           path: |
-            artifacts/Ronin-Forge-Supervisor-0.1.2-Setup.exe
-            artifacts/Ronin-Forge-Supervisor-0.1.2-Portable.zip
+            artifacts/Ronin-Forge-Supervisor-0.1.3-Setup.exe
+            artifacts/Ronin-Forge-Supervisor-0.1.3-Portable.zip
             artifacts/SHA256SUMS.txt
             artifacts/build.log
             artifacts/publish.log
