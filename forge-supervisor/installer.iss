@@ -1,5 +1,5 @@
 #define MyAppName "Ronin Forge Supervisor"
-#define MyAppVersion "0.1.3"
+#define MyAppVersion "0.1.4"
 #define MyAppExeName "RoninForgeSupervisor.exe"
 [Setup]
 AppId={{7CBB59A0-6AD2-4E99-9D67-45E82C637B45}
@@ -8,7 +8,7 @@ AppVersion={#MyAppVersion}
 DefaultDirName={autopf}\Ronin Forge Supervisor
 DefaultGroupName=Ronin Forge Supervisor
 OutputDir=..\artifacts
-OutputBaseFilename=Ronin-Forge-Supervisor-0.1.3-Setup
+OutputBaseFilename=Ronin-Forge-Supervisor-0.1.4-Setup
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
