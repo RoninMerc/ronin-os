@@ -48,3 +48,4 @@ static class JsonOpts
 {
     public static JsonSerializerOptions Options { get; } = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
 }
+record ApplyResult(List<string> ChangedFiles, List<string> RejectedFiles);
