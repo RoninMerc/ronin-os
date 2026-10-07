@@ -401,12 +401,12 @@ sealed class SupervisorEngine
         foreach (var item in repair.Files)
         {
             var rel = item.Path.Replace('\\', '/').TrimStart('/');
-            bool unsafe = rel.Contains("..") || rel.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
+            bool blockedPath = rel.Contains("..") || rel.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
                           rel.Contains("/src/test/", StringComparison.OrdinalIgnoreCase) ||
                           rel.Contains("/src/androidTest/", StringComparison.OrdinalIgnoreCase) ||
                           rel.StartsWith("src/test/", StringComparison.OrdinalIgnoreCase) ||
                           rel.StartsWith("src/androidTest/", StringComparison.OrdinalIgnoreCase);
-            if (unsafe) { rejected.Add(rel); continue; }
+            if (blockedPath) { rejected.Add(rel); continue; }
 
             var dest = Path.GetFullPath(Path.Combine(p.Root, rel.Replace('/', Path.DirectorySeparatorChar)));
             var prefix = Path.GetFullPath(p.Root) + Path.DirectorySeparatorChar;
