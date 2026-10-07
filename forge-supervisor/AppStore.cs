@@ -146,6 +146,58 @@ sealed class AppStore
             .Order()
             .ToList();
 
+
+    public ProjectInfo RestoreOriginal(string id)
+    {
+        var p = GetProject(id);
+        var projectDir = Path.Combine(Root, "projects", id);
+        var zipPath = Path.Combine(projectDir, "upload.zip");
+        if (!File.Exists(zipPath)) throw new InvalidOperationException("Original imported ZIP is not available.");
+
+        var sourceRoot = Path.Combine(projectDir, "source");
+        if (Directory.Exists(sourceRoot)) Directory.Delete(sourceRoot, true);
+        Directory.CreateDirectory(sourceRoot);
+
+        using (var zip = ZipFile.OpenRead(zipPath))
+        {
+            foreach (var e in zip.Entries)
+            {
+                if (string.IsNullOrEmpty(e.Name)) continue;
+                var dest = Path.GetFullPath(Path.Combine(sourceRoot, e.FullName.Replace('/', Path.DirectorySeparatorChar)));
+                var prefix = Path.GetFullPath(sourceRoot) + Path.DirectorySeparatorChar;
+                if (!dest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Unsafe ZIP path");
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                e.ExtractToFile(dest, true);
+            }
+        }
+
+        var files = Files(sourceRoot);
+        var top = files.Select(x => x.Split('/')[0]).Distinct().ToList();
+        if (top.Count == 1 && Directory.Exists(Path.Combine(sourceRoot, top[0])))
+        {
+            var inner = Path.Combine(sourceRoot, top[0]);
+            var tmp = sourceRoot + "-flat";
+            Directory.Move(inner, tmp);
+            Directory.Delete(sourceRoot, true);
+            Directory.Move(tmp, sourceRoot);
+            files = Files(sourceRoot);
+        }
+
+        var ledger = Path.Combine(projectDir, "ledger.json");
+        if (File.Exists(ledger))
+        {
+            var archived = Path.Combine(projectDir, "ledger-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss") + ".json");
+            File.Move(ledger, archived, true);
+        }
+
+        var refreshed = new ProjectInfo(p.Id, p.Name, sourceRoot, files, DateTimeOffset.UtcNow);
+        var all = ListProjects();
+        var index = all.FindIndex(x => x.Id == id);
+        if (index >= 0) all[index] = refreshed;
+        File.WriteAllText(ProjectsFile, JsonSerializer.Serialize(all, JsonOpts.Options));
+        return refreshed;
+    }
+
     public List<LedgerEntry> LoadLedger(string id)
     {
         var f = Path.Combine(Root, "projects", id, "ledger.json");
