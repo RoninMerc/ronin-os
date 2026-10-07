@@ -62,13 +62,50 @@ small{color:#aab2bd}</style></head>
 <pre id="state">Loading...</pre></div>
 <script>
 let current="";
-async function save(){await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({providerName:pname.value,providerBaseUrl:base.value,providerApiKey:pkey.value,model:model.value,githubRepo:repo.value,githubBranch:branch.value,githubToken:gtoken.value,platform:platform.value,maxCycles:+max.value})});alert('Saved');}
-async function upload(){let f=zip.files[0];if(!f){alert('Select a ZIP');return;}let d=new FormData();d.append('file',f);d.append('name',projectName.value||f.name);let r=await fetch('/api/project/import',{method:'POST',body:d});if(!r.ok){alert(await r.text());return;}let j=await r.json();current=j.id;await loadProjects();}
-async function loadProjects(){let r=await fetch('/api/projects');let j=await r.json();projects.innerHTML=j.map(x=>'<label><input type="radio" name="p" '+(x.id==current?'checked':'')+' onclick="current=\\''+x.id+'\\'"> '+x.name+' ('+x.files.length+' files)</label><br>').join('');if(!current&&j.length)current=j[j.length-1].id;}
-async function start(){if(!current){alert('Import/select a project');return;}let r=await fetch('/api/run/start/'+current,{method:'POST'});if(!r.ok)alert(await r.text());}
-async function pause(){await fetch('/api/run/pause',{method:'POST'});}async function stop(){await fetch('/api/run/stop',{method:'POST'});}
-async function tick(){try{let r=await fetch('/api/state');let j=await r.json();state.textContent=JSON.stringify(j,null,2);}catch{}setTimeout(tick,1500);}
-loadProjects();tick();
+const el=id=>document.getElementById(id);
+async function save(){
+  await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+    providerName:el('pname').value,providerBaseUrl:el('base').value,providerApiKey:el('pkey').value,
+    model:el('model').value,githubRepo:el('repo').value,githubBranch:el('branch').value,
+    githubToken:el('gtoken').value,platform:el('platform').value,maxCycles:+el('max').value
+  })});
+  alert('Saved');
+}
+async function upload(){
+  const f=el('zip').files[0]; if(!f){alert('Select a ZIP');return;}
+  const d=new FormData(); d.append('file',f); d.append('name',el('projectName').value||f.name);
+  const r=await fetch('/api/project/import',{method:'POST',body:d});
+  if(!r.ok){alert(await r.text());return;}
+  const j=await r.json(); current=j.id; await loadProjects();
+}
+async function loadProjects(){
+  const r=await fetch('/api/projects'); const j=await r.json();
+  el('projects').innerHTML=j.map(x=>'<label><input type="radio" name="p" '+(x.id==current?'checked':'')+' onclick="current=\\''+x.id+'\\'"> '+x.name+' ('+x.files.length+' files)</label><br>').join('');
+  if(!current&&j.length)current=j[j.length-1].id;
+}
+async function start(){if(!current){alert('Import/select a project');return;}const r=await fetch('/api/run/start/'+current,{method:'POST'});if(!r.ok)alert(await r.text());}
+async function pause(){await fetch('/api/run/pause',{method:'POST'});}
+async function stop(){await fetch('/api/run/stop',{method:'POST'});}
+async function loadSaved(){
+  try{
+    const r=await fetch('/api/settings'); const j=await r.json();
+    el('pname').value=j.providerName||'OpenRouter'; el('base').value=j.providerBaseUrl||'https://openrouter.ai/api/v1';
+    el('model').value=j.model||'qwen/qwen3-coder-next'; el('repo').value=j.githubRepo||'RoninMerc/RonisOS-BPlus';
+    el('branch').value=j.githubBranch||'vanta-forge-worker'; el('platform').value=j.platform||'android'; el('max').value=j.maxCycles||50;
+    if(j.providerKeySaved) el('pkey').placeholder='Provider key saved'; if(j.githubTokenSaved) el('gtoken').placeholder='GitHub token saved';
+  }catch{}
+}
+async function tick(){
+  try{
+    const r=await fetch('/api/state',{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json(); el('state').textContent=JSON.stringify(j,null,2);
+  }catch(e){
+    el('state').textContent='Supervisor API error: '+e.message;
+  }
+  setTimeout(tick,1500);
+}
+loadSaved();loadProjects();tick();
 </script></main></body></html>
 """;
 }
