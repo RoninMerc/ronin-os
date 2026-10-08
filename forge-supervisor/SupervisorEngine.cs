@@ -131,6 +131,9 @@ sealed class SupervisorEngine
 
     static string Classify(string log)
     {
+        if (log.Contains("FileAlreadyExistsException", StringComparison.OrdinalIgnoreCase) &&
+            Regex.IsMatch(log, @"[A-Za-z_][A-Za-z0-9_]*_Impl\.java", RegexOptions.IgnoreCase))
+            return "DUPLICATE_GENERATED_TYPE";
         if (log.Contains("capacity_exhausted", StringComparison.OrdinalIgnoreCase)) return "MODEL_CAPACITY";
         if (log.Contains("resource linking failed", StringComparison.OrdinalIgnoreCase)) return "DEPENDENCY_OR_RESOURCE";
         if (log.Contains("kapt", StringComparison.OrdinalIgnoreCase)) return "KOTLIN_ANNOTATION_PROCESSING";
