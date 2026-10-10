@@ -207,6 +207,11 @@ sealed class AppStore
             fileCount = snapshot.Files.Count
         }, JsonOpts.Options));
 
+        // Keep an exact original-import archive so Restore Original works for automatic takeovers too.
+        var originalZip = Path.Combine(projectDir, "upload.zip");
+        if (File.Exists(originalZip)) File.Delete(originalZip);
+        ZipFile.CreateFromDirectory(sourceRoot, originalZip, CompressionLevel.Optimal, false);
+
         var p = new ProjectInfo(id, snapshot.ProjectName + " [Vanta takeover]", sourceRoot, Files(sourceRoot), DateTimeOffset.UtcNow);
         var all = ListProjects();
         all.Add(p);
