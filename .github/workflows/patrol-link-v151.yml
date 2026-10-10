@@ -1,0 +1,96 @@
+name: Patrol Link v1.1.41 display-only closest checkpoint
+on:
+  push:
+    branches: ['patrol-link-v151-display-only-closest-checkpoint']
+    paths:
+      - '.patrolbuild/v151/**'
+      - '.github/workflows/patrol-link-v151.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct verified v1.1.29 source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v139.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct original project and apply requested update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          PY
+      - name: Apply current Patrol Link patches
+        run: |
+          mkdir -p /tmp/patrol-v141-patch /tmp/patrol-v142-patch /tmp/patrol-v143-patch
+          unzip -q .patrolbuild/v141/patch_bundle.zip -d /tmp/patrol-v141-patch
+          python3 /tmp/patrol-v141-patch/patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v142/patch_bundle.zip -d /tmp/patrol-v142-patch
+          python3 /tmp/patrol-v142-patch/v142_patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v143/patch_bundle.zip -d /tmp/patrol-v143-patch
+          python3 /tmp/patrol-v143-patch/v143_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v144/v144_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v145/v145_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v146/v146_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v147/v147_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v148/v148_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v149/v149_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v150/v150_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v151/v151_patch.py /tmp/patrol-v134
+          grep -q "versionCode 151" /tmp/patrol-v134/app/build.gradle
+          grep -q "versionName '1.1.41'" /tmp/patrol-v134/app/build.gradle
+          grep -q 'button("CLOSE"' /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/CheckpointProximityUi.java
+          ! grep -q 'CHECKPOINT COMPLETE' /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/CheckpointProximityUi.java
+      - name: Compile and run JVM tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Verify and package
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/deliver151
+          APK=/tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk
+          OUT=/tmp/deliver151/Ronin-Patrol-Link-v1.1.41-DISPLAY-ONLY-CLOSEST-CHECKPOINT.apk
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$OUT" > /tmp/deliver151/VERIFY.txt
+          sha256sum "$OUT" | tee /tmp/deliver151/SHA256.txt
+      - name: Publish in-app update channel
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/deliver151/Ronin-Patrol-Link-v1.1.41-DISPLAY-ONLY-CLOSEST-CHECKPOINT.apk dist/Ronin-Patrol-Link-v1.1.41.apk
+          SHA=$(sha256sum dist/Ronin-Patrol-Link-v1.1.41.apk | awk '{print $1}')
+          cat > dist/patrol-link-update.json <<EOF
+          {
+            "versionCode": 151,
+            "versionName": "1.1.41",
+            "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v151-display-only-closest-checkpoint/dist/Ronin-Patrol-Link-v1.1.41.apk",
+            "sha256": "$SHA"
+          }
+          EOF
+          git config user.name "Ronin Patrol Link Build"
+          git config user.email "actions@users.noreply.github.com"
+          git add dist/Ronin-Patrol-Link-v1.1.41.apk dist/patrol-link-update.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish Patrol Link v1.1.41 update channel"
+            git push origin HEAD:patrol-link-v151-display-only-closest-checkpoint
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ronin-Patrol-Link-v1.1.41
+          path: /tmp/deliver151/
+          retention-days: 7
