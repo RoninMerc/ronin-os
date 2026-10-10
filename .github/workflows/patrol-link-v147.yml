@@ -63,6 +63,41 @@ jobs:
           grep -q "versionName '1.1.37'" /tmp/patrol-v134/app/build.gradle
           grep -q "operationalAlert" /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/VoiceManager.java
           grep -q "checkpoint ahead" /tmp/patrol-v134/app/src/main/assets/exact/canonical_phrases.txt
+      - name: Export Andy voice scripts
+        run: |
+          mkdir -p /tmp/deliver147
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('/tmp/patrol-v134/app/src/main/assets/exact/canonical_phrases.txt')
+          phrases=[x.strip() for x in src.read_text().splitlines() if x.strip()]
+          master='[pause 3]\n\n'.join(phrases)+'\n'
+          Path('/tmp/deliver147/ANDY-FULL-CURRENT-PHRASE-SCRIPT-v1.1.37.txt').write_text(master)
+          addon=[
+            'Silver Track update',
+            'Checkpoint ahead',
+            'Scan point ahead',
+            'Checkpoint in scan range',
+            'Scan complete',
+            'Seal Circuit checkpoint ahead',
+            'Rec Centre checkpoint ahead',
+            'Slipstream checkpoint ahead',
+            'Bobsled Lane checkpoint ahead',
+            'Christina checkpoint ahead',
+            'Solo Place checkpoint ahead',
+            'Impeccable checkpoint ahead',
+            'Quest checkpoint ahead',
+            'Eolo checkpoint ahead',
+            'Elusive checkpoint ahead',
+            'Serenade checkpoint ahead',
+            'Gate ahead',
+            'Solo Place gate ahead',
+            'Impeccable gate ahead',
+            'Quest gate ahead',
+            'MyCentsys Remote',
+            'Open gate'
+          ]
+          Path('/tmp/deliver147/ANDY-ADD-ON-v1.1.37.txt').write_text('[pause 3]\n\n'.join(addon)+'\n')
+          PY
       - name: Compile and run JVM tests
         working-directory: /tmp/patrol-v134
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
