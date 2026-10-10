@@ -1,0 +1,47 @@
+name: Inspect Patrol Link v1.1.36 voice source
+on:
+  workflow_dispatch:
+  push:
+    branches: ['patrol-link-v147-queued-announcements']
+    paths: ['.github/workflows/patrol-link-v147-inspect.yml']
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - name: Reconstruct verified v1.1.29 source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v139.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct original project and apply requested update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          PY
+      - name: Apply current patches
+        run: |
+          mkdir -p /tmp/patrol-v141-patch /tmp/patrol-v142-patch /tmp/patrol-v143-patch
+          unzip -q .patrolbuild/v141/patch_bundle.zip -d /tmp/patrol-v141-patch
+          python3 /tmp/patrol-v141-patch/patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v142/patch_bundle.zip -d /tmp/patrol-v142-patch
+          python3 /tmp/patrol-v142-patch/v142_patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v143/patch_bundle.zip -d /tmp/patrol-v143-patch
+          python3 /tmp/patrol-v143-patch/v143_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v144/v144_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v145/v145_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v146/v146_patch.py /tmp/patrol-v134
+      - name: Print Featherless voice source
+        run: |
+          echo '===== FeatherlessVoice.java ====='
+          cat /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/FeatherlessVoice.java
+          echo '===== PatrolEngine voice refs ====='
+          grep -n -C 5 -E 'FeatherlessVoice|voices\.speak|featherless|speak\(' /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/PatrolEngine.java || true
