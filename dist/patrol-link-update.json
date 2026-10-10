@@ -1,6 +1,6 @@
 {
-  "versionCode": 143,
-  "versionName": "1.1.33",
-  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v143-checkpoint-proximity/dist/Ronin-Patrol-Link-v1.1.33.apk",
-  "sha256": "bb18c812b33e9247ce77509dd4a653282c1cbd9f992d99df3f6e55d0e195502b"
+  "versionCode": 144,
+  "versionName": "1.1.34",
+  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v144-fixed-voice-route-order/dist/Ronin-Patrol-Link-v1.1.34.apk",
+  "sha256": "3af9c4dbdfc44d672c39df628664bc9c6280fdc424c89a425a4928deb3fe7a9a"
 }
