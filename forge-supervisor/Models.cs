@@ -10,7 +10,9 @@ record SettingsInput
     public string GithubBranch { get; init; } = "vanta-forge-worker";
     public string GithubToken { get; init; } = "";
     public string Platform { get; init; } = "android";
-    public int MaxCycles { get; init; } = 50;\n    public bool AutoWatchVanta { get; init; } = false;\n    public int WatchPollSeconds { get; init; } = 15;
+    public int MaxCycles { get; init; } = 50;
+    public bool AutoWatchVanta { get; init; } = false;
+    public int WatchPollSeconds { get; init; } = 15;
 }
 record StoredSettings
 {
@@ -22,7 +24,9 @@ record StoredSettings
     public string GithubBranch { get; set; } = "vanta-forge-worker";
     public string GithubTokenProtected { get; set; } = "";
     public string Platform { get; set; } = "android";
-    public int MaxCycles { get; set; } = 50;\n    public bool AutoWatchVanta { get; set; } = false;\n    public int WatchPollSeconds { get; set; } = 15;
+    public int MaxCycles { get; set; } = 50;
+    public bool AutoWatchVanta { get; set; } = false;
+    public int WatchPollSeconds { get; set; } = 15;
 }
 record ProjectInfo(string Id, string Name, string Root, List<string> Files, DateTimeOffset Imported);
 record LedgerEntry(int Cycle, DateTimeOffset Time, string SourceHash, string ErrorHash, string Classification, string Summary, List<string> ChangedFiles, string Outcome);
@@ -48,4 +52,6 @@ static class JsonOpts
 {
     public static JsonSerializerOptions Options { get; } = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
 }
-record ApplyResult(List<string> ChangedFiles, List<string> RejectedFiles);\nrecord VantaSourceFile(string Path, byte[] Bytes, bool IsText);\nrecord VantaRequestSnapshot(string RequestId, string ProjectName, string CommitSha, DateTimeOffset ObservedAt, List<VantaSourceFile> Files);
+record ApplyResult(List<string> ChangedFiles, List<string> RejectedFiles);
+record VantaSourceFile(string Path, byte[] Bytes, bool IsText);
+record VantaRequestSnapshot(string RequestId, string ProjectName, string CommitSha, DateTimeOffset ObservedAt, List<VantaSourceFile> Files);
