@@ -13,10 +13,9 @@ rep(root/'app/build.gradle',"versionName '1.1.37'","versionName '1.1.38'")
 p=java/'SpeechRules.java'
 s=p.read_text()
 
-old='''        String issue=exact(o.issue,alerts);
-        issue=phrases(phrases(issue,places),pronunciations);
-        String location=phrases(exact(o.property,places),pronunciations);'''
-new='''        String issue=exact(o.issue,alerts);
+needle='String issue=exact(o.issue,alerts);'
+if needle not in s: raise RuntimeError('SpeechRules issue assignment missing')
+insert='''String issue=exact(o.issue,alerts);
         String rawLocation=clean(o.property);
         String issueKey=key(issue);
         String locKey=key(rawLocation);
@@ -28,11 +27,11 @@ new='''        String issue=exact(o.issue,alerts);
                 || issueKey.equals("subject not supplied")
                 || issueKey.equals("activity description not supplied")
                 || issueKey.equals("not supplied");
-        if(harbourfront && missingIssue) issue="General Patrol";
-        issue=phrases(phrases(issue,places),pronunciations);
-        String location=phrases(exact(rawLocation,places),pronunciations);'''
-if old not in s: raise RuntimeError('SpeechRules format anchor missing')
-s=s.replace(old,new,1)
+        if(harbourfront && missingIssue) issue="General Patrol";'''
+s=s.replace(needle,insert,1)
+# Ensure the location formatter uses the already-normalised Harbourfront location variable when present.
+s=s.replace('String location=phrases(exact(o.property,places),pronunciations);',
+            'String location=phrases(exact(rawLocation,places),pronunciations);',1)
 p.write_text(s)
 
 print('Applied v1.1.38 Harbourfront fallback: missing/subject-not-given + Harbourfront BC speaks as General Patrol. Harbourfront BC.')
