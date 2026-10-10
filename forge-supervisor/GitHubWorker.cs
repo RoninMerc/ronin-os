@@ -40,13 +40,28 @@ sealed class GitHubWorker
 
         foreach (var path in Directory.GetFiles(project.Root, "*", SearchOption.AllDirectories))
         {
-            if (SupervisorEngine.IsBinary(path)) continue;
             var rel = Path.GetRelativePath(project.Root, path).Replace('\\', '/');
-            files.Add(new JsonObject
+            if (SupervisorEngine.IsBinary(path))
             {
-                ["path"] = rel,
-                ["content"] = await File.ReadAllTextAsync(path, token)
-            });
+                var ext = Path.GetExtension(path).ToLowerInvariant();
+                if (!new[] { ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico" }.Contains(ext))
+                    continue;
+                files.Add(new JsonObject
+                {
+                    ["path"] = rel,
+                    ["content"] = Convert.ToBase64String(await File.ReadAllBytesAsync(path, token)),
+                    ["encoding"] = "base64"
+                });
+            }
+            else
+            {
+                files.Add(new JsonObject
+                {
+                    ["path"] = rel,
+                    ["content"] = await File.ReadAllTextAsync(path, token),
+                    ["encoding"] = "utf-8"
+                });
+            }
         }
 
         var request = new JsonObject
