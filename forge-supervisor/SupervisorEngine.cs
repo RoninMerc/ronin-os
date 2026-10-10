@@ -120,16 +120,14 @@ sealed class SupervisorEngine
                     repair = await AskRepair(p, cfg, br.Log + rejectionContext, classification, token);
                     if (repair.Files.Count == 0)
                     {
-                        rejectionContext = "
-PREVIOUS REPAIR RESPONSE CONTAINED NO FILES. Return implementation files only.";
+                        rejectionContext = "\nPREVIOUS REPAIR RESPONSE CONTAINED NO FILES. Return implementation files only.";
                         continue;
                     }
 
                     applied = ApplyRepair(p, repair);
                     if (applied.ChangedFiles.Count > 0) break;
 
-                    rejectionContext = "
-PREVIOUS REPAIR WAS REJECTED BY THE SUPERVISOR. " +
+                    rejectionContext = "\nPREVIOUS REPAIR WAS REJECTED BY THE SUPERVISOR. " +
                         "Rejected paths: " + string.Join(", ", applied.RejectedFiles) + ". " +
                         "Do not modify tests, androidTest, .git, or unsafe paths. Repair production implementation/configuration files instead.";
                 }
@@ -180,8 +178,7 @@ PREVIOUS REPAIR WAS REJECTED BY THE SUPERVISOR. " +
         foreach (var f in Directory.GetFiles(root, "*", SearchOption.AllDirectories).OrderBy(x => x))
         {
             if (IsBinary(f)) continue;
-            sb.Append(Path.GetRelativePath(root, f).Replace('\\', '/')).Append('\0').Append(Sha(File.ReadAllText(f))).Append('
-');
+            sb.Append(Path.GetRelativePath(root, f).Replace('\\', '/')).Append('\0').Append(Sha(File.ReadAllText(f))).Append('\n');
         }
         return Sha(sb.ToString());
     }
@@ -190,8 +187,7 @@ PREVIOUS REPAIR WAS REJECTED BY THE SUPERVISOR. " +
 
     static string ErrorSignature(string log)
     {
-        var lines = log.Replace("\r", "").Split('
-');
+        var lines = log.Replace("\r", "").Split('\n');
         var selected = lines
             .Select(x => x.Trim())
             .Where(x => x.Length > 0)
@@ -210,8 +206,7 @@ PREVIOUS REPAIR WAS REJECTED BY THE SUPERVISOR. " +
             .ToList();
         if (selected.Count == 0)
             selected = lines.Select(x => x.Trim()).Where(x => x.Length > 0).TakeLast(80).ToList();
-        return string.Join("
-", selected);
+        return string.Join("\n", selected);
     }
 
     async Task<BuildResult> BuildWindows(ProjectInfo p, int cycle, CancellationToken token)
@@ -248,37 +243,22 @@ PREVIOUS REPAIR WAS REJECTED BY THE SUPERVISOR. " +
         foreach (var f in relevant)
         {
             var text = await File.ReadAllTextAsync(f, token);
-            source.Append("
---- FILE: ").Append(Path.GetRelativePath(p.Root, f).Replace('\\', '/')).Append(" ---
-");
+            source.Append("\n--- FILE: ").Append(Path.GetRelativePath(p.Root, f).Replace('\\', '/')).Append(" ---\n");
             source.Append(text[..Math.Min(text.Length, 18000)]);
         }
 
         var diag = diagnostics[..Math.Min(diagnostics.Length, 30000)];
-        var basePrompt = "You are the coding repair engine for Ronin Forge Supervisor.
-" +
-                         "Classification: " + classification + "
-" +
-                         "Repair the implementation without weakening verification.
-" +
-                         "IMMUTABLE RULES:
-" +
-                         "- Do not delete, skip, disable, rename away, or weaken tests.
-" +
-                         "- Do not set ignoreFailures=true or disable lint/build gates.
-" +
-                         "- Do not remove requested functionality merely to compile.
-" +
-                         "- Prefer the smallest coherent repair.
-" +
-                         "- Return one JSON object only. No prose before or after it.
-" +
-                         "Expected shape: {\"summary\":\"...\",\"files\":[{\"path\":\"relative/path\",\"content\":\"COMPLETE FILE\"}]}
-" +
-                         "BUILD DIAGNOSTICS:
-" + diag + "
-RELEVANT SOURCE:
-" + source;
+        var basePrompt = "You are the coding repair engine for Ronin Forge Supervisor.\n" +
+                         "Classification: " + classification + "\n" +
+                         "Repair the implementation without weakening verification.\n" +
+                         "IMMUTABLE RULES:\n" +
+                         "- Do not delete, skip, disable, rename away, or weaken tests.\n" +
+                         "- Do not set ignoreFailures=true or disable lint/build gates.\n" +
+                         "- Do not remove requested functionality merely to compile.\n" +
+                         "- Prefer the smallest coherent repair.\n" +
+                         "- Return one JSON object only. No prose before or after it.\n" +
+                         "Expected shape: {\"summary\":\"...\",\"files\":[{\"path\":\"relative/path\",\"content\":\"COMPLETE FILE\"}]}\n" +
+                         "BUILD DIAGNOSTICS:\n" + diag + "\nRELEVANT SOURCE:\n" + source;
 
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.ProviderApiKey);
@@ -289,8 +269,7 @@ RELEVANT SOURCE:
         {
             token.ThrowIfCancellationRequested();
             var prompt = basePrompt + (attempt == 1 ? "" :
-                "
-PREVIOUS RESPONSE WAS NOT A VALID REPAIR JSON OBJECT. Return the required JSON object directly now. Do not emit reasoning, markdown, commentary, or an empty answer.");
+                "\nPREVIOUS RESPONSE WAS NOT A VALID REPAIR JSON OBJECT. Return the required JSON object directly now. Do not emit reasoning, markdown, commentary, or an empty answer.");
 
             var req = new JsonObject
             {
