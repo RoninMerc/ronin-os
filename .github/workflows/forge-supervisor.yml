@@ -1,3 +1,4 @@
+# Supervisor 0.2.0 autonomous Vanta takeover build
 name: Ronin Forge Supervisor Windows
 on:
   push:
