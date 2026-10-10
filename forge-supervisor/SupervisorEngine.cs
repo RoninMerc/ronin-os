@@ -10,7 +10,7 @@ sealed class SupervisorEngine
 {
     readonly AppStore store;
     CancellationTokenSource? cts;
-    public SupervisorState State { get; } = new();
+    public SupervisorState State { get; } = new();\n    public bool IsBusy => cts is not null && !cts.IsCancellationRequested;
 
     public SupervisorEngine(AppStore s) { store = s; }
 
@@ -25,6 +25,30 @@ sealed class SupervisorEngine
 
     public void Pause() { cts?.Cancel(); Set("PAUSED", "Paused by user"); }
     public void Stop() { cts?.Cancel(); Set("STOPPED", "Stopped by user"); }
+
+    public async Task<ProjectInfo?> TakeOverLatestFailedVanta(bool startImmediately, CancellationToken token)
+    {
+        if (IsBusy) return null;
+        var cfg = store.EffectiveSettings();
+        if (string.IsNullOrWhiteSpace(cfg.GithubToken))
+            throw new InvalidOperationException("GitHub worker token is not configured.");
+
+        var snapshot = await new VantaInbox(cfg).LatestFailedRequest(store, token);
+        if (snapshot == null) return null;
+
+        var project = store.ImportVantaSnapshot(snapshot);
+        State.ProjectId = project.Id;
+        State.ProjectName = project.Name;
+        Set("TAKEOVER", "Imported failed Vanta task " + snapshot.RequestId + " directly from the worker. No ZIP or copied diagnostics required.", "VANTA_INBOX");
+        if (startImmediately) Start(project.Id);
+        return project;
+    }
+
+    public void WatchNote(string message)
+    {
+        if (!IsBusy && State.Status is "IDLE" or "WATCHING")
+            Set("WATCHING", message, "VANTA_WATCH");
+    }
 
     void Set(string status, string msg, string stage = "")
     {
