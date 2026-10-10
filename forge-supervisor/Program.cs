@@ -25,6 +25,12 @@ app.MapPost("/api/project/import", async (HttpRequest req, AppStore s) => {
     return Results.Ok(new { p.Id, p.Name, files = p.Files.Count, p.Root });
 });
 app.MapGet("/api/projects", (AppStore s) => Results.Json(s.ListProjects()));
+app.MapPost("/api/vanta/takeover", async (HttpContext context, SupervisorEngine e) => {
+    var project = await e.TakeOverLatestFailedVanta(true, context.RequestAborted);
+    return project == null
+        ? Results.NotFound(new { message = "No new failed Vanta worker task is waiting." })
+        : Results.Ok(new { project.Id, project.Name, files = project.Files.Count });
+});
 app.MapPost("/api/project/reset/{projectId}", (string projectId, AppStore s) => {
     var p = s.RestoreOriginal(projectId);
     return Results.Ok(new { p.Id, p.Name, files = p.Files.Count });
@@ -38,6 +44,30 @@ app.MapGet("/api/ledger/{projectId}", (string projectId, AppStore s) => Results.
 app.Lifetime.ApplicationStarted.Register(() => {
     Console.WriteLine("Ronin Forge Supervisor: http://127.0.0.1:8765");
     try { Process.Start(new ProcessStartInfo("http://127.0.0.1:8765") { UseShellExecute = true }); } catch { }
+
+    var engine = app.Services.GetRequiredService<SupervisorEngine>();
+    var store = app.Services.GetRequiredService<AppStore>();
+    _ = Task.Run(async () => {
+        while (!app.Lifetime.ApplicationStopping.IsCancellationRequested)
+        {
+            try
+            {
+                var cfg = store.EffectiveSettings();
+                if (cfg.AutoWatchVanta && !engine.IsBusy)
+                {
+                    engine.WatchNote("Watching the Vanta worker for a new failed task...");
+                    await engine.TakeOverLatestFailedVanta(true, app.Lifetime.ApplicationStopping);
+                }
+                await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(cfg.WatchPollSeconds, 5, 300)), app.Lifetime.ApplicationStopping);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                engine.WatchNote("Vanta watch check failed: " + ex.Message);
+                try { await Task.Delay(TimeSpan.FromSeconds(30), app.Lifetime.ApplicationStopping); } catch { break; }
+            }
+        }
+    });
 });
 
 await app.RunAsync();
@@ -82,6 +112,8 @@ small{color:#aab2bd}.project-row{padding:6px 0}
 <div class="row">
 <select id="platform"><option value="android">Android APK</option><option value="windows">Windows</option></select>
 <label>Max cycles <input id="max" type="number" value="50" min="1" max="500" style="min-width:80px"></label>
+<label><input id="autoWatch" type="checkbox" style="min-width:auto"> Auto-takeover failed Vanta tasks</label>
+<label>Poll seconds <input id="watchPoll" type="number" value="15" min="5" max="300" style="min-width:80px"></label>
 <button id="saveBtn" type="button">Save settings</button>
 </div>
 <small>Keys are protected with Windows DPAPI for the current Windows user.</small>
@@ -93,8 +125,10 @@ small{color:#aab2bd}.project-row{padding:6px 0}
 <input id="projectName" placeholder="Project name">
 <input id="zip" type="file" accept=".zip">
 <button id="importBtn" type="button">Import Vanta/source ZIP</button>
+<button id="takeoverBtn" type="button">Take over latest failed Vanta task</button>
 <button id="resetBtn" class="secondary" type="button">Restore selected to original import</button>
 </div>
+<small>With auto-takeover enabled, Vanta can submit normally. If its worker build fails, Supervisor discovers that exact source/request from GitHub, imports it and begins the repair loop automatically. No copied error, screenshot or ZIP transfer is required.</small>
 <div id="projects"></div>
 </div>
 
@@ -135,6 +169,8 @@ small{color:#aab2bd}.project-row{padding:6px 0}
     byId("branch").value = j.githubBranch || "vanta-forge-worker";
     byId("platform").value = j.platform || "android";
     byId("max").value = j.maxCycles || 50;
+    byId("autoWatch").checked = !!j.autoWatchVanta;
+    byId("watchPoll").value = j.watchPollSeconds || 15;
     if(j.providerKeySaved) byId("pkey").placeholder = "Provider key saved";
     if(j.githubTokenSaved) byId("gtoken").placeholder = "GitHub token saved";
   }
@@ -149,7 +185,9 @@ small{color:#aab2bd}.project-row{padding:6px 0}
       githubBranch: byId("branch").value,
       githubToken: byId("gtoken").value,
       platform: byId("platform").value,
-      maxCycles: Number(byId("max").value || 50)
+      maxCycles: Number(byId("max").value || 50),
+      autoWatchVanta: byId("autoWatch").checked,
+      watchPollSeconds: Number(byId("watchPoll").value || 15)
     };
     await api("/api/settings", {
       method:"POST",
@@ -206,6 +244,19 @@ small{color:#aab2bd}.project-row{padding:6px 0}
     await loadProjects();
   }
 
+  async function takeOverLatest(){
+    const response = await fetch("/api/vanta/takeover", {method:"POST"});
+    if(response.status === 404){
+      const data = await response.json();
+      alert(data.message || "No new failed Vanta task is waiting.");
+      return;
+    }
+    if(!response.ok) throw new Error(await response.text());
+    const result = await response.json();
+    current = result.id;
+    await loadProjects();
+  }
+
   async function resetProject(){
     if(!current){ alert("Select a project first."); return; }
     if(!confirm("Restore this project to the exact originally imported ZIP? Current repaired source will be replaced; the repair ledger will be archived.")) return;
@@ -236,6 +287,7 @@ small{color:#aab2bd}.project-row{padding:6px 0}
   window.addEventListener("DOMContentLoaded", async function(){
     byId("saveBtn").addEventListener("click", function(){ saveSettings().catch(function(e){ alert(e.message); }); });
     byId("importBtn").addEventListener("click", function(){ importProject().catch(function(e){ alert(e.message); }); });
+    byId("takeoverBtn").addEventListener("click", function(){ takeOverLatest().catch(function(e){ alert(e.message); }); });
     byId("resetBtn").addEventListener("click", function(){ resetProject().catch(function(e){ alert(e.message); }); });
     byId("runBtn").addEventListener("click", function(){ runSupervisor().catch(function(e){ alert(e.message); }); });
     byId("pauseBtn").addEventListener("click", function(){ pauseSupervisor().catch(function(e){ alert(e.message); }); });
