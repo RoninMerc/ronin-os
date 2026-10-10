@@ -1,6 +1,6 @@
 {
-  "versionCode": 149,
-  "versionName": "1.1.39",
-  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v149-fullscreen-checkpoints-no-gates/dist/Ronin-Patrol-Link-v1.1.39.apk",
-  "sha256": "10fb09734d321eb694700d4049be7d255d2a7ce021361f3d47247ba120378ec7"
+  "versionCode": 150,
+  "versionName": "1.1.40",
+  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v150-checkpoint-dismiss-fix/dist/Ronin-Patrol-Link-v1.1.40.apk",
+  "sha256": "bdf277c16bdc2802edfb7057a5fda7221b4e85af08466b46f53f609e769a5ca6"
 }
