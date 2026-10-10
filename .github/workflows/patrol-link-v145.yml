@@ -56,8 +56,6 @@ jobs:
       - name: Apply v1.1.35 checkpoint editor, photos and gate prompts
         run: |
           python3 .patrolbuild/v145/v145_patch.py /tmp/patrol-v134
-          mkdir -p /tmp/patrol-v134/app/src/main/assets/checkpoint_photos
-          unzip -q .patrolbuild/v145/preloaded_photos.zip -d /tmp/patrol-v134/app/src/main/assets/checkpoint_photos
           grep -q "versionCode 145" /tmp/patrol-v134/app/build.gradle
           grep -q "versionName '1.1.35'" /tmp/patrol-v134/app/build.gradle
           grep -q "CENTSYS_PACKAGE" /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/CheckpointProximityUi.java
