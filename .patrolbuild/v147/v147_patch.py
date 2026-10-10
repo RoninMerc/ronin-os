@@ -12,37 +12,12 @@ rep(root/'app/build.gradle',"versionName '1.1.36'","versionName '1.1.37'")
 
 # Add static operational alert access to active exact voice manager.
 p=java/'VoiceManager.java'; s=p.read_text()
-old='''    private volatile String status="Exact WAV required",lastError="",lastSpokenText="";
-    private volatile int played,failed,dropped; private volatile float lastPlaybackRate=1f;
-    private List<String> canonicalCache;
-
-    public VoiceManager(Context context,SharedPreferences prefs){
-        this.context=context.getApplicationContext();this.prefs=prefs;this.speechSettings=new SpeechPreferences(this.context);
-        migrateProfiles();
-        refreshStatus();
-    }'''
-new='''    private volatile String status="Exact WAV required",lastError="",lastSpokenText="";
-    private volatile int played,failed,dropped; private volatile float lastPlaybackRate=1f;
-    private List<String> canonicalCache;
-    private static volatile VoiceManager ACTIVE_INSTANCE;
-
-    public VoiceManager(Context context,SharedPreferences prefs){
-        this.context=context.getApplicationContext();this.prefs=prefs;this.speechSettings=new SpeechPreferences(this.context);
-        ACTIVE_INSTANCE=this;
-        migrateProfiles();
-        refreshStatus();
-    }
-
-    public static void operationalAlert(String text){
-        VoiceManager v=ACTIVE_INSTANCE;
-        if(v==null||text==null||text.trim().isEmpty())return;
-        v.main.post(()->{
-            if(!v.prefs.getBoolean("voice",true))return;
-            v.enqueue(v.activeProfile().id,SpeechRules.clean(text),v.speechSettings.speed());
-        });
-    }'''
-if old not in s: raise RuntimeError('VoiceManager constructor anchor not found')
-s=s.replace(old,new,1)
+import re
+ctor=re.search(r'\n    public VoiceManager\(Context context,SharedPreferences prefs\)\{',s)
+if not ctor: raise RuntimeError('VoiceManager constructor not found')
+insert='''\n    private static volatile VoiceManager ACTIVE_INSTANCE;\n\n    public static void operationalAlert(String text){\n        VoiceManager v=ACTIVE_INSTANCE;\n        if(v==null||text==null||text.trim().isEmpty())return;\n        v.main.post(()->{\n            if(!v.prefs.getBoolean("voice",true))return;\n            v.enqueue(v.activeProfile().id,SpeechRules.clean(text),v.speechSettings.speed());\n        });\n    }\n'''
+s=s[:ctor.start()]+insert+s[ctor.start():]
+s=s.replace('public VoiceManager(Context context,SharedPreferences prefs){','public VoiceManager(Context context,SharedPreferences prefs){\n        ACTIVE_INSTANCE=this;',1)
 p.write_text(s)
 
 # Add operational proximity voice alerts.
