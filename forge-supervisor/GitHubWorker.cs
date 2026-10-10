@@ -12,7 +12,7 @@ sealed class GitHubWorker
     {
         cfg = c;
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", c.GithubToken);
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("RoninForgeSupervisor/0.1");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("RoninForgeSupervisor/0.2");
         http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
 
