@@ -60,8 +60,7 @@ sealed class VantaInbox
                     name.StartsWith("forge-supervisor-", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                var requestId = Path.GetFileNameWithoutExtension(name);
-                if (store.HasSeenVantaRequest(requestId)) continue;
+                var fileRequestId = Path.GetFileNameWithoutExtension(name);
 
                 var runs = await Get(
                     "https://api.github.com/repos/" + owner + "/" + repo +
@@ -94,6 +93,9 @@ sealed class VantaInbox
                 var raw = Encoding.UTF8.GetString(Convert.FromBase64String(b64));
                 var request = JsonNode.Parse(raw) as JsonObject;
                 if (request == null) continue;
+
+                var requestId = request["request_id"]?.GetValue<string>() ?? fileRequestId;
+                if (store.HasSeenVantaRequest(requestId)) continue;
 
                 var project = request["project"] as JsonObject;
                 var files = project?["files"]?.AsArray();
