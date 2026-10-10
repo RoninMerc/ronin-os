@@ -8,6 +8,7 @@ sealed class AppStore
     public string Root { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RoninForgeSupervisor");
     string SettingsFile => Path.Combine(Root, "settings.json");
     string ProjectsFile => Path.Combine(Root, "projects.json");
+    string SeenVantaFile => Path.Combine(Root, "seen-vanta-requests.json");
 
     public AppStore()
     {
@@ -53,7 +54,9 @@ sealed class AppStore
             GithubBranch = s.GithubBranch,
             GithubToken = Unprotect(s.GithubTokenProtected),
             Platform = s.Platform,
-            MaxCycles = s.MaxCycles
+            MaxCycles = s.MaxCycles,
+            AutoWatchVanta = s.AutoWatchVanta,
+            WatchPollSeconds = s.WatchPollSeconds
         };
     }
 
@@ -70,7 +73,9 @@ sealed class AppStore
             s.GithubBranch,
             githubTokenSaved = !string.IsNullOrEmpty(s.GithubTokenProtected),
             s.Platform,
-            s.MaxCycles
+            s.MaxCycles,
+            s.AutoWatchVanta,
+            s.WatchPollSeconds
         };
     }
 
@@ -87,7 +92,9 @@ sealed class AppStore
             GithubBranch = i.GithubBranch,
             GithubTokenProtected = string.IsNullOrWhiteSpace(i.GithubToken) ? old.GithubTokenProtected : Protect(i.GithubToken),
             Platform = i.Platform,
-            MaxCycles = Math.Clamp(i.MaxCycles, 1, 500)
+            MaxCycles = Math.Clamp(i.MaxCycles, 1, 500),
+            AutoWatchVanta = i.AutoWatchVanta,
+            WatchPollSeconds = Math.Clamp(i.WatchPollSeconds, 5, 300)
         };
         File.WriteAllText(SettingsFile, JsonSerializer.Serialize(s, JsonOpts.Options));
     }
@@ -145,6 +152,68 @@ sealed class AppStore
             .Select(x => Path.GetRelativePath(root, x).Replace('\\', '/'))
             .Order()
             .ToList();
+
+    public bool HasSeenVantaRequest(string requestId) => LoadSeenVanta().Contains(requestId, StringComparer.Ordinal);
+
+    public void MarkSeenVantaRequest(string requestId)
+    {
+        var seen = LoadSeenVanta();
+        if (!seen.Contains(requestId, StringComparer.Ordinal))
+        {
+            seen.Add(requestId);
+            if (seen.Count > 500) seen = seen.TakeLast(500).ToList();
+            File.WriteAllText(SeenVantaFile, JsonSerializer.Serialize(seen, JsonOpts.Options));
+        }
+    }
+
+    List<string> LoadSeenVanta()
+    {
+        if (!File.Exists(SeenVantaFile)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(File.ReadAllText(SeenVantaFile), JsonOpts.Options) ?? []; }
+        catch { return []; }
+    }
+
+    public ProjectInfo ImportVantaSnapshot(VantaRequestSnapshot snapshot)
+    {
+        if (HasSeenVantaRequest(snapshot.RequestId))
+            throw new InvalidOperationException("This Vanta request was already imported.");
+
+        var id = Guid.NewGuid().ToString("N");
+        var projectDir = Path.Combine(Root, "projects", id);
+        var sourceRoot = Path.Combine(projectDir, "source");
+        Directory.CreateDirectory(sourceRoot);
+
+        foreach (var file in snapshot.Files)
+        {
+            var rel = file.Path.Replace('\\', '/').TrimStart('/');
+            if (rel.Length == 0 || rel.Contains("..", StringComparison.Ordinal) || rel.StartsWith(".git/", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Unsafe Vanta source path: " + file.Path);
+
+            var dest = Path.GetFullPath(Path.Combine(sourceRoot, rel.Replace('/', Path.DirectorySeparatorChar)));
+            var prefix = Path.GetFullPath(sourceRoot) + Path.DirectorySeparatorChar;
+            if (!dest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Unsafe Vanta source path: " + file.Path);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.WriteAllBytes(dest, file.Bytes);
+        }
+
+        File.WriteAllText(Path.Combine(projectDir, "vanta-source.json"), JsonSerializer.Serialize(new
+        {
+            snapshot.RequestId,
+            snapshot.ProjectName,
+            snapshot.CommitSha,
+            snapshot.ObservedAt,
+            fileCount = snapshot.Files.Count
+        }, JsonOpts.Options));
+
+        var p = new ProjectInfo(id, snapshot.ProjectName + " [Vanta takeover]", sourceRoot, Files(sourceRoot), DateTimeOffset.UtcNow);
+        var all = ListProjects();
+        all.Add(p);
+        File.WriteAllText(ProjectsFile, JsonSerializer.Serialize(all, JsonOpts.Options));
+        MarkSeenVantaRequest(snapshot.RequestId);
+        return p;
+    }
 
 
     public ProjectInfo RestoreOriginal(string id)
