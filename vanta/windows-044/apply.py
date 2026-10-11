@@ -53,7 +53,7 @@ edit('src/Vanta.Windows/ActivityPage.cs','for (int round = 1; round <= 6; round+
 # Update existing repair acceptance cases to assert the new compiler-led contract rather than the retired repair planner.
 edit('tests/Vanta.Tests/WorkflowTests.cs',
      'int calls = 0; var h = new Handler(async (r, _) => { calls++; string body = await r.Content!.ReadAsStringAsync(); if (calls == 1) return Answer("Implement a Windows console application."); if (calls == 2) return Answer(SourceJson(true)); if (body.Contains("ACTUAL BUILD LOG")) return Answer(SourceJson(false)); return Answer("{\\\"approved\\\":true,\\\"notes\\\":\\\"Compiler evidence reviewed; generated-app runtime tests were not provided.\\\",\\\"files\\\":[]}"); });',
-     'int calls = 0; var h = new Handler(async (r, ct) => { calls++; var ignored = await r.Content!.ReadAsStringAsync(ct); if (calls == 1) return Answer("Implement a Windows console application."); if (calls == 2) return Answer(SourceJson(true)); if (calls == 3) return Answer(new JsonObject { ["path"] = "Program.cs", ["content"] = "Console.WriteLine(\\\"VANTA_REAL_BUILD_OK\\\");\\n// compiler-led repair", ["encoding"] = "utf-8" }.ToJsonString()); throw new Exception("Unexpected extra generation request " + calls); });')
+     'int calls = 0; var h = new Handler(async (r, ct) => { calls++; var body = await r.Content!.ReadAsStringAsync(ct); if (calls == 1) return Answer("Implement a Windows console application."); if (calls == 2) return Answer(SourceJson(true)); if (body.Contains("VantaProbe.csproj", StringComparison.OrdinalIgnoreCase)) return Answer(new JsonObject { ["path"] = "VantaProbe.csproj", ["content"] = "<Project Sdk=\\\"Microsoft.NET.Sdk\\\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>", ["encoding"] = "utf-8" }.ToJsonString()); if (body.Contains("Program.cs", StringComparison.OrdinalIgnoreCase)) return Answer(new JsonObject { ["path"] = "Program.cs", ["content"] = "Console.WriteLine(\\\"VANTA_REAL_BUILD_OK\\\");\\n// compiler-led repair", ["encoding"] = "utf-8" }.ToJsonString()); throw new Exception("Unexpected repair target at request " + calls); });')
 
 p=root/'tests/Vanta.Tests/ForgeReliabilityTests.cs'
 text=p.read_text(encoding='utf-8')
@@ -61,8 +61,15 @@ start=text.index('        await Test("043: all planned mandatory contexts checke
 end=text.index('        await Test("043: interrupted per-file generation resumes only the unfinished file"', start)
 replacement='''        await Test("044: compiler-led repair skips the retired repair-plan call and leaves unrelated large source intact", async () => {
             int calls = 0;
-            var h = Sync(_ => {
+            var h = Sync(r => {
                 calls++;
+                string body = r.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                if (body.Contains("VantaProbe.csproj", StringComparison.OrdinalIgnoreCase))
+                    return Answer(new JsonObject {
+                        ["path"] = "VantaProbe.csproj",
+                        ["content"] = "<Project Sdk=\\\"Microsoft.NET.Sdk\\\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>",
+                        ["encoding"] = "utf-8"
+                    }.ToJsonString());
                 return Answer(new JsonObject {
                     ["path"] = "Program.cs",
                     ["content"] = "Console.WriteLine(\\\"VANTA_REAL_BUILD_OK\\\");\\n// targeted repair",
