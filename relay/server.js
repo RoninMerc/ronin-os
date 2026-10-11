@@ -8,6 +8,8 @@ const vehicleDeletes = new Map();
 const observations = new Map();
 let reportTemplate = { text:'', updatedAt:0, source:'' };
 let authBundle = { bundle:'', updatedAt:0, source:'' };
+const silverEvents = new Map();
+let silverMasterSeenAt = 0;
 
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -82,6 +84,16 @@ function cleanObservation(v) {
     address:cleanText(v && v.address,240), latitude:lat, longitude:lon, accuracy,
     observed_at:observed, uncertain:!!(v && v.uncertain)
   };
+}
+function cleanSilverEvent(v) {
+  const id=cleanText(v && v.id,128), guard=cleanText(v && v.guard,96), property=cleanText(v && v.property,160),
+        issue=cleanText(v && v.issue,220), recordedText=cleanText(v && v.recordedText,160), recordedAt=Number(v && v.recordedAt);
+  if(id.length<1 || !Number.isFinite(recordedAt) || recordedAt<=0 || recordedAt>Date.now()+86400000) throw new Error('invalid silver event');
+  return {id,guard,property,issue,recordedText,recordedAt};
+}
+function silverSnapshot() {
+  const events=[...silverEvents.values()].sort((a,b)=>a.recordedAt-b.recordedAt).slice(-160);
+  return {ok:true,serverTime:Date.now(),masterSeenAt:silverMasterSeenAt,events};
 }
 function vehicleSnapshot() {
   return {
@@ -171,6 +183,25 @@ http.createServer((req,res)=>{
     authBundle={bundle:'',updatedAt:Date.now(),source:''};
     return send(res,200,{ok:true});
   }
+  if (req.method === 'POST' && u.pathname === '/api/silver-feed') {
+    let raw=''; let tooLarge=false;
+    req.on('data',d=>{ if(tooLarge)return; raw+=d; if(raw.length>500000){tooLarge=true;req.destroy();} });
+    req.on('end',()=>{
+      if(tooLarge) return;
+      try{
+        const b=JSON.parse(raw||'{}'), rows=Array.isArray(b.events)?b.events:[];
+        if(rows.length>250) return send(res,413,{ok:false,error:'too many events'});
+        silverMasterSeenAt=Date.now();
+        for(const row of rows){const clean=cleanSilverEvent(row);silverEvents.set(clean.id,clean);}
+        if(silverEvents.size>300){
+          const sorted=[...silverEvents.values()].sort((a,b)=>a.recordedAt-b.recordedAt);
+          silverEvents.clear(); for(const e of sorted.slice(-220))silverEvents.set(e.id,e);
+        }
+        return send(res,200,silverSnapshot());
+      }catch(e){return send(res,400,{ok:false,error:'invalid silver feed'});}
+    }); return;
+  }
+  if (req.method === 'GET' && u.pathname === '/api/silver-feed') return send(res,200,silverSnapshot());
   if (req.method === 'GET' && u.pathname === '/api/fleet') {
     const out=['P1','P2','P3'].map(id=>fleet.get(id)||{patrolId:id,onDuty:false,receivedAt:0,state:'UNKNOWN',history:[]});
     return send(res,200,{ok:true,serverTime:Date.now(),patrols:out});
