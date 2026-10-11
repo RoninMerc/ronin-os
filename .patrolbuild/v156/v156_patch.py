@@ -73,7 +73,7 @@ helpers='''    private int mappedCount(){
 
     private void showSyncRecovery(){
         LinearLayout f=new LinearLayout(activity);f.setOrientation(LinearLayout.VERTICAL);f.setPadding(dp(18),dp(8),dp(18),dp(8));
-        TextView state=text("LOCAL: "+checkpoints.size()+" checkpoints · "+mappedCount()+" mapped · "+photoCount()+" photos\nREMOTE: "+CheckpointSyncClient.status(activity),13,0xffeef4f9,false);
+        TextView state=text("LOCAL: "+checkpoints.size()+" checkpoints · "+mappedCount()+" mapped · "+photoCount()+" photos\\nREMOTE: "+CheckpointSyncClient.status(activity),13,0xffeef4f9,false);
         f.addView(state);f.addView(gap(10));
 
         f.addView(button("DOWNLOAD SHARED CHECKPOINTS",()->{
