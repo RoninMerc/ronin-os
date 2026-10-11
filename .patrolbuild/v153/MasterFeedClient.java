@@ -3,6 +3,7 @@ import android.content.Context;
 import android.os.*;
 import org.json.*;
 import java.net.*;
+import javax.net.ssl.HttpsURLConnection;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
