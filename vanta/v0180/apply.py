@@ -133,7 +133,19 @@ text=p.read_text()
 if text.count(needle)!=1: raise RuntimeError('build failure fingerprint anchor mismatch')
 p.write_text(text.replace(needle,replacement))
 
-# 6) Version.
+# 6) Existing tests keep enforcing a hard action ceiling; update only the expected ceiling value.
+edit(
+ 'app/src/test/java/com/ronin/vanta/Capacity177RegressionTest.java',
+ '  @Test public void actionLimitIsNotIncreased()throws Exception{\n    JSONObject s=state().put("actions",8);assertFalse(plan(policy(),s,null,"scope",1000,-1).retry);assertEquals(8,s.getInt("actions"));\n  }',
+ '  @Test public void actionLimitIsNotIncreased()throws Exception{\n    JSONObject s=state().put("actions",ForgeRecovery.MAX_ACTIONS);assertFalse(plan(policy(),s,null,"scope",1000,-1).retry);assertEquals(ForgeRecovery.MAX_ACTIONS,s.getInt("actions"));\n  }'
+)
+edit(
+ 'app/src/test/java/com/ronin/vanta/AutomaticForgeRecoveryTest.java',
+ '    assertNotNull(ForgeRecovery.limit(policy(), state().put("actions", 8)));',
+ '    assertNotNull(ForgeRecovery.limit(policy(), state().put("actions", ForgeRecovery.MAX_ACTIONS)));'
+)
+
+# 7) Version.
 p=root/'app/build.gradle'
 text=p.read_text()
 if text.count('versionCode 179')!=1 or text.count("versionName '0.17.9'")!=1:
