@@ -1,6 +1,6 @@
 {
-  "versionCode": 153,
-  "versionName": "1.1.43",
-  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v153-master-feed/dist/Ronin-Patrol-Link-v1.1.43.apk",
-  "sha256": "070a3b5a20be95efb54f3a6898ae2ff0f72545db2767e37920a26f95f81b04cc"
+  "versionCode": 154,
+  "versionName": "1.1.44",
+  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v154-checkpoint-sync-master-role/dist/Ronin-Patrol-Link-v1.1.44.apk",
+  "sha256": "b872fb66704d610995a6dca670377389379d424dff687296b7b617a7a8e3ea11"
 }
