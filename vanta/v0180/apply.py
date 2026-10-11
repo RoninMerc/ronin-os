@@ -24,13 +24,6 @@ edit(
  '        AgenticRepair.author(\n            prefix,'
 )
 
-# Repair UX no longer describes an LLM plan because the repair path does not buy one.
-edit(
- 'app/src/main/java/com/ronin/vanta/JobOperations.java',
- '      e.event(j, "planning_started", log == null ? "PLANNING SOURCE" : "PLANNING REPAIR",\n          "Preparing a compact file plan with the selected coding model. Saved project files are retained; a previous file count is not this plan\\'s progress.");',
- '      e.event(j, "planning_started", log == null ? "PLANNING SOURCE" : "TARGETING REPAIR",\n          log == null\n              ? "Preparing a compact file plan with the selected coding model. Saved project files are retained; a previous file count is not this plan\\'s progress."\n              : "Reading the actual compiler file/line diagnostics and selecting a small production-file repair batch. Tests and unimplicated files remain unchanged.");'
-)
-
 # 2) Build attempts become a progress-driven ceiling, not a six-round hard stop.
 edit(
  'app/src/main/java/com/ronin/vanta/ForgeClient.java',
