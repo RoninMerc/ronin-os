@@ -74,7 +74,7 @@ replacement='''        await Test("044: compiler-led repair skips the retired re
             p.Files.Add(new() { Path = "Huge.cs", Content = "// unrelated optional source\\n" + new string('x', 40000) });
             var j = SeedForge(s, p, new BuildReport(false, "", "", "Program.cs: compiler fixture error", "Not passed", "Controlled compiler fixture"));
             s.Resume(j.Id); var done = await Finish(s.Jobs, j.Id, 120);
-            Equal("Complete", done.State); Equal(1, calls);
+            True(done.State == "Complete", done.Error + "\n" + string.Join("\n", done.Events.Select(x => x.Stage + ": " + x.Text))); Equal(1, calls);
             var saved = s.TaskSource(j.Id);
             Equal(40029, saved.Files.Single(f => f.Path == "Huge.cs").Content.Length);
             True(saved.Files.Single(f => f.Path == "Program.cs").Content.Contains("targeted repair"));
