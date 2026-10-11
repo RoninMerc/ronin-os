@@ -1,0 +1,47 @@
+name: Vanta 0.18.0 Agentic Side-by-Side QA
+on:
+  push:
+    branches: ['fix/vanta-0180-agentic-forge']
+    paths: ['.github/workflows/vanta-0180-sideby.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.18.0-build
+          run-id: 38162425069
+          github-token: ${{ github.token }}
+          path: v180
+      - name: Build side-by-side agentic test package from verified 0.18.0 source
+        run: |
+          set -euo pipefail
+          mkdir source out
+          unzip -q v180/Ronin-Vanta-0.18.0-Source.zip -d source
+          gradle -p source -PvantaApplicationId=com.ronin.vanta.agentic             --no-daemon --max-workers=2 testDebugUnitTest assembleRelease --stacktrace             2>&1 | tee out/build.log
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk out/Ronin-Vanta-0.18.0-Agentic-QA-unsigned.apk
+          gradle -p source --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign             --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey             --out out/Ronin-Vanta-0.18.0-Agentic-QA.apk             out/Ronin-Vanta-0.18.0-Agentic-QA-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs             out/Ronin-Vanta-0.18.0-Agentic-QA.apk > out/signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging             out/Ronin-Vanta-0.18.0-Agentic-QA.apk > out/package.txt
+          sha256sum out/Ronin-Vanta-0.18.0-Agentic-QA.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanta-0.18.0-agentic-sideby
+          path: out/
+          if-no-files-found: error
