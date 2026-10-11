@@ -168,15 +168,6 @@ public final class AgenticRepair {
       }
     }
 
-    String primary = ForgeRepairContext.primary(diagnostics);
-    if (editableProduction(files, primary)) {
-      candidates.remove(primary);
-      LinkedHashSet<String> first = new LinkedHashSet<>();
-      first.add(primary);
-      first.addAll(candidates);
-      candidates = first;
-    }
-
     return new ArrayList<>(candidates);
   }
 
