@@ -53,7 +53,7 @@ edit('src/Vanta.Windows/ActivityPage.cs','for (int round = 1; round <= 6; round+
 # Update existing repair acceptance cases to assert the new compiler-led contract rather than the retired repair planner.
 edit('tests/Vanta.Tests/WorkflowTests.cs',
      'int calls = 0; var h = new Handler(async (r, _) => { calls++; string body = await r.Content!.ReadAsStringAsync(); if (calls == 1) return Answer("Implement a Windows console application."); if (calls == 2) return Answer(SourceJson(true)); if (body.Contains("ACTUAL BUILD LOG")) return Answer(SourceJson(false)); return Answer("{\\\"approved\\\":true,\\\"notes\\\":\\\"Compiler evidence reviewed; generated-app runtime tests were not provided.\\\",\\\"files\\\":[]}"); });',
-     'int calls = 0; var h = new Handler(async (r, ct) => { calls++; var body = await r.Content!.ReadAsStringAsync(ct); if (calls == 1) return Answer("Implement a Windows console application."); if (calls == 2) return Answer(SourceJson(true)); if (body.Contains("VantaProbe.csproj", StringComparison.OrdinalIgnoreCase)) return Answer(new JsonObject { ["path"] = "VantaProbe.csproj", ["content"] = "<Project Sdk=\\\"Microsoft.NET.Sdk\\\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>", ["encoding"] = "utf-8" }.ToJsonString()); if (body.Contains("Program.cs", StringComparison.OrdinalIgnoreCase)) return Answer(new JsonObject { ["path"] = "Program.cs", ["content"] = "Console.WriteLine(\\\"VANTA_REAL_BUILD_OK\\\");\\n// compiler-led repair", ["encoding"] = "utf-8" }.ToJsonString()); throw new Exception("Unexpected repair target at request " + calls); });')
+     'int calls = 0; var h = new Handler(async (r, ct) => { calls++; var body = await r.Content!.ReadAsStringAsync(ct); if (calls == 1) return Answer("Implement a Windows console application."); if (calls == 2) return Answer(SourceJson(true)); if (calls == 3) return Answer(new JsonObject { ["path"] = "VantaProbe.csproj", ["content"] = "<Project Sdk=\\\"Microsoft.NET.Sdk\\\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>", ["encoding"] = "utf-8" }.ToJsonString()); if (calls == 4) return Answer(new JsonObject { ["path"] = "Program.cs", ["content"] = "Console.WriteLine(\\\"VANTA_REAL_BUILD_OK\\\");\\n// compiler-led repair", ["encoding"] = "utf-8" }.ToJsonString()); throw new Exception("Unexpected repair target at request " + calls); });')
 
 p=root/'tests/Vanta.Tests/ForgeReliabilityTests.cs'
 text=p.read_text(encoding='utf-8')
@@ -63,25 +63,27 @@ replacement='''        await Test("044: compiler-led repair skips the retired re
             int calls = 0;
             var h = Sync(r => {
                 calls++;
-                string body = r.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
-                if (body.Contains("VantaProbe.csproj", StringComparison.OrdinalIgnoreCase))
+                var ignored = r.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                if (calls == 1)
+                    return Answer(new JsonObject {
+                        ["path"] = "Program.cs",
+                        ["content"] = "Console.WriteLine(\\\"VANTA_REAL_BUILD_OK\\\");\\n// targeted repair",
+                        ["encoding"] = "utf-8"
+                    }.ToJsonString());
+                if (calls == 2)
                     return Answer(new JsonObject {
                         ["path"] = "VantaProbe.csproj",
                         ["content"] = "<Project Sdk=\\\"Microsoft.NET.Sdk\\\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>",
                         ["encoding"] = "utf-8"
                     }.ToJsonString());
-                return Answer(new JsonObject {
-                    ["path"] = "Program.cs",
-                    ["content"] = "Console.WriteLine(\\\"VANTA_REAL_BUILD_OK\\\");\\n// targeted repair",
-                    ["encoding"] = "utf-8"
-                }.ToJsonString());
+                throw new Exception("Unexpected targeted repair call " + calls);
             });
             using var s = Service(h); s.Store.Save("settings", "build", new BuildPreferences { TrustLocalProjects = true });
             var p = ProjectFiles.Parse(SourceJson(false), "Windows"); p.ModelKey = Model().Key;
             p.Files.Add(new() { Path = "Huge.cs", Content = "// unrelated optional source\\n" + new string('x', 40000) });
             var j = SeedForge(s, p, new BuildReport(false, "", "", "Program.cs: compiler fixture error", "Not passed", "Controlled compiler fixture"));
             s.Resume(j.Id); var done = await Finish(s.Jobs, j.Id, 120);
-            True(done.State == "Complete", done.Error + "\\n" + string.Join("\\n", done.Events.Select(x => x.Stage + ": " + x.Text))); Equal(1, calls);
+            True(done.State == "Complete", done.Error + "\\n" + string.Join("\\n", done.Events.Select(x => x.Stage + ": " + x.Text))); Equal(2, calls);
             var saved = s.TaskSource(j.Id);
             Equal(40029, saved.Files.Single(f => f.Path == "Huge.cs").Content.Length);
             True(saved.Files.Single(f => f.Path == "Program.cs").Content.Contains("targeted repair"));
