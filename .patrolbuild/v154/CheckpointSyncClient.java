@@ -28,7 +28,7 @@ final class CheckpointSyncClient {
             String status="Checkpoint sync published";
             try{
                 JSONObject body=new JSONObject().put("checkpoints",checkpoints);
-                JSONObject response=new JSONObject(request("POST","/v1/checkpoints","x-ronin-master-key",key,body,7_000_000));
+                JSONObject response=new JSONObject(request("POST","/v1/checkpoints","x-ronin-master-key",key,body,13_000_000));
                 c.getSharedPreferences("patrol_checkpoint_sync_v1",0).edit()
                     .putLong("last_publish_at",System.currentTimeMillis())
                     .putLong("generation",response.optLong("generation",0))
@@ -48,7 +48,7 @@ final class CheckpointSyncClient {
         IO.execute(()->{
             JSONObject result=null;String error=null;
             try{
-                result=new JSONObject(request("GET","/v1/checkpoints","x-ronin-reader-key",key,null,7_000_000));
+                result=new JSONObject(request("GET","/v1/checkpoints","x-ronin-reader-key",key,null,13_000_000));
                 c.getSharedPreferences("patrol_checkpoint_sync_v1",0).edit()
                     .putLong("last_poll_at",System.currentTimeMillis())
                     .putLong("generation",result.optLong("generation",0))
@@ -80,7 +80,7 @@ final class CheckpointSyncClient {
         c.setUseCaches(false);c.setInstanceFollowRedirects(false);
         if(body!=null){
             byte[] data=body.toString().getBytes(StandardCharsets.UTF_8);
-            if(data.length>6_500_000)throw new IOException("Checkpoint payload too large");
+            if(data.length>12_500_000)throw new IOException("Checkpoint payload too large");
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type","application/json");
             c.setFixedLengthStreamingMode(data.length);
