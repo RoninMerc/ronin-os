@@ -105,7 +105,7 @@ public final class FeatherlessVoiceUi {
    Spinner source=spinner(new String[]{"Exact WAV / Tiff (offline)","Featherless AI (cloud)"});
    source.setSelection(voice.selected()?1:0);body.addView(source);
    body.addView(text("Existing Featherless API key",13,MUTED));
-   EditText key=input(voice.hasKey()?"••••••••","","" .isEmpty()?InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_CLASS_TEXT);
+   EditText key=input(voice.hasKey()?"••••••••":"","Bearer API key",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
    key.setHint("Paste a key only if one is not already saved");body.addView(key);
    body.addView(text("Speech model",13,MUTED));
    final ArrayList<String> modelIds=new ArrayList<>(Arrays.asList(FeatherlessCatalog.MODEL_IDS));
