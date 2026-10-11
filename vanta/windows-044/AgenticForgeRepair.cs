@@ -28,9 +28,10 @@ public static class ForgeAgenticRepair
             int score = 100;
             foreach (var line in diagnostics.Split('\n'))
             {
-                if (!line.Contains(file.Path, StringComparison.OrdinalIgnoreCase)
-                    && !line.Contains(Path.GetFileName(file.Path) + ":", StringComparison.OrdinalIgnoreCase)
-                    && !line.Contains(Path.GetFileName(file.Path) + "(", StringComparison.OrdinalIgnoreCase))
+                string normalizedLine = line.Replace('\\', '/');
+                if (!normalizedLine.Contains(file.Path.Replace('\\','/'), StringComparison.OrdinalIgnoreCase)
+                    && !normalizedLine.Contains(Path.GetFileName(file.Path) + ":", StringComparison.OrdinalIgnoreCase)
+                    && !normalizedLine.Contains(Path.GetFileName(file.Path) + "(", StringComparison.OrdinalIgnoreCase))
                     continue;
                 count++;
                 string lower = line.ToLowerInvariant();
