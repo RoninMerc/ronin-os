@@ -87,10 +87,6 @@ p.write_text(text,encoding='utf-8')
 edit('tests/Vanta.Tests/WorkflowTests.cs',
      'var done = await Finish(s.Jobs, j.Id, 300); Equal("Complete", done.State); True(done.Events.Any(x => x.Stage == "Fixing"));',
      'var done = await Finish(s.Jobs, j.Id, 300); True(done.State == "Complete", done.Error + "\\n" + string.Join("\\n", done.Events.Select(x => x.Stage + ": " + x.Text))); True(done.Events.Any(x => x.Stage == "Fixing"));')
-edit('tests/Vanta.Tests/ForgeReliabilityTests.cs',
-     'Equal("Complete", done.State); Equal(1, calls);',
-     'True(done.State == "Complete", done.Error + "\\n" + string.Join("\\n", done.Events.Select(x => x.Stage + ": " + x.Text))); Equal(1, calls);')
-
 # Run agentic regression tests in the native acceptance harness.
 edit('tests/Vanta.Tests/Program.cs',
      'await FeatherlessContractTests(); await ForgeReliabilityTests();',
