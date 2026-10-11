@@ -5,6 +5,7 @@ const master=String(process.env.MASTER_FEED_KEY||'');
 const reader=String(process.env.READER_FEED_KEY||'');
 if(master.length<32||reader.length<32||master===reader)throw Error('Two distinct feed keys of at least 32 characters are required.');
 let snapshot={rows:[],receivedAt:0,generation:0};
+let checkpointSnapshot={checkpoints:[],receivedAt:0,generation:0};
 const liveMs=90000;
 function auth(got,key){const a=Buffer.from(String(got||'')),b=Buffer.from(key);return a.length===b.length&&crypto.timingSafeEqual(a,b);}
 function send(res,status,data){res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer'});res.end(JSON.stringify(data));}
@@ -18,13 +19,45 @@ function scrub(rows){
  seen.add(r.id);out.push(r);
  }return out;
 }
+function scrubCheckpoints(rows){
+ if(!Array.isArray(rows)||rows.length>120)throw Error('bad checkpoints');
+ const seen=new Set(),out=[];
+ for(const a of rows){
+   if(!a||typeof a!=='object'||Array.isArray(a))continue;
+   const id=clean(a.id,120),name=clean(a.name,180),group=clean(a.group,12);
+   if(!id||!name||seen.has(id)||!['PBC1','PBC2','PBC3'].includes(group))continue;
+   const order=Number(a.order),lat=Number(a.lat),lon=Number(a.lon),radius=Number(a.radius);
+   if(!Number.isFinite(order)||!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(radius)||radius<10||radius>500)continue;
+   let photoBase64=typeof a.photoBase64==='string'?a.photoBase64:'';
+   if(photoBase64.length>900000||!/^[A-Za-z0-9+/=]*$/.test(photoBase64))photoBase64='';
+   seen.add(id);out.push({id,name,group,order:Math.round(order),lat,lon,radius,photoBase64});
+ }return out;
+}
 function createApp(){return http.createServer((req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
- if(req.method==='GET'&&path==='/health')return send(res,200,{ok:true,service:'ronin-silvertrack-master-feed',masterOnline:Date.now()-snapshot.receivedAt<liveMs});
+ if(req.method==='GET'&&path==='/health')return send(res,200,{ok:true,service:'ronin-silvertrack-master-feed',masterOnline:Date.now()-snapshot.receivedAt<liveMs,checkpointGeneration:checkpointSnapshot.generation});
  if(req.method==='GET'&&path==='/v1/activity'){
    if(!auth(req.headers['x-ronin-reader-key'],reader))return send(res,401,{ok:false,error:'unauthorised'});
    const age=snapshot.receivedAt?Date.now()-snapshot.receivedAt:null,online=age!==null&&age<liveMs;
    return send(res,200,{ok:true,masterOnline:online,receivedAt:snapshot.receivedAt,ageMs:age,generation:snapshot.generation,rows:online?snapshot.rows:[]});
+ }
+ if(req.method==='GET'&&path==='/v1/checkpoints'){
+   if(!auth(req.headers['x-ronin-reader-key'],reader))return send(res,401,{ok:false,error:'unauthorised'});
+   return send(res,200,{ok:true,receivedAt:checkpointSnapshot.receivedAt,generation:checkpointSnapshot.generation,checkpoints:checkpointSnapshot.checkpoints});
+ }
+ if(req.method==='POST'&&path==='/v1/checkpoints'){
+   if(!auth(req.headers['x-ronin-master-key'],master))return send(res,401,{ok:false,error:'unauthorised'});
+   let size=0,tooLarge=false,chunks=[];
+   req.on('data',v=>{size+=v.length;if(size>6500000){tooLarge=true;chunks=[];}else if(!tooLarge)chunks.push(v);});
+   req.on('end',()=>{
+      if(tooLarge)return send(res,413,{ok:false,error:'checkpoint payload too large'});
+      try{
+        const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const checkpoints=scrubCheckpoints(body.checkpoints);
+        checkpointSnapshot={checkpoints,receivedAt:Date.now(),generation:checkpointSnapshot.generation+1};
+        return send(res,200,{ok:true,receivedAt:checkpointSnapshot.receivedAt,generation:checkpointSnapshot.generation,accepted:checkpoints.length});
+      }catch(e){return send(res,400,{ok:false,error:'invalid checkpoint snapshot'});}
+   });return;
  }
  if(req.method==='POST'&&path==='/v1/activity'){
    if(!auth(req.headers['x-ronin-master-key'],master))return send(res,401,{ok:false,error:'unauthorised'});
@@ -42,4 +75,4 @@ function createApp(){return http.createServer((req,res)=>{
  return send(res,404,{ok:false,error:'not found'});
 });}
 if(require.main===module)createApp().listen(process.env.PORT||10000,'0.0.0.0',()=>console.log('Ronin SilverTrack feed ready'));
-module.exports={createApp,scrub};
+module.exports={createApp,scrub,scrubCheckpoints};
