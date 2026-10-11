@@ -47,7 +47,7 @@ function createApp(){return http.createServer((req,res)=>{
  }
  if(req.method==='POST'&&path==='/v1/checkpoints/recover'){
    if(!auth(req.headers['x-ronin-reader-key'],reader))return send(res,401,{ok:false,error:'unauthorised'});
-   if(checkpointSnapshot.checkpoints.length>0)return send(res,409,{ok:false,error:'shared checkpoint set already exists'});
+   if(checkpointSnapshot.checkpoints.some(c=>Math.abs(Number(c.lat)||0)>0.000001||Math.abs(Number(c.lon)||0)>0.000001))return send(res,409,{ok:false,error:'shared checkpoint set already contains mapped checkpoints'});
    let size=0,tooLarge=false,chunks=[];
    req.on('data',v=>{size+=v.length;if(size>12500000){tooLarge=true;chunks=[];}else if(!tooLarge)chunks.push(v);});
    req.on('end',()=>{
