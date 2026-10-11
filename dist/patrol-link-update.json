@@ -1,6 +1,6 @@
 {
-  "versionCode": 155,
-  "versionName": "1.1.45",
-  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v155-voice-picker-audit/dist/Ronin-Patrol-Link-v1.1.45.apk",
-  "sha256": "171082ba8634d13e04895fe90617d4c39b06829ea0d75273e9a34544c133ff72"
+  "versionCode": 156,
+  "versionName": "1.1.46",
+  "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/patrol-link-v156-checkpoint-recovery/dist/Ronin-Patrol-Link-v1.1.46.apk",
+  "sha256": "ec67d603a0fe678493832ffaba88313e96765dc39488261e7ae7697f47db8e7f"
 }
