@@ -1,0 +1,89 @@
+name: Vanta Android 0.18.0 - Agentic Forge
+on:
+  push:
+    branches: ['fix/vanta-0180-agentic-forge']
+    paths: ['vanta/v0180/**', '.github/workflows/vanta-0180.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: vanta-0180-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: android-actions/setup-android@v3
+        with: {packages: platform-tools, log-accepted-android-sdk-licenses: false}
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.17.9-build
+          run-id: 37472154298
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Reconstruct exact delivered 0.17.9 source and apply agentic Forge
+        run: |
+          set -euo pipefail
+          echo 'aab6e92877627473ac9c853a16cc5f8c706c093f1aa77c351b4c13668e9a60d1  baseline/Ronin-Vanta-0.17.9-Source.zip' | sha256sum -c -
+          mkdir source distribution
+          unzip -q baseline/Ronin-Vanta-0.17.9-Source.zip -d source
+          python3 vanta/v0180/apply.py source
+      - name: Compile all retained tests, new agentic tests, lint and release
+        run: |
+          set -o pipefail
+          gradle -p source --no-daemon --max-workers=2 --continue             testDebugUnitTest testReleaseUnitTest lintDebug assembleRelease assembleDebugAndroidTest --stacktrace             2>&1 | tee build.log
+      - name: Stage unsigned and QA-signed outputs
+        run: |
+          set -euo pipefail
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk distribution/Ronin-Vanta-0.18.0-unsigned.apk
+          cp source/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk distribution/tests.apk
+          cp baseline/apksigner.jar distribution/
+          gradle -p source --no-daemon --console=plain signingReport > /tmp/signing.txt
+          KEY=$(sed -n 's/^Store: //p' /tmp/signing.txt | grep -v '^null$' | head -n1)
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android             --ks-key-alias androiddebugkey --out distribution/Ronin-Vanta-0.18.0-QA.apk             distribution/Ronin-Vanta-0.18.0-unsigned.apk
+          "$SIGNER" verify --verbose --print-certs distribution/Ronin-Vanta-0.18.0-QA.apk             > distribution/qa-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/Ronin-Vanta-0.18.0-QA.apk             > distribution/package.txt
+          gradle -p source -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace             2>&1 | tee personal-build.log
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk distribution/Ronin-Vanta-0.18.0-Personal-unsigned.apk
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+          printf '%s\n' "$GITHUB_SHA" > distribution/source-commit.txt
+      - name: Preserve exact source
+        if: always()
+        run: |
+          mkdir -p distribution
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path('source')
+          with zipfile.ZipFile('distribution/Ronin-Vanta-0.18.0-Source.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for p in root.rglob('*'):
+              if p.is_file() and not {'.gradle','build'}.intersection(p.relative_to(root).parts):
+                z.write(p,p.relative_to(root))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.18.0-build
+          path: distribution/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vanta-0.18.0-reports
+          path: |
+            build.log
+            personal-build.log
+            source/app/build/reports/
+            source/app/build/test-results/
+          if-no-files-found: warn
