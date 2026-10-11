@@ -157,8 +157,8 @@ s=s.replace(old_save,new_save,1)
 old_note='''        TextView note=text(supervisor()?"Manage PBC1 separately from the combined PBC2 + PBC3 patrol. Rename checkpoints, change their route order, attach/replace photos and re-register GPS locations at any time.":"Checkpoint coordinates and route settings are supervisor-managed.",12,0xff9daebb,false);note.setPadding(0,dp(8),0,dp(12));form.addView(note);'''
 new_note='''        String sync=CheckpointSyncClient.status(activity);
         TextView note=text(supervisor()
-            ?"Master owns the shared checkpoint set. Changes to names, PBC group, order, GPS, scan range and QR photo sync automatically to Patrol 1, 2 and 3.\n\n"+sync
-            :"Checkpoint configuration is supplied by the Master phone.\n\n"+sync,
+            ?"Master owns the shared checkpoint set. Changes to names, PBC group, order, GPS, scan range and QR photo sync automatically to Patrol 1, 2 and 3.\\n\\n"+sync
+            :"Checkpoint configuration is supplied by the Master phone.\\n\\n"+sync,
             12,0xff9daebb,false);
         note.setPadding(0,dp(8),0,dp(12));form.addView(note);'''
 if old_note not in s: raise RuntimeError('Checkpoint manager note missing')
