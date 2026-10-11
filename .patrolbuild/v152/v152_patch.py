@@ -168,7 +168,7 @@ s=s.replace(old,new,1)
 
 anchor='''    private void diagnostics() {'''
 method='''    private void masterFeedStatus(){
-        String msg=SilverFeedRelay.status(this)+"\n\nThis patrol phone does not sign in to SilverTrack. The Master / Supervisor phone is the only SilverTrack collector and relays read-only activity to Patrol 1, 2 and 3.\n\nIf the Master feed goes offline, Patrol Link keeps the last known activity and shows a stale/offline status.";
+        String msg=SilverFeedRelay.status(this)+"\\n\\nThis patrol phone does not sign in to SilverTrack. The Master / Supervisor phone is the only SilverTrack collector and relays read-only activity to Patrol 1, 2 and 3.\\n\\nIf the Master feed goes offline, Patrol Link keeps the last known activity and shows a stale/offline status.";
         new AlertDialog.Builder(this).setTitle("Master SilverTrack feed").setMessage(msg).setPositiveButton("Close",null).show();
     }
 
