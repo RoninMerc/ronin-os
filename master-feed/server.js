@@ -48,7 +48,7 @@ function createApp(){return http.createServer((req,res)=>{
  if(req.method==='POST'&&path==='/v1/checkpoints'){
    if(!auth(req.headers['x-ronin-master-key'],master))return send(res,401,{ok:false,error:'unauthorised'});
    let size=0,tooLarge=false,chunks=[];
-   req.on('data',v=>{size+=v.length;if(size>6500000){tooLarge=true;chunks=[];}else if(!tooLarge)chunks.push(v);});
+   req.on('data',v=>{size+=v.length;if(size>12500000){tooLarge=true;chunks=[];}else if(!tooLarge)chunks.push(v);});
    req.on('end',()=>{
       if(tooLarge)return send(res,413,{ok:false,error:'checkpoint payload too large'});
       try{
