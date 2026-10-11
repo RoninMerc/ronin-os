@@ -45,6 +45,22 @@ function createApp(){return http.createServer((req,res)=>{
    if(!auth(req.headers['x-ronin-reader-key'],reader))return send(res,401,{ok:false,error:'unauthorised'});
    return send(res,200,{ok:true,receivedAt:checkpointSnapshot.receivedAt,generation:checkpointSnapshot.generation,checkpoints:checkpointSnapshot.checkpoints});
  }
+ if(req.method==='POST'&&path==='/v1/checkpoints/recover'){
+   if(!auth(req.headers['x-ronin-reader-key'],reader))return send(res,401,{ok:false,error:'unauthorised'});
+   if(checkpointSnapshot.checkpoints.length>0)return send(res,409,{ok:false,error:'shared checkpoint set already exists'});
+   let size=0,tooLarge=false,chunks=[];
+   req.on('data',v=>{size+=v.length;if(size>12500000){tooLarge=true;chunks=[];}else if(!tooLarge)chunks.push(v);});
+   req.on('end',()=>{
+      if(tooLarge)return send(res,413,{ok:false,error:'checkpoint payload too large'});
+      try{
+        const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const checkpoints=scrubCheckpoints(body.checkpoints);
+        if(checkpoints.length===0)return send(res,400,{ok:false,error:'no checkpoints supplied'});
+        checkpointSnapshot={checkpoints,receivedAt:Date.now(),generation:checkpointSnapshot.generation+1};
+        return send(res,200,{ok:true,recovered:true,receivedAt:checkpointSnapshot.receivedAt,generation:checkpointSnapshot.generation,accepted:checkpoints.length});
+      }catch(e){return send(res,400,{ok:false,error:'invalid checkpoint recovery payload'});}
+   });return;
+ }
  if(req.method==='POST'&&path==='/v1/checkpoints'){
    if(!auth(req.headers['x-ronin-master-key'],master))return send(res,401,{ok:false,error:'unauthorised'});
    let size=0,tooLarge=false,chunks=[];
