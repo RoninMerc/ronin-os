@@ -13,3 +13,5 @@ test('checkpoint sets validate range, duplicates and photo formats atomically',(
 test('labelled multiline issue text is parsed without flattening field boundaries',()=>{const {event}=normalise({...row,vehicleText:undefined,issue:'Vehicle Breach - 2nd Warning\nRego: XYZ123\nMake: Ford\nColour: Blue'});assert.equal(event.plate,'XYZ123');assert.equal(event.make,'Ford');});
 
 test('monitor content hashes cannot substitute for a stable source report ID',()=>assert.ok(normalise({...row,sourceReportId:undefined}).error));
+
+test('explicit no-plate placeholders are reviewed rather than stored as registrations',()=>assert.ok(normalise({...row,vehicleText:'Rego: UNKNOWN\nMake: Toyota'}).error));

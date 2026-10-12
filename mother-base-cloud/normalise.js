@@ -17,7 +17,7 @@ function normalise(row){
  const reg=plate(field(['plate','rego','registration','registration number','vehicle registration'],30));
  const id=clean(row.sourceReportId,130),property=clean(row.property,260);
  if(!id)return {error:'missing source report ID'};
- if(!/^[A-Z0-9]{1,10}$/.test(reg))return {error:'missing or invalid registration',id};
+ if(!/^[A-Z0-9]{1,10}$/.test(reg)||['UNKNOWN','NOPLATE','NONE','NIL','UNREADABLE','NOTVISIBLE'].includes(reg))return {error:'missing or invalid registration',id};
  const warning=issue.match(/\b([123])(?:st|nd|rd)?\s*(?:warning|breach)\b/i);
  const happened=clean(row.occurredAt||row.date,100);
  const when=/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)$/.test(happened)&&Number.isFinite(Date.parse(happened))?new Date(happened).toISOString():null;

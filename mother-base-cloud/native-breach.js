@@ -9,12 +9,13 @@ function validNative(v){
 }
 function toNative(row,eventRow){
  const d=row.details||{},e=eventRow?.event||{};
+ if(eventRow&&!e.warningLevel&&!Number.isInteger(d.breach_level))return {review:'Source warning level needs confirmation'};
  const vehicle=clean(d.vehicle||[d.make,d.model].filter(Boolean).join(' ')||d.description,160);
  let level=Number(d.breach_level||0),last=Number(d.last_breach_at||0);
  const sourceWhen=e.occurredAt?Date.parse(e.occurredAt):0;
  if(!row.manual&&sourceWhen&&e.warningLevel&&sourceWhen>=last){level=e.warningLevel;last=sourceWhen;}
  const native={plate:plate(row.plate),colour:clean(d.colour,48),vehicle,address:clean(d.address,240),relation:clean(d.relation,20)||'at',parking:clean(d.parking,16),saved_at:Math.max(Number(d.saved_at||0),millis(row.updated_at),millis(eventRow?.received_at)),breach_level:level,last_breach_at:level?last:0};
- if(e.warningLevel&&!sourceWhen&&!last)return {review:'Source breach date needs timezone/date confirmation'};
+ if(e.warningLevel&&!sourceWhen&&!last&&!row.manual)return {review:'Source breach date needs timezone/date confirmation'};
  if(!validNative(native))return {review:'Vehicle, confirmed address, parking area or warning date is incomplete'};
  return {native,revision:Number(row.revision),manual:!!row.manual,correctionReason:row.correction_reason||''};
 }

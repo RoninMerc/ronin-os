@@ -136,9 +136,22 @@ sealed class MainWindow:Form {
  }
  async Task EditVehicle(bool add){
   string plate=add?"":SelectedPlate();JsonNode? old=add?null:vehicleRecords[plate];var details=old?["details"]?.DeepClone()??new JsonObject();
-  var values=PromptFields(add?"Add vehicle":"Correct vehicle",new(){{"Registration",plate},{"Make",details["make"]?.ToString()??""},{"Model",details["model"]?.ToString()??""},{"Colour",details["colour"]?.ToString()??""},{"Description",details["description"]?.ToString()??""},{"Vehicle",details["vehicle"]?.ToString()??""},{"Address",details["address"]?.ToString()??""},{"Relation (at/on/across from/in front of)",details["relation"]?.ToString()??"at"},{"Parking (common/visitor)",details["parking"]?.ToString()??""},{"Correction reason",""}},!add);
+  string originalLevel=details["breach_level"]?.ToString()??"",originalDate="";long last=0;
+  if(long.TryParse(details["last_breach_at"]?.ToString(),out last)&&last>0)originalDate=DateTimeOffset.FromUnixTimeMilliseconds(last).ToOffset(TimeSpan.FromHours(10)).ToString("dd/MM/yyyy HH:mm",System.Globalization.CultureInfo.InvariantCulture);
+  var values=PromptFields(add?"Add vehicle":"Correct vehicle",new(){{"Registration",plate},{"Make",details["make"]?.ToString()??""},{"Model",details["model"]?.ToString()??""},{"Colour",details["colour"]?.ToString()??""},{"Description",details["description"]?.ToString()??""},{"Vehicle",details["vehicle"]?.ToString()??""},{"Address",details["address"]?.ToString()??""},{"Relation (at/on/across from/in front of)",details["relation"]?.ToString()??"at"},{"Parking (common/visitor)",details["parking"]?.ToString()??""},{"Warning level (0–3; blank keeps source state)",originalLevel},{"Last warning (Brisbane dd/MM/yyyy HH:mm)",originalDate},{"Correction reason",""}},!add);
   if(values==null)return;if(!add&&values["Correction reason"].Length<10)throw new Exception("Provide a correction reason of at least 10 characters.");
   foreach(var p in new[]{("Make","make"),("Model","model"),("Colour","colour"),("Description","description"),("Vehicle","vehicle"),("Address","address"),("Relation (at/on/across from/in front of)","relation"),("Parking (common/visitor)","parking")})details[p.Item2]=values[p.Item1];
+  string chosenLevel=values["Warning level (0–3; blank keeps source state)"],chosenDate=values["Last warning (Brisbane dd/MM/yyyy HH:mm)"];
+  if(chosenLevel!=originalLevel||chosenDate!=originalDate){
+   if(!int.TryParse(chosenLevel,out var level)||level<0||level>3)throw new Exception("Choose warning level 0, 1, 2 or 3.");
+   long when=0;
+   if(level>0){
+    if(!DateTime.TryParseExact(chosenDate,"dd/MM/yyyy HH:mm",System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out var date))throw new Exception("Enter the actual last warning date and time in Brisbane time: dd/MM/yyyy HH:mm.");
+    when=new DateTimeOffset(DateTime.SpecifyKind(date,DateTimeKind.Unspecified),TimeSpan.FromHours(10)).ToUnixTimeMilliseconds();
+    if(when<=0||when>DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+86400000)throw new Exception("Check the last warning date.");
+   }
+   details["breach_level"]=level;details["last_breach_at"]=when;
+  }
   await Request(fleetUrl.Text,"/v1/vehicles","x-trl-master-key",fleetKey.Text,HttpMethod.Put,new JsonObject{["plate"]=values["Registration"],["revision"]=old?["revision"]?.GetValue<long>()??0,["details"]=details,["reason"]=values["Correction reason"]});
   await RefreshCloud();
  }

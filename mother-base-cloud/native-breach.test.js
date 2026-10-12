@@ -17,3 +17,8 @@ test('reviewed manual warning state is not overwritten by source projection',()=
 test('one-character native registrations and malformed source fields are checked',()=>{
  const n=toNative({...row,plate:'A'},event).native;assert.equal(validNative(n),true);assert.equal(validNative({...n,breach_level:4}),false);assert.equal(validNative({...n,address:''}),false);
 });
+
+test('reviewed manual zero-warning state can resolve an ambiguous source date',()=>{
+ const r={...row,manual:true,details:{...row.details,breach_level:0,last_breach_at:0}};
+ assert.equal(toNative(r,{received_at:when,event:{warningLevel:3,occurredAt:null}}).native.breach_level,0);
+});

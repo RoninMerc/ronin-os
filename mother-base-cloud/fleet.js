@@ -81,7 +81,9 @@ function createApp(pool,opts={}){
     }
     if(route==='/v1/import-review'&&method==='GET'){
        if(role!=='MASTER')return send(res,403,{ok:false});
-       return send(res,200,{ok:true,review:(await pool.query('SELECT source_id,reason,source,received_at FROM trl_import_review ORDER BY received_at DESC LIMIT 1000')).rows});
+       const pending=(await pool.query('SELECT source_id,reason,source,received_at FROM trl_import_review ORDER BY received_at DESC LIMIT 1000')).rows;
+       const native=await require('./native-breach').snapshot(pool);
+       return send(res,200,{ok:true,review:pending.concat(native.review.map(r=>({...r,type:'NATIVE_FIELDS'})))});
     }
     if(route==='/v1/vehicles'&&method==='GET'){
        const data=(await pool.query('SELECT plate,details,revision,updated_at FROM vehicles ORDER BY updated_at DESC LIMIT 10000')).rows;

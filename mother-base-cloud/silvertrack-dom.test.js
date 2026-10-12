@@ -26,3 +26,15 @@ test('existing TRL report narrative yields explicit native vehicle and parking f
 test('login forms and unlabelled registration guesses never produce a vehicle payload',()=>{
  assert.equal(fieldTest('ABC123 Toyota silver',true).login,true);assert.equal(fieldTest('ABC123 Toyota silver').incomplete,true);
 });
+
+test('report table labels tolerate trailing spaces after a colon',()=>{
+ const values={'Registration: ':'ABC123','Make: ':'Toyota','Model: ':'Corolla','Colour: ':'silver','Address: ':'1 Synthetic Test Street','Parking area: ':'visitor'};
+ const labels=Object.entries(values).map(([label,text])=>({innerText:label,nextElementSibling:{innerText:text,querySelector:()=>null}}));
+ const document={body:{innerText:''},querySelector:()=>null,querySelectorAll:()=>labels,getElementById:()=>null};
+ const r=vm.runInNewContext(fields,{document})();assert.equal(r.vehicle.plate,'ABC123');assert.equal(r.vehicle.make,'Toyota');assert.equal(r.vehicle.parking,'visitor');
+});
+
+test('automatic capture cannot follow edit/delete routes or mutation query modes',()=>{
+ for(const u of ['DeleteIssue.aspx?IssueID=123','EditReport.aspx?ReportID=123','IssueDetails.aspx?IssueID=123&action=delete'])assert.equal(linkTest(u).length,0);
+ assert.equal(linkTest('IssueDetails.aspx?IssueID=123&mode=view').length,1);
+});
