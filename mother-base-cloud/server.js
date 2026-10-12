@@ -10,7 +10,7 @@ function createApp(pool,opts={}){
  const fleetServer=fleet.createApp(pool,{masterKey:opts.fleetKey||process.env.TRL_MASTER_KEY,encryptionKey:opts.encryptionKey||process.env.TRL_EVIDENCE_KEY});
  const server=http.createServer((req,res)=>{
   const path=new URL(req.url,'http://local').pathname;
-  const known=['/health','/v1/activity','/v1/admin/activity','/v1/checkpoints','/v1/admin/checkpoints','/v1/checkpoints/recover'];
+  const known=['/health','/v1/activity','/v1/vehicle-reports','/v1/admin/activity','/v1/checkpoints','/v1/admin/checkpoints','/v1/checkpoints/recover'];
   if(!known.includes(path))return fleetServer.emit('request',req,res);
   (async()=>{
    if(path==='/health'&&req.method==='GET'){await pool.query('SELECT 1');const a=await db.snapshot(pool,'activity');return send(res,200,{ok:true,persistent:true,service:'trl-mother-base-cloud',masterOnline:Date.now()-a.receivedAt<90000});}
@@ -23,6 +23,18 @@ function createApp(pool,opts={}){
      return send(res,200,{ok:true,masterOnline,receivedAt:a.receivedAt,ageMs,generation:a.generation,rows:admin||masterOnline?a.payload:[]});
     }
     const c=await db.snapshot(pool,'checkpoints');return send(res,200,{ok:true,receivedAt:c.receivedAt,generation:c.generation,central:c.central,checkpoints:c.payload});
+   }
+   if(req.method==='POST'&&path==='/v1/vehicle-reports'){
+    if(!admin)return send(res,401,{ok:false});
+    const b=await body(req,2500000);
+    if(!Array.isArray(b.rows)||b.rows.length>30||b.rows.some(x=>!x||typeof x!=='object'||Array.isArray(x)||!clean(x.sourceReportId,130)))return send(res,400,{ok:false,error:'stable source report IDs required'});
+    const result=await db.transaction(pool,async c=>{
+     await c.query("SELECT kind FROM trl_snapshots WHERE kind='activity' FOR UPDATE");
+     const imports={created:0,updated:0,duplicate:0,ignored:0,review:0};
+     for(const row of b.rows)imports[await db.importRow(c,row)]++;
+     return imports;
+    });
+    return send(res,200,{ok:true,imports:result});
    }
    if(req.method==='POST'&&path==='/v1/activity'){
     if(!admin)return send(res,401,{ok:false});

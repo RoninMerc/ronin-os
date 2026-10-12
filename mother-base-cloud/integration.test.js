@@ -14,7 +14,7 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
   await pool.query("UPDATE trl_snapshots SET payload='[]',generation=0,received_at=0,central=FALSE");
   root=await listen();
   assert.equal((await request('/v1/activity','none')).status,401);
-  const base={id:'silver-123',guard:'guard',issue:'Parking Breach - 1st Warning',property:'Test property',date:'2026-10-13T06:00:00+10:00',vehicle:{plate:'abc-123',make:'Toyota',model:'Corolla',colour:'Silver'},cookie:'should not leave collector'};
+  const base={id:'silver-123',sourceReportId:'silver-123',guard:'guard',issue:'Parking Breach - 1st Warning',property:'Test property',date:'2026-10-13T06:00:00+10:00',vehicle:{plate:'abc-123',make:'Toyota',model:'Corolla',colour:'Silver'},cookie:'should not leave collector'};
   assert.equal((await request('/v1/activity','reader','POST',{rows:[base]})).status,401);
   let a=await request('/v1/activity','master','POST',{rows:[base]});assert.equal(a.status,200);assert.equal(a.data.imports.created,1);
   a=await request('/v1/activity','master','POST',{rows:[base]});assert.equal(a.data.imports.duplicate,1);
@@ -26,13 +26,13 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
   assert.equal((await pool.query('SELECT revision FROM trl_breaches')).rows[0].revision,'2');
   let v=(await request('/v1/vehicles','fleet')).data.vehicles[0];assert.equal(v.details.make,'Toyota');assert.equal(v.details.model,'Camry');
   assert.equal((await request('/v1/vehicles','fleet','PUT',{plate:v.plate,revision:Number(v.revision),details:{...v.details,colour:'Black'},reason:'Supervisor correction from observation'})).status,200);
-  a=await request('/v1/activity','master','POST',{rows:[{...changed,id:'silver-124'}]});assert.equal(a.data.imports.created,1);
+  a=await request('/v1/activity','master','POST',{rows:[{...changed,id:'silver-124',sourceReportId:'silver-124'}]});assert.equal(a.data.imports.created,1);
   assert.equal((await request('/v1/vehicles','fleet')).data.vehicles[0].details.colour,'Black');
   const invite=await request('/v1/invite','fleet','POST',{role:'P1'});assert.equal(invite.status,200);
   const pair=await request('/v1/pair','none','POST',{deviceId:'test-phone',code:invite.data.code});assert.equal(pair.status,200);
   assert.equal((await request('/v1/breaches','device:'+pair.data.token)).data.breaches.length,2);
   assert.equal((await request('/v1/import-review','device:'+pair.data.token)).status,403);
-  a=await request('/v1/activity','master','POST',{rows:[{...base,id:'bad',vehicle:{}}]});assert.equal(a.data.imports.review,1);
+  a=await request('/v1/activity','master','POST',{rows:[{...base,id:'bad',sourceReportId:'bad',vehicle:{}}]});assert.equal(a.data.imports.review,1);
   const cp={id:'cp1',name:'Test checkpoint',group:'PBC1',order:1,lat:-27.4,lon:153,radius:40,photoBase64:''};
   assert.equal((await request('/v1/admin/checkpoints','reader','PUT',{generation:0,checkpoints:[cp]})).status,401);
   a=await request('/v1/admin/checkpoints','master','PUT',{generation:0,checkpoints:[cp]});assert.equal(a.status,200);assert.equal(a.data.generation,1);
@@ -44,7 +44,7 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
   assert.equal((await request('/v1/checkpoints','reader')).data.generation,1);
   assert.equal((await request('/v1/breaches','device:'+pair.data.token)).data.breaches.length,2);
   assert.equal((await request('/v1/vehicles/delete','fleet','POST',{plate:'ABC123',reason:'Supervisor removed invalid record'})).status,200);
-  a=await request('/v1/activity','master','POST',{rows:[{...base,id:'silver-125'}]});assert.equal(a.data.imports.review,1);
+  a=await request('/v1/activity','master','POST',{rows:[{...base,id:'silver-125',sourceReportId:'silver-125'}]});assert.equal(a.data.imports.review,1);
   assert.equal((await request('/v1/vehicles','fleet')).data.vehicles.length,0);
  }finally{if(app?.listening)await new Promise(r=>app.close(r));await pool.end();}
 });
@@ -72,7 +72,12 @@ test('native Breach sync: uploads, projections, revision conflicts, manual corre
   r=await req('/v1/breach-sync',device,'POST',{vehicles:[],tombstones:[{plate_key:'NAT617',deleted_at:now+2000,revision:2}]});assert.equal(r.data.results[0].status,'deleted');assert.ok(r.data.tombstones.some(x=>x.plate_key==='NAT617'));
   assert.equal(r.data.vehicles.some(x=>x.plate==='NAT617'),false);
   const source={id:'native-source-event',sourceReportId:'native-source-event',guard:'Synthetic',property:'Synthetic site',issue:'Parking Breach - 3rd Warning',date:new Date(now).toISOString(),vehicle:{plate:'SRC617',make:'Toyota',model:'Corolla',colour:'silver',address:'2 Synthetic Test Street',relation:'at',parking:'visitor'}};
-  assert.equal((await req('/v1/activity','master','POST',{rows:[source]})).status,200);
+  assert.equal((await req('/v1/vehicle-reports',device,'POST',{rows:[source]})).status,401);
+  assert.equal((await req('/v1/vehicle-reports','master','POST',{rows:[{...source,sourceReportId:''}]})).status,400);
+  const before=(await pool.query("SELECT generation FROM trl_snapshots WHERE kind='activity'")).rows[0].generation;
+  assert.equal((await req('/v1/vehicle-reports','master','POST',{rows:[source]})).status,200);
+  const replay=await req('/v1/vehicle-reports','master','POST',{rows:[source]});assert.equal(replay.data.imports.duplicate,1);
+  assert.equal((await pool.query("SELECT generation FROM trl_snapshots WHERE kind='activity'")).rows[0].generation,before);
   r=await req('/v1/breach-sync',device);received=r.data.vehicles.find(x=>x.plate==='SRC617');assert.equal(received.breach_level,3);assert.equal(received.last_breach_at,now);
   assert.ok(r.data.breaches.some(x=>x.source_id==='native-source-event'));
  }finally{if(app.listening)await new Promise(r=>app.close(r));await pool.end();}

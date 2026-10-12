@@ -7,7 +7,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test normalise.test.js fleet.test.js native-breach.test.js",
+    "test": "node --test normalise.test.js fleet.test.js native-breach.test.js silvertrack-dom.test.js",
     "test:integration": "node --test integration.test.js"
   },
   "dependencies": {

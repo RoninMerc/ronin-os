@@ -51,6 +51,23 @@ final class MasterFeedClient {
      c.getSharedPreferences("patrol_master_feed_v1",0).edit().putString("publish_status",note).apply();
    });
  }
+ static void publishVehicle(Context ctx,JSONObject source,Callback cb){
+   if(!master(ctx)||source==null){UI.post(()->cb.done(null,"Master collector required"));return;}
+   Context c=ctx.getApplicationContext();
+   IO.execute(()->{
+     JSONObject result=null;String error=null;
+     try{
+       String key=new MasterFeedSecrets(c).load(true);if(key.isEmpty())throw new IOException("Publisher key required");
+       JSONObject safe=new JSONObject();
+       for(String k:new String[]{"id","guard","property","issue","date","sourceReportId","occurredAt"})if(source.has(k))safe.put(k,source.optString(k,""));
+       JSONObject raw=source.optJSONObject("vehicle"),vehicle=new JSONObject();
+       if(raw!=null)for(String k:new String[]{"plate","rego","registration","make","model","colour","color","vehicle","address","relation","parking","description","notes"})if(raw.has(k))vehicle.put(k,raw.optString(k,""));
+       safe.put("vehicle",vehicle);
+       result=new JSONObject(request("POST","/v1/vehicle-reports","x-ronin-master-key",key,new JSONObject().put("rows",new JSONArray().put(safe))));
+     }catch(Exception e){error="Vehicle report sync unavailable";}
+     final JSONObject r=result;final String err=error;UI.post(()->cb.done(r,err));
+   });
+ }
  static void poll(Context ctx,Callback cb){
    Context c=ctx.getApplicationContext();
    String key=new MasterFeedSecrets(c).load(false);

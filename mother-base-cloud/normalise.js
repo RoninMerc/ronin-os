@@ -15,7 +15,7 @@ function normalise(row){
   return m?clean(m[1],n):'';
  }
  const reg=plate(field(['plate','rego','registration','registration number','vehicle registration'],30));
- const id=clean(row.sourceReportId||row.id,130),property=clean(row.property,260);
+ const id=clean(row.sourceReportId,130),property=clean(row.property,260);
  if(!id)return {error:'missing source report ID'};
  if(!/^[A-Z0-9]{1,10}$/.test(reg))return {error:'missing or invalid registration',id};
  const warning=issue.match(/\b([123])(?:st|nd|rd)?\s*(?:warning|breach)\b/i);
