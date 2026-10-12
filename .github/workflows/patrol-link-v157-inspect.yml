@@ -1,0 +1,54 @@
+name: Inspect current Patrol Link fleet source
+on:
+  push:
+    branches: ['patrol-link-v157-fleet-guard-sync']
+    paths: ['.github/workflows/patrol-link-v157-inspect.yml']
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - name: Reconstruct current source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v139.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct original project and apply requested update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          PY
+          mkdir -p /tmp/patrol-v141-patch /tmp/patrol-v142-patch /tmp/patrol-v143-patch
+          unzip -q .patrolbuild/v141/patch_bundle.zip -d /tmp/patrol-v141-patch && python3 /tmp/patrol-v141-patch/patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v142/patch_bundle.zip -d /tmp/patrol-v142-patch && python3 /tmp/patrol-v142-patch/v142_patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v143/patch_bundle.zip -d /tmp/patrol-v143-patch && python3 /tmp/patrol-v143-patch/v143_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v144/v144_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v145/v145_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v146/v146_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v147/v147_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v148/v148_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v149/v149_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v150/v150_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v151/v151_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v152/v152_patch.py /tmp/patrol-v134
+          cp .patrolbuild/v153/MasterFeedSecrets.java .patrolbuild/v153/MasterFeedClient.java .patrolbuild/v153/MasterFeedUi.java /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v153/v153_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v154/v154_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v155/v155_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v156/v156_patch.py /tmp/patrol-v134
+          mkdir -p /tmp/export
+          J=/tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink
+          cp "$J/FleetRelay.java" "$J/PatrolEngine.java" "$J/MainActivity.java" "$J/FleetUi.java" /tmp/export/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Patrol-Link-v146-fleet-source
+          path: /tmp/export/
+          retention-days: 1
