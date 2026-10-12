@@ -1,4 +1,4 @@
-# TRL Mother Base 0.1.0 — integration preview
+# TRL Mother Base 0.2.0 — integration preview
 
 ## Delivery status
 
@@ -10,10 +10,10 @@ Implemented:
 - Persistent PostgreSQL cloud snapshots; cloud operations have no dependency on the Windows app being open.
 - SilverTrack vehicle import with source report IDs, duplicate suppression, report revision history, supervisor correction protection and deleted-vehicle review.
 - Central checkpoint names, PBC1/PBC2/PBC3 groups, route order, latitude/longitude, scan distance and QR photos, using the existing Android wire format.
-- Patrol Link 1.1.49: cloud checkpoint sync for Master and patrol devices, central ownership enforcement, and optional structured vehicle fields in the Master feed.
+- Patrol Link 1.1.50: cloud checkpoint sync for Master and patrol devices, central ownership enforcement, and optional structured vehicle fields in the Master feed.
 
 Still required:
-- Recover the actual TRL Breach Android source/signing project from the “TRL breach App” conversation. The shared page is too large for the browser reader. No Breach APK or compatibility with its existing local data model has been verified.
+- Build and verify the Breach 6.1.7 signed adapter from RoninMerc/device-monitor, branch trl-breach-mother-base-v617. Its actual v6.1.6 SQLite schema and build/signing path have now been inspected.
 - Verify the SilverTrack report-detail DOM using a representative report. The existing extractor exports activity summaries. The new uploader forwards structured `vehicle`/`vehicleText` fields if present; it does not yet automatically open detail reports. Reports without a labelled registration go into review and never create guessed vehicles.
 - Configure/deploy the cloud adapter against the existing Render database.
 - Run the live acceptance check with the real Master and Patrol 1/2/3 devices. Automated tests cover the relay API against real PostgreSQL, not a real SilverTrack session or physical Android devices.
@@ -21,7 +21,7 @@ Still required:
 ## Windows installation
 
 1. Download the Windows setup ZIP from the Mother Base Windows GitHub Actions artifact.
-2. Extract it and run `TRL-Mother-Base-Setup-0.1.0.exe`.
+2. Extract it and run `TRL-Mother-Base-Setup-0.2.0.exe`.
 3. Launch **TRL Mother Base** from the desktop or Start menu.
 4. Open **Settings** and enter the relay URLs and relay keys described below.
 5. Select **Save and connect**.
@@ -96,7 +96,7 @@ Do not give the feed Publisher key or fleet administrator key to patrol/Breach d
 2. Import your checkpoint backup.
 3. Review the names, PBC groups, route order, GPS coordinates, scan distances and QR photos.
 4. Select **Publish checkpoint configuration**.
-5. Install Patrol Link 1.1.49 over the current APK without clearing data.
+5. Install Patrol Link 1.1.50 over the current APK without clearing data.
 6. Keep each phone's existing role and feed pairing settings.
 7. Master uses its Publisher key to read configuration; Patrol 1/2/3 use the Reader key.
 8. Once Mother Base publishes, the cloud rejects phone writes/recovery and the updated phones display the central configuration as read-only.
@@ -129,7 +129,21 @@ For the Breach Android adapter:
 - `GET /v1/import-review` is administrator-only.
 - Device reads/writes use `x-trl-device-token`, never the administrator secret.
 
-No current Breach Android integration is claimed until its actual source and schema are recovered.
+### TRL Breach 6.1.7 pairing
+
+The actual Breach source is in RoninMerc/device-monitor on branch trl-breach-v6-fleet. The adapter lives on trl-breach-mother-base-v617.
+
+Install the verified 6.1.7 APK over 6.1.6 without clearing app data. In Mother Base's Vehicles tab, choose **Pair Breach device**, select P1/P2/P3 and issue a ten-minute code. In Breach's Vehicles tab, choose **Connect Mother Base**, enter the consolidated HTTPS cloud URL and this code, then sync.
+
+Only a per-device token is saved, encrypted with Android Keystore. The phone receives no SilverTrack password, Publisher key or fleet administrator key. Disconnect retains local data.
+
+The adapter uses the native version-2 vehicle backup fields: plate, colour, vehicle, address, relation, parking, saved_at, breach_level and last_breach_at. It adds SQLite tables for cloud revision tracking and source-report history without replacing existing vehicles, observations, correction history or deletion markers.
+
+**Native sync contract:** GET/POST /v1/breach-sync, authenticated with x-trl-device-token. Uploads include the last known cloud revision. First-pair collisions, stale writes and unsynced local corrections require review; they do not silently overwrite the other record. Synced central manual corrections retain local correction audit. Unknown parking areas, incomplete addresses and ambiguous warning dates stay in cloud review/source history rather than becoming invented native records.
+
+Once paired, the existing legacy sync still supports its observation/template functions and GPS remains unchanged, but it cannot import legacy vehicle/tombstone state over the central register. Unpaired phones retain their existing behaviour.
+
+Source history upserts by source report ID and revision. Importing or replaying an event never calls recordBreach(), so it does not advance the 14-day cycle.
 
 ## Verification and acceptance
 
@@ -155,4 +169,4 @@ Live acceptance still required:
 
 Keep the previous APK and checkpoint backup. Deploy the prior feed commit only if a rollout check fails, restore the previous service settings, and keep the new database tables for review rather than deleting them. The PC has no operational server role, so closing/uninstalling it does not stop the cloud.
 
-Do not claim the complete production integration is finished until the missing Breach source, SilverTrack detail extraction and physical-device acceptance checks are resolved.
+Do not claim the complete production integration is finished until the signed Breach adapter verification, SilverTrack detail extraction and physical-device acceptance checks are resolved.
