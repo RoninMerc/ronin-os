@@ -9,3 +9,5 @@ test('unlabelled guesses cannot become registration',()=>assert.ok(normalise({..
 test('credential and unknown fields are not retained',()=>{const {event}=normalise({...row,password:'forbidden',vehicle:{plate:'ABC123',cookie:'forbidden'}});assert.ok(!JSON.stringify(event).includes('forbidden'));});
 const cp={id:'c1',name:'Gate',group:'PBC1',order:1,lat:-27.4,lon:153,radius:40,photoBase64:''};
 test('checkpoint sets validate range, duplicates and photo formats atomically',()=>{assert.equal(checkpoints([cp]).length,1);for(const rows of [[cp,cp],[{...cp,lat:91}],[{...cp,radius:1}],[{...cp,photoBase64:Buffer.from('not an image').toString('base64')}]])assert.throws(()=>checkpoints(rows));});
+
+test('labelled multiline issue text is parsed without flattening field boundaries',()=>{const {event}=normalise({...row,vehicleText:undefined,issue:'Vehicle Breach - 2nd Warning\nRego: XYZ123\nMake: Ford\nColour: Blue'});assert.equal(event.plate,'XYZ123');assert.equal(event.make,'Ford');});

@@ -7,7 +7,7 @@ function normalise(row){
  const issue=clean(row.issue,1800);
  if(!/\b(?:parking breach|vehicle breach|parking violation)\b/i.test(issue))return {ignored:true};
  const v=row.vehicle&&typeof row.vehicle==='object'&&!Array.isArray(row.vehicle)?row.vehicle:{};
- const text=typeof row.vehicleText==='string'?row.vehicleText.slice(0,12000):issue;
+ const text=typeof row.vehicleText==='string'?row.vehicleText.slice(0,12000):typeof row.issue==='string'?row.issue.slice(0,12000):'';
  function field(names,n=120){
   for(const k of names)if(clean(v[k],n))return clean(v[k],n);
   const escaped=names.map(k=>k.replace(/[.*+?^$()|[\]\\{}]/g,'\\$&')).join('|');

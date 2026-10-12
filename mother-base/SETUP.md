@@ -117,7 +117,7 @@ Only Parking Breach, Vehicle Breach and Parking Violation categories are eligibl
 
 Imports and activity publication commit in one PostgreSQL transaction. Retries with the same event ID/payload produce no duplicate vehicle or breach. Changed reports update the same breach and append an audit revision. Distinct report IDs append history for the existing vehicle.
 
-Existing nonempty vehicle fields, including manual corrections, take precedence; imports fill missing fields. Revised report details are retained in the event history rather than overwriting confirmed manual values. A changed registration for an existing report requires review. Deleted vehicles are not resurrected by imports.
+Existing manual vehicle fields take precedence; imports fill missing fields. Fields previously populated by SilverTrack can update when the same report is revised or a newer, timestamped report arrives. Once a supervisor corrects a vehicle, its nonempty confirmed fields are protected. Revised report details remain in event history. A changed registration for an existing report requires review. Deleted vehicles are not resurrected by imports.
 
 Source timestamps are retained verbatim. Only unambiguous ISO timestamps with offsets are converted to UTC.
 
@@ -136,7 +136,7 @@ No current Breach Android integration is claimed until its actual source and sch
 Automated:
 - Android baseline reconstruction, JVM tests and signed release build passed.
 - Windows self-contained publish, startup smoke test, setup compilation, unattended install and installed startup passed.
-- 11 cloud regression tests and one real-PostgreSQL integration test passed, with no skipped tests.
+- 12 cloud regression tests and one real-PostgreSQL integration test passed, with no skipped tests.
 - The PostgreSQL test covers authenticated Master upload, paired-device reads, duplicate retries, report revisions, manual correction protection, deleted-record protection, checkpoint revision conflicts, phone write rejection and relay restart persistence.
 - Updated Android certificate verification is compared with the 1.1.48 release in the build workflow.
 

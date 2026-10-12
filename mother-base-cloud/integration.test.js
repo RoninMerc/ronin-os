@@ -10,7 +10,7 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
  const request=async(path,key='master',method='GET',data)=>{const h={'content-type':'application/json'};if(key==='master')h['x-ronin-master-key']=opts.masterKey;if(key==='reader')h['x-ronin-reader-key']=opts.readerKey;if(key==='fleet')h['x-trl-master-key']=opts.fleetKey;if(key.startsWith('device:'))h['x-trl-device-token']=key.slice(7);const r=await fetch(root+path,{method,headers:h,body:data===undefined?undefined:JSON.stringify(data)});return {status:r.status,data:await r.json()};};
  try{
   await migrate(pool);
-  await pool.query('TRUNCATE trl_breaches,trl_breach_audit,trl_import_review,vehicles,tombstones,corrections,devices,invitations,evidence');
+  await pool.query('TRUNCATE trl_breaches,trl_breach_audit,trl_import_review,trl_vehicle_sources,vehicles,tombstones,corrections,devices,invitations,evidence');
   await pool.query("UPDATE trl_snapshots SET payload='[]',generation=0,received_at=0,central=FALSE");
   root=await listen();
   assert.equal((await request('/v1/activity','none')).status,401);
@@ -21,10 +21,10 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
   assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM vehicles')).rows[0].n),1);
   assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM trl_breaches')).rows[0].n),1);
   assert.equal(JSON.stringify((await request('/v1/activity','reader')).data).includes('should not leave collector'),false);
-  const changed={...base,issue:'Parking Breach - 2nd Warning'};
+  const changed={...base,issue:'Parking Breach - 2nd Warning',vehicle:{...base.vehicle,model:'Camry'}};
   a=await request('/v1/activity','master','POST',{rows:[changed]});assert.equal(a.data.imports.updated,1);
   assert.equal((await pool.query('SELECT revision FROM trl_breaches')).rows[0].revision,'2');
-  let v=(await request('/v1/vehicles','fleet')).data.vehicles[0];assert.equal(v.details.make,'Toyota');
+  let v=(await request('/v1/vehicles','fleet')).data.vehicles[0];assert.equal(v.details.make,'Toyota');assert.equal(v.details.model,'Camry');
   assert.equal((await request('/v1/vehicles','fleet','PUT',{plate:v.plate,revision:Number(v.revision),details:{...v.details,colour:'Black'},reason:'Supervisor correction from observation'})).status,200);
   a=await request('/v1/activity','master','POST',{rows:[{...changed,id:'silver-124'}]});assert.equal(a.data.imports.created,1);
   assert.equal((await request('/v1/vehicles','fleet')).data.vehicles[0].details.colour,'Black');

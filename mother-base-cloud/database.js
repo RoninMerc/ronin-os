@@ -1,6 +1,7 @@
 'use strict';
 const {normalise,clean}=require('./normalise');
 const schema=[
+ "CREATE TABLE IF NOT EXISTS trl_vehicle_sources(plate TEXT PRIMARY KEY,fields JSONB NOT NULL)",
  "CREATE TABLE IF NOT EXISTS trl_snapshots(kind TEXT PRIMARY KEY,payload JSONB NOT NULL,generation BIGINT NOT NULL DEFAULT 0,received_at BIGINT NOT NULL DEFAULT 0,central BOOLEAN NOT NULL DEFAULT FALSE)",
  "INSERT INTO trl_snapshots(kind,payload) VALUES('activity','[]'),('checkpoints','[]') ON CONFLICT DO NOTHING",
  "CREATE TABLE IF NOT EXISTS trl_breaches(source_id TEXT PRIMARY KEY,plate TEXT NOT NULL,event JSONB NOT NULL,payload_hash TEXT NOT NULL,revision BIGINT NOT NULL DEFAULT 1,received_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -24,7 +25,18 @@ async function importRow(client,row){
  if(oldEvent?.payload_hash===n.hash)return 'duplicate';
  const old=(await client.query('SELECT details,revision FROM vehicles WHERE plate=$1 FOR UPDATE',[e.plate])).rows[0];
  const details={...(old?.details||{})};
- for(const k of ['make','model','colour','description'])if(!details[k]&&e[k])details[k]=e[k];
+ const previous=(await client.query('SELECT fields FROM trl_vehicle_sources WHERE plate=$1',[e.plate])).rows[0]?.fields||{};
+ const lastActor=(await client.query('SELECT actor FROM corrections WHERE plate=$1 ORDER BY id DESC LIMIT 1',[e.plate])).rows[0]?.actor;
+ const sourceFields={...previous};
+ for(const k of ['make','model','colour','description']){
+  const owned=previous[k]&&previous[k].value===details[k]&&lastActor==='SILVERTRACK_COLLECTOR';
+  const currentSource=previous[k]?.sourceId===e.sourceReportId;
+  const newer=previous[k]?.occurredAt&&e.occurredAt&&Date.parse(e.occurredAt)>=Date.parse(previous[k].occurredAt);
+  if(e[k]&&(!details[k]||(owned&&(currentSource||newer)))){
+   details[k]=e[k];sourceFields[k]={value:e[k],sourceId:e.sourceReportId,occurredAt:e.occurredAt};
+  }
+ }
+ await client.query('INSERT INTO trl_vehicle_sources(plate,fields) VALUES($1,$2::jsonb) ON CONFLICT(plate) DO UPDATE SET fields=EXCLUDED.fields',[e.plate,JSON.stringify(sourceFields)]);
  if(!old)details.source='SilverTrack';
  const changed=!old||JSON.stringify(old.details)!==JSON.stringify(details);
  if(changed){
