@@ -2,7 +2,7 @@ name: Build TRL Mother Base Windows
 on:
   push:
     branches: [trl-mother-base-v1]
-    paths: ['mother-base/**', '.github/workflows/mother-base-windows.yml']
+    paths: ['mother-base/*.cs', 'mother-base/*.csproj', 'mother-base/setup.iss', '.github/workflows/mother-base-windows.yml']
 permissions:
   contents: read
 jobs:

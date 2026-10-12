@@ -13,7 +13,7 @@ Implemented:
 - Patrol Link 1.1.50: cloud checkpoint sync for Master and patrol devices, central ownership enforcement, and optional structured vehicle fields in the Master feed.
 
 Still required:
-- Verify the Breach 6.1.7 signed adapter from RoninMerc/device-monitor, branch trl-breach-mother-base-v617. Its actual v6.1.6 SQLite schema and build/signing path have now been inspected.
+- Configure/deploy the cloud adapter and complete live acceptance. The Breach adapter is now built and device-tested; its source/signing recovery is complete.
 - Verify the Master-only detail collector against a representative real SilverTrack report. It follows only same-origin report links with stable IDs and extracts labelled fields or the existing TRL report narrative. Browser fixtures are verified; live SilverTrack DOM/session behaviour is not yet verified.
 - Configure/deploy the cloud adapter against the existing Render database.
 - Run the live acceptance check with the real Master and Patrol 1/2/3 devices. Automated tests cover the relay API against real PostgreSQL, not a real SilverTrack session or physical Android devices.
@@ -152,7 +152,9 @@ Automated:
 - Windows self-contained publish, startup smoke test, setup compilation, unattended install and installed startup passed.
 - 21 cloud/browser/native-format regression tests and two real-PostgreSQL integration tests passed, with no skipped tests.
 - The PostgreSQL test covers authenticated Master upload, paired-device reads, duplicate retries, report revisions, manual correction protection, deleted-record protection, checkpoint revision conflicts, phone write rejection and relay restart persistence.
-- Updated Android certificate verification is compared with the 1.1.48 release in the build workflow.
+- Patrol Link certificate verification is compared with the 1.1.48 release.
+- Breach 6.1.7 passed 13 Android 35 checks after installing over signed 6.1.6, including SQLite migration, native import/replay, report revision handling, correction protection, tombstones and Android Keystore encryption. Existing report/address/camera/settings source hashes and native/speech assets were verified unchanged.
+- Verified private Breach download: https://github.com/RoninMerc/device-monitor/releases/tag/trl-breach-v6.1.7-mother-base
 
 Live acceptance still required:
 1. Deploy the adapter and confirm `/health` reports `persistent: true`.
@@ -169,4 +171,4 @@ Live acceptance still required:
 
 Keep the previous APK and checkpoint backup. Deploy the prior feed commit only if a rollout check fails, restore the previous service settings, and keep the new database tables for review rather than deleting them. The PC has no operational server role, so closing/uninstalling it does not stop the cloud.
 
-Do not claim the complete production integration is finished until the signed Breach adapter verification, SilverTrack detail extraction and physical-device acceptance checks are resolved.
+Do not claim the complete production integration is finished until production Render configuration and real SilverTrack/physical-device acceptance checks are resolved.
