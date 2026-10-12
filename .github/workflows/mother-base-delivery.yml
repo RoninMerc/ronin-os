@@ -1,0 +1,64 @@
+name: Deliver Mother Base integration preview
+on:
+  push:
+    branches: [trl-mother-base-v1]
+    paths: ['.github/workflows/mother-base-delivery.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful verified builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for RUN in 38300839569 38300839543 38301045929; do
+            gh run watch "$RUN" --repo "$GITHUB_REPOSITORY" --exit-status
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          name: TRL-Mother-Base-Windows-Setup
+          path: delivery/windows
+          run-id: 38300839569
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.49
+          path: delivery/android
+          run-id: 38300839543
+          github-token: ${{ github.token }}
+      - name: Package setup documentation and checksums
+        run: |
+          cp mother-base/SETUP.md delivery/SETUP.md
+          sha256sum delivery/windows/*.exe delivery/android/*.apk > delivery/SHA256-SUMS.txt
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          Path('delivery/BUILD-PROVENANCE.json').write_text(json.dumps({
+            'release_commit':os.environ['GITHUB_SHA'],
+            'windows_run':38300839569,
+            'android_run':38300839543,
+            'component_build_commit':'e3cda9291bdba731ced5ed8b052aacfa5a2e33e5',
+            'cloud_test_run':38301045929,
+            'cloud_test_commit':'dd374f9610086c36943c1315ba1c9f3fbdf8d8d0',
+            'live_silvertrack_verified':False,
+            'breach_android_integrated':False,
+            'production_deployed':False
+          },indent=2))
+          PY
+      - name: Publish downloadable integration preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create trl-mother-base-preview-0.1.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "TRL Mother Base 0.1.0 — integration preview" \
+            --notes-file mother-base/RELEASE-NOTES.md \
+            delivery/windows/*.exe delivery/android/*.apk delivery/SETUP.md delivery/SHA256-SUMS.txt delivery/BUILD-PROVENANCE.json
