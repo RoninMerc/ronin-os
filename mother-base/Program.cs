@@ -25,6 +25,7 @@ sealed class MainWindow:Form {
  readonly TextBox fleetUrl=new(){Text="https://ronin-trl-secure-fleet.onrender.com",Width=510};
  readonly TextBox relayUrl=new(){Text="https://ronin-patrol-link-relay.onrender.com",Width=510};
  readonly TextBox masterKey=new(){UseSystemPasswordChar=true,Width=510};
+ readonly TextBox readerKey=new(){UseSystemPasswordChar=true,Width=510};
  readonly TextBox fleetKey=new(){UseSystemPasswordChar=true,Width=510};
  readonly TextBox relayKey=new(){UseSystemPasswordChar=true,Width=510};
  readonly Label status=new(){Text="Configure your relay connection in Settings.",AutoSize=true,Padding=new Padding(12)};
@@ -55,10 +56,12 @@ sealed class MainWindow:Form {
   var cpButtons=new FlowLayoutPanel(){Dock=DockStyle.Top,AutoSize=true};
   cpButtons.Controls.Add(Button("Load cloud checkpoints",async()=>await LoadCheckpoints()));
   cpButtons.Controls.Add(Button("Attach QR photo",AttachPhoto));
+  cpButtons.Controls.Add(Button("Export checkpoint backup",ExportCheckpoints));
+  cpButtons.Controls.Add(Button("Import checkpoint backup",ImportCheckpoints));
   cpButtons.Controls.Add(Button("Publish checkpoint configuration",async()=>await PublishCheckpoints()));
   cpPanel.Controls.Add(cpButtons);AddTab(tabs,"Checkpoints",cpPanel);
   var settings=new FlowLayoutPanel(){Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,AutoScroll=true,WrapContents=false,Padding=new Padding(20)};
-  foreach(var pair in new (string,TextBox)[]{("Master feed URL",feedUrl),("Master feed admin key",masterKey),("TRL fleet URL",fleetUrl),("TRL fleet admin key",fleetKey),("Patrol relay URL",relayUrl),("Patrol relay key",relayKey)}){
+  foreach(var pair in new (string,TextBox)[]{("Master feed URL",feedUrl),("Master feed admin key",masterKey),("Master feed reader key (checkpoint migration)",readerKey),("TRL fleet URL",fleetUrl),("TRL fleet admin key",fleetKey),("Patrol relay URL",relayUrl),("Patrol relay key",relayKey)}){
    settings.Controls.Add(new Label(){Text=pair.Item1,AutoSize=true});settings.Controls.Add(pair.Item2);
   }
   settings.Controls.Add(new Label(){Text="Use relay keys only. SilverTrack login credentials stay on the authorised Master collector.",AutoSize=true,MaximumSize=new Size(650,0)});
@@ -70,8 +73,8 @@ sealed class MainWindow:Form {
  }
  static void AddTab(TabControl tabs,string title,Control body){var tab=new TabPage(title);tab.Controls.Add(body);tabs.TabPages.Add(tab);}
  Button Button(string title,Func<Task> action){var b=new Button(){Text=title,AutoSize=true,Margin=new Padding(6)};b.Click+=async(_,_)=>{b.Enabled=false;try{await action();}catch(Exception e){MessageBox.Show(this,e.Message,"TRL Mother Base",MessageBoxButtons.OK,MessageBoxIcon.Information);}finally{b.Enabled=true;}};return b;}
- void LoadSettings(){try{var j=JsonNode.Parse(store.Read("settings.dpapi"));if(j==null)return;feedUrl.Text=j["feedUrl"]?.ToString()??feedUrl.Text;fleetUrl.Text=j["fleetUrl"]?.ToString()??fleetUrl.Text;relayUrl.Text=j["relayUrl"]?.ToString()??relayUrl.Text;masterKey.Text=j["masterKey"]?.ToString()??"";fleetKey.Text=j["fleetKey"]?.ToString()??"";relayKey.Text=j["relayKey"]?.ToString()??"";}catch{}}
- void SaveSettings(){foreach(var url in new[]{feedUrl.Text,fleetUrl.Text,relayUrl.Text})ValidateUrl(url);store.Write("settings.dpapi",new JsonObject{["feedUrl"]=feedUrl.Text,["fleetUrl"]=fleetUrl.Text,["relayUrl"]=relayUrl.Text,["masterKey"]=masterKey.Text,["fleetKey"]=fleetKey.Text,["relayKey"]=relayKey.Text}.ToJsonString());}
+ void LoadSettings(){try{var j=JsonNode.Parse(store.Read("settings.dpapi"));if(j==null)return;feedUrl.Text=j["feedUrl"]?.ToString()??feedUrl.Text;fleetUrl.Text=j["fleetUrl"]?.ToString()??fleetUrl.Text;relayUrl.Text=j["relayUrl"]?.ToString()??relayUrl.Text;masterKey.Text=j["masterKey"]?.ToString()??"";fleetKey.Text=j["fleetKey"]?.ToString()??"";readerKey.Text=j["readerKey"]?.ToString()??"";relayKey.Text=j["relayKey"]?.ToString()??"";}catch{}}
+ void SaveSettings(){foreach(var url in new[]{feedUrl.Text,fleetUrl.Text,relayUrl.Text})ValidateUrl(url);store.Write("settings.dpapi",new JsonObject{["feedUrl"]=feedUrl.Text,["fleetUrl"]=fleetUrl.Text,["relayUrl"]=relayUrl.Text,["masterKey"]=masterKey.Text,["fleetKey"]=fleetKey.Text,["readerKey"]=readerKey.Text,["relayKey"]=relayKey.Text}.ToJsonString());}
  static Uri ValidateUrl(string url){if(!Uri.TryCreate(url.Trim(),UriKind.Absolute,out var uri)||uri.Scheme!="https"||!string.IsNullOrEmpty(uri.UserInfo)||uri.AbsolutePath!="/"||!string.IsNullOrEmpty(uri.Query)||!string.IsNullOrEmpty(uri.Fragment))throw new Exception("Use an HTTPS service root URL, without a path, query or credentials.");return uri;}
  async Task<JsonNode> Request(string root,string path,string header,string key,HttpMethod? method=null,JsonNode? data=null){
   if(string.IsNullOrWhiteSpace(key))throw new Exception("Configure the relay key in Settings first.");
@@ -96,16 +99,27 @@ sealed class MainWindow:Form {
  static string Pretty(JsonNode j)=>j.ToJsonString(new System.Text.Json.JsonSerializerOptions{WriteIndented=true});
  void LoadCache(){foreach(var p in new (string,Action<JsonNode>)[]{("activity.dpapi",j=>activity.Text="CACHED DATA\r\n"+Pretty(j)),("vehicles.dpapi",ShowVehicles),("history.dpapi",j=>history.Text="CACHED DATA\r\n"+Pretty(j)),("review.dpapi",j=>review.Text="CACHED DATA\r\n"+Pretty(j)),("patrols.dpapi",j=>patrols.Text="CACHED DATA\r\n"+Pretty(j))})try{var j=JsonNode.Parse(store.Read(p.Item1));if(j!=null)p.Item2(j);}catch{}}
  void ShowVehicles(JsonNode j){vehicles.Rows.Clear();vehicleRecords.Clear();foreach(var v in j["vehicles"]?.AsArray()??new JsonArray()){if(v==null)continue;vehicleRecords[v["plate"]!.ToString()]=v.DeepClone();var d=v["details"];vehicles.Rows.Add(v["plate"]?.ToString(),d?["make"]?.ToString(),d?["model"]?.ToString(),d?["colour"]?.ToString(),v["revision"]?.ToString());}}
- async Task LoadCheckpoints(){var j=await Request(feedUrl.Text,"/v1/admin/checkpoints","x-ronin-master-key",masterKey.Text);checkpoints.Rows.Clear();foreach(var c in j["checkpoints"]?.AsArray()??new JsonArray()){if(c==null)continue;checkpoints.Rows.Add(new[]{"id","name","group","order","lat","lon","radius","photoBase64"}.Select(k=>(object?)(c[k]?.ToString()??"")).ToArray());}checkpointRevision=j["generation"]?.GetValue<long>()??0;status.Text="Loaded checkpoint revision "+checkpointRevision+"."; }
- Task AttachPhoto(){if(checkpoints.CurrentRow==null||checkpoints.CurrentRow.IsNewRow)throw new Exception("Select a checkpoint row first.");using var dialog=new OpenFileDialog(){Filter="QR photographs|*.jpg;*.jpeg;*.png"};if(dialog.ShowDialog(this)==DialogResult.OK){var bytes=File.ReadAllBytes(dialog.FileName);if(bytes.Length>650000)throw new Exception("Choose a QR photograph smaller than 650 KB.");using var stream=new MemoryStream(bytes);using var image=Image.FromStream(stream);checkpoints.CurrentRow.Cells["photoBase64"].Value=Convert.ToBase64String(bytes);}return Task.CompletedTask;}
- async Task PublishCheckpoints(){
-  if(checkpointRevision<0)throw new Exception("Load the cloud checkpoint set before editing.");
+ async Task LoadCheckpoints(){
+  JsonNode j;try{j=await Request(feedUrl.Text,"/v1/admin/checkpoints","x-ronin-master-key",masterKey.Text);}
+  catch{if(string.IsNullOrWhiteSpace(readerKey.Text))throw;j=await Request(feedUrl.Text,"/v1/checkpoints","x-ronin-reader-key",readerKey.Text);}
+  FillCheckpoints(j);checkpointRevision=j["generation"]?.GetValue<long>()??0;
+  status.Text="Loaded checkpoint revision "+checkpointRevision+".";
+ }
+ void FillCheckpoints(JsonNode j){checkpoints.Rows.Clear();foreach(var c in j["checkpoints"]?.AsArray()??new JsonArray()){if(c==null)continue;checkpoints.Rows.Add(new[]{"id","name","group","order","lat","lon","radius","photoBase64"}.Select(k=>(object?)(c[k]?.ToString()??"")).ToArray());}}
+ JsonArray CheckpointRows(){
   checkpoints.EndEdit();var rows=new JsonArray();
   foreach(DataGridViewRow r in checkpoints.Rows){if(r.IsNewRow)continue;var j=new JsonObject();
    foreach(string k in new[]{"id","name","group","photoBase64"})j[k]=Convert.ToString(r.Cells[k].Value)??"";
    foreach(string k in new[]{"order","lat","lon","radius"}){if(!double.TryParse(Convert.ToString(r.Cells[k].Value),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var n)||!double.IsFinite(n))throw new Exception("Enter a valid number for "+k+". Use a dot for decimals.");j[k]=n;}
    rows.Add(j);
-  }
+  }return rows;
+ }
+ Task ExportCheckpoints(){using var dialog=new SaveFileDialog(){Filter="Checkpoint backup|*.json",FileName="TRL-checkpoints-backup.json"};if(dialog.ShowDialog(this)==DialogResult.OK)File.WriteAllText(dialog.FileName,Pretty(new JsonObject{["checkpoints"]=CheckpointRows()}));return Task.CompletedTask;}
+ Task ImportCheckpoints(){if(checkpointRevision<0)throw new Exception("Load the cloud checkpoint set first, then import the backup.");using var dialog=new OpenFileDialog(){Filter="Checkpoint backup|*.json"};if(dialog.ShowDialog(this)==DialogResult.OK){var file=new FileInfo(dialog.FileName);if(file.Length>12500000)throw new Exception("Backup exceeds the checkpoint payload limit.");var data=JsonNode.Parse(File.ReadAllText(dialog.FileName));if(data?["checkpoints"] is not JsonArray)throw new Exception("Select a Mother Base checkpoint backup.");FillCheckpoints(data);status.Text="Backup loaded into the editor. Publish to save it to the cloud.";}return Task.CompletedTask;}
+ Task AttachPhoto(){if(checkpoints.CurrentRow==null||checkpoints.CurrentRow.IsNewRow)throw new Exception("Select a checkpoint row first.");using var dialog=new OpenFileDialog(){Filter="QR photographs|*.jpg;*.jpeg;*.png"};if(dialog.ShowDialog(this)==DialogResult.OK){var bytes=File.ReadAllBytes(dialog.FileName);if(bytes.Length>650000)throw new Exception("Choose a QR photograph smaller than 650 KB.");using var stream=new MemoryStream(bytes);using var image=Image.FromStream(stream);checkpoints.CurrentRow.Cells["photoBase64"].Value=Convert.ToBase64String(bytes);}return Task.CompletedTask;}
+ async Task PublishCheckpoints(){
+  if(checkpointRevision<0)throw new Exception("Load the cloud checkpoint set before editing.");
+  var rows=CheckpointRows();
   var answer=await Request(feedUrl.Text,"/v1/admin/checkpoints","x-ronin-master-key",masterKey.Text,HttpMethod.Put,new JsonObject{["generation"]=checkpointRevision,["checkpoints"]=rows});
   checkpointRevision=answer["generation"]?.GetValue<long>()??checkpointRevision;
   status.Text="Checkpoint revision "+checkpointRevision+" published. Phones sync from the cloud while this PC is offline.";

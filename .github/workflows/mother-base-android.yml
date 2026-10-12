@@ -99,29 +99,8 @@ jobs:
           "$CHECK" verify --print-certs "$BASE" | sed -n '/certificate SHA-256 digest/p' > /tmp/baseline-cert
           "$CHECK" verify --print-certs /tmp/deliver158/TRL-Patrol-Link-v1.1.49.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/new-cert
           diff /tmp/baseline-cert /tmp/new-cert
-      - name: Publish isolated preview update channel
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp /tmp/deliver158/TRL-Patrol-Link-v1.1.49.apk dist/TRL-Patrol-Link-v1.1.49.apk
-          SHA=$(sha256sum dist/TRL-Patrol-Link-v1.1.49.apk | awk '{print $1}')
-          cat > dist/patrol-link-update.json <<EOF
-          {
-            "versionCode": 159,
-            "versionName": "1.1.49",
-            "apk": "https://raw.githubusercontent.com/RoninMerc/ronin-os/trl-mother-base-v1/dist/TRL-Patrol-Link-v1.1.49.apk",
-            "sha256": "$SHA"
-          }
-          EOF
-          git config user.name "TRL Patrol Link Build"
-          git config user.email "actions@users.noreply.github.com"
-          git add dist/TRL-Patrol-Link-v1.1.49.apk dist/patrol-link-update.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Publish TRL Patrol Link v1.1.49"
-            git push origin HEAD:trl-mother-base-v1
-          fi
       - uses: actions/upload-artifact@v4
         with:
           name: TRL-Patrol-Link-v1.1.49
           path: /tmp/deliver158/
-          retention-days: 7
+          retention-days: 30
