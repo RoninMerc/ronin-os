@@ -10,6 +10,8 @@ let reportTemplate = { text:'', updatedAt:0, source:'' };
 let authBundle = { bundle:'', updatedAt:0, source:'' };
 const silverEvents = new Map();
 let silverMasterSeenAt = 0;
+let guardConfig = { guards:['D.DEO','D.ROGERS1','T.MURD'], updatedAt:0 };
+
 
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -85,6 +87,30 @@ function cleanObservation(v) {
     observed_at:observed, uncertain:!!(v && v.uncertain)
   };
 }
+function cleanGuards(v) {
+  if(!Array.isArray(v) || v.length!==3) throw new Error('invalid guards');
+  return v.map(x=>cleanText(x,96).toUpperCase()).map(x=>x||'N/A');
+}
+function fleetItemFromBody(b) {
+  const rawId=String(b.patrolId||b.patrol||b.patrol_number||'').toUpperCase();
+  const id=/^P[123]$/.test(rawId)?rawId:(['1','2','3'].includes(rawId)?'P'+rawId:'');
+  if(!id) throw new Error('invalid patrol');
+  const now=Date.now(), lat=Number(b.lat!=null?b.lat:b.latitude), lon=Number(b.lon!=null?b.lon:(b.lng!=null?b.lng:b.longitude));
+  const onDuty=b.onDuty!==undefined?b.onDuty!==false:b.on_duty!==false;
+  const item={
+    patrolId:id, deviceLabel:String(b.deviceLabel||b.device_label||id).slice(0,64), onDuty,
+    lat, lon, accuracy:Number(b.accuracy)||0, speed:Number(b.speed)||0,
+    provider:String(b.provider||'').slice(0,32),
+    fixTime:Number(b.fixTime||b.time||b.timestamp||b.recorded_at)||now,
+    receivedAt:now,
+    state:['MOVING','STATIONARY','UNKNOWN'].includes(String(b.state))?String(b.state):(Number(b.speed)>0.8?'MOVING':'STATIONARY'),
+    stateSince:Number(b.stateSince)||now, history:cleanHistory(b.history),
+    versionCode:Number(b.versionCode)||0, versionName:String(b.versionName||'').slice(0,32),
+    deviceMode:String(b.deviceMode||b.role||'USER').toUpperCase().slice(0,16)
+  };
+  if(!Number.isFinite(item.lat)||!Number.isFinite(item.lon)) throw new Error('invalid coordinates');
+  return item;
+}
 function cleanSilverEvent(v) {
   const id=cleanText(v && v.id,128), guard=cleanText(v && v.guard,96), property=cleanText(v && v.property,160),
         issue=cleanText(v && v.issue,220), recordedText=cleanText(v && v.recordedText,160), recordedAt=Number(v && v.recordedAt);
@@ -109,36 +135,21 @@ http.createServer((req,res)=>{
   const u = new URL(req.url,'http://localhost');
   if (u.pathname === '/health') return send(res,200,{ok:true,service:'ronin-patrol-link-relay',sharedVehicleSync:true,sharedTemplateSync:true,vehicleCount:vehicles.size,observationCount:observations.size,templateUpdatedAt:reportTemplate.updatedAt});
   if (!okKey(req)) return send(res,401,{ok:false,error:'unauthorised'});
-  if (req.method === 'POST' && u.pathname === '/api/update') {
+  if (req.method === 'POST' && (u.pathname === '/api/update' || u.pathname === '/api/fleet')) {
     let raw='';
     req.on('data',d=>{ raw+=d; if(raw.length>200000) req.destroy(); });
     req.on('end',()=>{
       try {
-        const b=JSON.parse(raw||'{}');
-        const id=String(b.patrolId||'').toUpperCase();
-        if(!['P1','P2','P3'].includes(id)) return send(res,400,{ok:false,error:'invalid patrol'});
-        const now=Date.now();
-        const item = {
-          patrolId:id, deviceLabel:String(b.deviceLabel||id).slice(0,64), onDuty:b.onDuty!==false,
-          lat:Number(b.lat), lon:Number(b.lon), accuracy:Number(b.accuracy), speed:Number(b.speed),
-          provider:String(b.provider||'').slice(0,32), fixTime:Number(b.fixTime)||now, receivedAt:now,
-          state:['MOVING','STATIONARY','UNKNOWN'].includes(String(b.state)) ? String(b.state) : 'UNKNOWN',
-          stateSince:Number(b.stateSince)||now, history:cleanHistory(b.history),
-          versionCode:Number(b.versionCode)||0, versionName:String(b.versionName||'').slice(0,32), deviceMode:String(b.deviceMode||'USER').slice(0,16)
-        };
-        if(!Number.isFinite(item.lat)||!Number.isFinite(item.lon)) return send(res,400,{ok:false,error:'invalid coordinates'});
-        if (item.deviceMode === 'MASTER' && typeof b.authBundle === 'string' && b.authBundle.length > 20 && b.authBundle.length < 20000) {
-          authBundle = { bundle:b.authBundle, updatedAt:now, source:id };
-        }
-        fleet.set(id,item); return send(res,200,{ok:true,receivedAt:now});
-      } catch(e) { return send(res,400,{ok:false,error:'bad json'}); }
+        const b=JSON.parse(raw||'{}'), item=fleetItemFromBody(b);
+        fleet.set(item.patrolId,item); return send(res,200,{ok:true,receivedAt:item.receivedAt});
+      } catch(e) { return send(res,400,{ok:false,error:e.message||'bad json'}); }
     }); return;
   }
   if (req.method === 'POST' && u.pathname === '/api/off-duty') {
     let raw=''; req.on('data',d=>raw+=d); req.on('end',()=>{
       try{
-        const b=JSON.parse(raw||'{}'), id=String(b.patrolId||'').toUpperCase();
-        if(!['P1','P2','P3'].includes(id)) return send(res,400,{ok:false,error:'invalid patrol'});
+        const b=JSON.parse(raw||'{}'); let rawId=String(b.patrolId||b.patrol||b.patrol_number||'').toUpperCase(); const id=/^P[123]$/.test(rawId)?rawId:(['1','2','3'].includes(rawId)?'P'+rawId:'');
+        if(!id) return send(res,400,{ok:false,error:'invalid patrol'});
         const prev=fleet.get(id)||{patrolId:id,deviceLabel:id,lat:0,lon:0,accuracy:-1,speed:-1,provider:'',fixTime:0,state:'UNKNOWN',stateSince:Date.now(),history:[]};
         prev.onDuty=false; prev.receivedAt=Date.now(); fleet.set(id,prev); return send(res,200,{ok:true});
       }catch(e){return send(res,400,{ok:false,error:'bad json'});}
@@ -202,9 +213,21 @@ http.createServer((req,res)=>{
     }); return;
   }
   if (req.method === 'GET' && u.pathname === '/api/silver-feed') return send(res,200,silverSnapshot());
+  if (req.method === 'POST' && u.pathname === '/api/guards') {
+    let raw=''; req.on('data',d=>{raw+=d;if(raw.length>20000)req.destroy();}); req.on('end',()=>{
+      try{
+        const b=JSON.parse(raw||'{}'), guards=cleanGuards(b.guards);
+        guardConfig={guards,updatedAt:Date.now()};
+        return send(res,200,{ok:true,guards:guardConfig.guards,updatedAt:guardConfig.updatedAt});
+      }catch(e){return send(res,400,{ok:false,error:e.message||'invalid guards'});}
+    }); return;
+  }
+  if (req.method === 'GET' && u.pathname === '/api/guards') {
+    return send(res,200,{ok:true,guards:guardConfig.guards,updatedAt:guardConfig.updatedAt});
+  }
   if (req.method === 'GET' && u.pathname === '/api/fleet') {
     const out=['P1','P2','P3'].map(id=>fleet.get(id)||{patrolId:id,onDuty:false,receivedAt:0,state:'UNKNOWN',history:[]});
-    return send(res,200,{ok:true,serverTime:Date.now(),patrols:out});
+    return send(res,200,{ok:true,serverTime:Date.now(),patrols:out,guards:guardConfig.guards,guardsUpdatedAt:guardConfig.updatedAt});
   }
   return send(res,404,{ok:false,error:'not found'});
 }).listen(PORT,()=>console.log('Ronin Patrol Link relay listening on '+PORT));
