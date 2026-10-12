@@ -1,0 +1,44 @@
+name: Build TRL Mother Base Windows
+on:
+  push:
+    branches: [trl-mother-base-v1]
+    paths: ['mother-base/**', '.github/workflows/mother-base-windows.yml']
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '8.0.x'}
+      - name: Build self-contained Windows application
+        run: dotnet publish mother-base/TRL.MotherBase.csproj -c Release -r win-x64 --self-contained true -o mother-base/publish
+      - name: Smoke test desktop startup
+        shell: pwsh
+        run: |
+          $process = Start-Process mother-base/publish/TRL-Mother-Base.exe -ArgumentList '--smoke-test' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Desktop startup failed" }
+      - name: Package installable Windows setup
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) { choco install innosetup --yes --no-progress }
+          & $compiler mother-base/setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+          Get-FileHash mother-base/installer/*.exe -Algorithm SHA256 | Format-List | Out-File mother-base/installer/SHA256.txt
+      - name: Verify unattended install and installed startup
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem mother-base/installer/*.exe | Select-Object -First 1
+          $target = Join-Path $env:RUNNER_TEMP "trl-mother-base-installed"
+          $process = Start-Process $installer.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$target") -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer failed" }
+          $process = Start-Process "$target/TRL-Mother-Base.exe" -ArgumentList '--smoke-test' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installed startup failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRL-Mother-Base-Windows-Setup
+          path: mother-base/installer/
+          retention-days: 30
