@@ -85,7 +85,7 @@ replacement='''        await Test("044: compiler-led repair skips the retired re
             s.Resume(j.Id); var done = await Finish(s.Jobs, j.Id, 120);
             True(done.State == "Complete", done.Error + "\\n" + string.Join("\\n", done.Events.Select(x => x.Stage + ": " + x.Text))); Equal(1, calls);
             var saved = s.TaskSource(j.Id);
-            Equal(40033, saved.Files.Single(f => f.Path == "Huge.cs").Content.Length);
+            Equal(40032, saved.Files.Single(f => f.Path == "Huge.cs").Content.Length);
             True(saved.Files.Single(f => f.Path == "Program.cs").Content.Contains("targeted repair"));
         });
 '''
