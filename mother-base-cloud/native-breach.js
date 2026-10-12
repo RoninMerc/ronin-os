@@ -1,6 +1,7 @@
 'use strict';
 const {plate,clean}=require('./normalise');
 const {transaction}=require('./database');
+const millis=v=>v instanceof Date?v.getTime():Date.parse(v)||0;
 const isTime=n=>Number.isSafeInteger(n)&&n>=0&&n<=Date.now()+86400000;
 function validNative(v){
  if(!v||typeof v!=='object'||Array.isArray(v))return false;
@@ -12,13 +13,13 @@ function toNative(row,eventRow){
  let level=Number(d.breach_level||0),last=Number(d.last_breach_at||0);
  const sourceWhen=e.occurredAt?Date.parse(e.occurredAt):0;
  if(!row.manual&&sourceWhen&&e.warningLevel&&sourceWhen>=last){level=e.warningLevel;last=sourceWhen;}
- const native={plate:plate(row.plate),colour:clean(d.colour,48),vehicle,address:clean(d.address,240),relation:clean(d.relation,20)||'at',parking:clean(d.parking,16),saved_at:Math.max(Number(d.saved_at||0),Date.parse(row.updated_at)||0,Date.parse(eventRow?.received_at)||0),breach_level:level,last_breach_at:level?last:0};
+ const native={plate:plate(row.plate),colour:clean(d.colour,48),vehicle,address:clean(d.address,240),relation:clean(d.relation,20)||'at',parking:clean(d.parking,16),saved_at:Math.max(Number(d.saved_at||0),millis(row.updated_at),millis(eventRow?.received_at)),breach_level:level,last_breach_at:level?last:0};
  if(e.warningLevel&&!sourceWhen&&!last)return {review:'Source breach date needs timezone/date confirmation'};
  if(!validNative(native))return {review:'Vehicle, confirmed address, parking area or warning date is incomplete'};
  return {native,revision:Number(row.revision),manual:!!row.manual,correctionReason:row.correction_reason||''};
 }
-async function snapshot(pool){
- const rows=(await pool.query('SELECT v.plate,v.details,v.revision,v.updated_at,COALESCE((SELECT actor<>'SILVERTRACK_COLLECTOR' FROM corrections c WHERE c.plate=v.plate ORDER BY id DESC LIMIT 1),FALSE) AS manual,COALESCE((SELECT reason FROM corrections c WHERE c.plate=v.plate ORDER BY id DESC LIMIT 1),'') AS correction_reason FROM vehicles v ORDER BY v.updated_at DESC LIMIT 10000')).rows;
+async function readSnapshot(pool){
+ const rows=(await pool.query("SELECT v.plate,v.details,v.revision,v.updated_at,COALESCE((SELECT actor<>'SILVERTRACK_COLLECTOR' FROM corrections c WHERE c.plate=v.plate ORDER BY id DESC LIMIT 1),FALSE) AS manual,COALESCE((SELECT reason FROM corrections c WHERE c.plate=v.plate ORDER BY id DESC LIMIT 1),'') AS correction_reason FROM vehicles v ORDER BY v.updated_at DESC LIMIT 10000")).rows;
  const events=(await pool.query('SELECT source_id,plate,event,revision,received_at FROM trl_breaches ORDER BY received_at DESC LIMIT 10000')).rows;
  const latest=new Map();
  for(const r of events){
@@ -28,9 +29,10 @@ async function snapshot(pool){
  }
  const vehicles=[],review=[];
  for(const r of rows){const projected=toNative(r,latest.get(r.plate));if(projected.native)vehicles.push({...projected.native,revision:projected.revision,manual:projected.manual,correction_reason:projected.correctionReason});else review.push({plate:r.plate,reason:projected.review});}
- const tombstones=(await pool.query('SELECT plate,deleted_at FROM tombstones ORDER BY deleted_at DESC LIMIT 50000')).rows.map(r=>({plate_key:plate(r.plate),deleted_at:Date.parse(r.deleted_at)}));
+ const tombstones=(await pool.query('SELECT plate,deleted_at FROM tombstones ORDER BY deleted_at DESC LIMIT 50000')).rows.map(r=>({plate_key:plate(r.plate),deleted_at:millis(r.deleted_at)}));
  return {ok:true,format:'trl-motherbase-sync',version:1,vehicles,tombstones,breaches:events,review};
 }
+async function snapshot(pool){return transaction(pool,async c=>{await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');return readSnapshot(c);});}
 async function upload(pool,actor,body){
  if(!Array.isArray(body.vehicles)||body.vehicles.length>50000||!Array.isArray(body.tombstones)||body.tombstones.length>50000)throw Error('Invalid native snapshot');
  const results=[];
