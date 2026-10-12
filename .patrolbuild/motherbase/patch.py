@@ -4,7 +4,7 @@ root=Path(sys.argv[1]);j=root/'app/src/main/java/au/com/roningroup/patrollink';h
 for name in ['CheckpointSyncClient.java','MasterFeedClient.java']:shutil.copyfile(here/name,j/name)
 p=root/'app/build.gradle';s=p.read_text()
 assert 'versionCode 158' in s and "versionName '1.1.48'" in s
-p.write_text(s.replace('versionCode 158','versionCode 159').replace("versionName '1.1.48'","versionName '1.1.49'"))
+p.write_text(s.replace('versionCode 158','versionCode 160').replace("versionName '1.1.48'","versionName '1.1.50'"))
 p=j/'CheckpointProximityUi.java';s=p.read_text()
 start=s.index('        if(CheckpointSyncClient.master(activity)){',s.index('    private void syncTick(){'))
 end=s.index('        if(!CheckpointSyncClient.subscriber(activity))return;',start)

@@ -28,7 +28,7 @@ async function importRow(client,row){
  const previous=(await client.query('SELECT fields FROM trl_vehicle_sources WHERE plate=$1',[e.plate])).rows[0]?.fields||{};
  const lastActor=(await client.query('SELECT actor FROM corrections WHERE plate=$1 ORDER BY id DESC LIMIT 1',[e.plate])).rows[0]?.actor;
  const sourceFields={...previous};
- for(const k of ['make','model','colour','description']){
+ for(const k of ['make','model','colour','description','vehicle','address','relation','parking']){
   const owned=previous[k]&&previous[k].value===details[k]&&lastActor==='SILVERTRACK_COLLECTOR';
   const currentSource=previous[k]?.sourceId===e.sourceReportId;
   const newer=previous[k]?.occurredAt&&e.occurredAt&&Date.parse(e.occurredAt)>=Date.parse(previous[k].occurredAt);

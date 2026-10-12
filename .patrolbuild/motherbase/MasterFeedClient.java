@@ -30,7 +30,7 @@ final class MasterFeedClient {
        JSONObject vehicle=x.optJSONObject("vehicle");
        if(vehicle!=null){
          JSONObject safe=new JSONObject();
-         for(String key:new String[]{"plate","rego","registration","make","model","colour","color","description","notes","parking position","address","location"})if(vehicle.has(key))safe.put(key,vehicle.optString(key,""));
+         for(String key:new String[]{"plate","rego","registration","make","model","colour","color","description","vehicle","relation","parking","notes","parking position","address","location"})if(vehicle.has(key))safe.put(key,vehicle.optString(key,""));
          item.put("vehicle",safe);
        }
        rows.put(item);

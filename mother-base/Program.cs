@@ -41,7 +41,7 @@ sealed class MainWindow:Form {
   var tabs=new TabControl(){Dock=DockStyle.Fill};
   Controls.Add(tabs);Controls.Add(status);status.Dock=DockStyle.Bottom;
   AddTab(tabs,"Patrol 1 / 2 / 3",patrols);AddTab(tabs,"SilverTrack activity",activity);
-  vehicles.Columns.Add("plate","Registration");vehicles.Columns.Add("make","Make");vehicles.Columns.Add("model","Model");vehicles.Columns.Add("colour","Colour");vehicles.Columns.Add("revision","Revision");
+  vehicles.Columns.Add("plate","Registration");vehicles.Columns.Add("make","Make");vehicles.Columns.Add("model","Model");vehicles.Columns.Add("colour","Colour");vehicles.Columns.Add("revision","Revision");vehicles.Columns.Add("vehicle","Vehicle");vehicles.Columns.Add("address","Address");vehicles.Columns.Add("warning","Warning level");
   var vehiclePanel=new Panel(){Dock=DockStyle.Fill};vehiclePanel.Controls.Add(vehicles);
   var vehicleButtons=new FlowLayoutPanel(){Dock=DockStyle.Top,AutoSize=true};
   vehicleButtons.Controls.Add(Button("Add vehicle",async()=>await EditVehicle(true)));
@@ -98,7 +98,7 @@ sealed class MainWindow:Form {
  async Task RefreshOne(string name,Func<Task<JsonNode>> load,Action<JsonNode> show,List<string> messages,string label){try{var j=await load();store.Write(name,j.ToJsonString());show(j);messages.Add(label+": connected");}catch(Exception){messages.Add(label+": offline / cached");}}
  static string Pretty(JsonNode j)=>j.ToJsonString(new System.Text.Json.JsonSerializerOptions{WriteIndented=true});
  void LoadCache(){foreach(var p in new (string,Action<JsonNode>)[]{("activity.dpapi",j=>activity.Text="CACHED DATA\r\n"+Pretty(j)),("vehicles.dpapi",ShowVehicles),("history.dpapi",j=>history.Text="CACHED DATA\r\n"+Pretty(j)),("review.dpapi",j=>review.Text="CACHED DATA\r\n"+Pretty(j)),("patrols.dpapi",j=>patrols.Text="CACHED DATA\r\n"+Pretty(j))})try{var j=JsonNode.Parse(store.Read(p.Item1));if(j!=null)p.Item2(j);}catch{}}
- void ShowVehicles(JsonNode j){vehicles.Rows.Clear();vehicleRecords.Clear();foreach(var v in j["vehicles"]?.AsArray()??new JsonArray()){if(v==null)continue;vehicleRecords[v["plate"]!.ToString()]=v.DeepClone();var d=v["details"];vehicles.Rows.Add(v["plate"]?.ToString(),d?["make"]?.ToString(),d?["model"]?.ToString(),d?["colour"]?.ToString(),v["revision"]?.ToString());}}
+ void ShowVehicles(JsonNode j){vehicles.Rows.Clear();vehicleRecords.Clear();foreach(var v in j["vehicles"]?.AsArray()??new JsonArray()){if(v==null)continue;vehicleRecords[v["plate"]!.ToString()]=v.DeepClone();var d=v["details"];vehicles.Rows.Add(v["plate"]?.ToString(),d?["make"]?.ToString(),d?["model"]?.ToString(),d?["colour"]?.ToString(),v["revision"]?.ToString(),d?["vehicle"]?.ToString()??string.Join(" ",new[]{d?["make"]?.ToString(),d?["model"]?.ToString()}.Where(x=>!string.IsNullOrWhiteSpace(x))),d?["address"]?.ToString(),d?["breach_level"]?.ToString());}}
  async Task LoadCheckpoints(){
   JsonNode j;try{j=await Request(feedUrl.Text,"/v1/admin/checkpoints","x-ronin-master-key",masterKey.Text);}
   catch{if(string.IsNullOrWhiteSpace(readerKey.Text))throw;j=await Request(feedUrl.Text,"/v1/checkpoints","x-ronin-reader-key",readerKey.Text);}
@@ -136,9 +136,9 @@ sealed class MainWindow:Form {
  }
  async Task EditVehicle(bool add){
   string plate=add?"":SelectedPlate();JsonNode? old=add?null:vehicleRecords[plate];var details=old?["details"]?.DeepClone()??new JsonObject();
-  var values=PromptFields(add?"Add vehicle":"Correct vehicle",new(){{"Registration",plate},{"Make",details["make"]?.ToString()??""},{"Model",details["model"]?.ToString()??""},{"Colour",details["colour"]?.ToString()??""},{"Description",details["description"]?.ToString()??""},{"Correction reason",""}},!add);
+  var values=PromptFields(add?"Add vehicle":"Correct vehicle",new(){{"Registration",plate},{"Make",details["make"]?.ToString()??""},{"Model",details["model"]?.ToString()??""},{"Colour",details["colour"]?.ToString()??""},{"Description",details["description"]?.ToString()??""},{"Vehicle",details["vehicle"]?.ToString()??""},{"Address",details["address"]?.ToString()??""},{"Relation (at/on/across from/in front of)",details["relation"]?.ToString()??"at"},{"Parking (common/visitor)",details["parking"]?.ToString()??""},{"Correction reason",""}},!add);
   if(values==null)return;if(!add&&values["Correction reason"].Length<10)throw new Exception("Provide a correction reason of at least 10 characters.");
-  foreach(var p in new[]{("Make","make"),("Model","model"),("Colour","colour"),("Description","description")})details[p.Item2]=values[p.Item1];
+  foreach(var p in new[]{("Make","make"),("Model","model"),("Colour","colour"),("Description","description"),("Vehicle","vehicle"),("Address","address"),("Relation (at/on/across from/in front of)","relation"),("Parking (common/visitor)","parking")})details[p.Item2]=values[p.Item1];
   await Request(fleetUrl.Text,"/v1/vehicles","x-trl-master-key",fleetKey.Text,HttpMethod.Put,new JsonObject{["plate"]=values["Registration"],["revision"]=old?["revision"]?.GetValue<long>()??0,["details"]=details,["reason"]=values["Correction reason"]});
   await RefreshCloud();
  }

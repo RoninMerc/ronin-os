@@ -48,3 +48,32 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
   assert.equal((await request('/v1/vehicles','fleet')).data.vehicles.length,0);
  }finally{if(app?.listening)await new Promise(r=>app.close(r));await pool.end();}
 });
+
+test('native Breach sync: uploads, projections, revision conflicts, manual corrections and tombstones',async()=>{
+ const pool=new Pool({connectionString:process.env.TEST_DATABASE_URL,max:6});
+ const opts={masterKey:crypto.randomBytes(32).toString('hex'),readerKey:crypto.randomBytes(32).toString('hex'),fleetKey:crypto.randomBytes(32).toString('hex'),encryptionKey:crypto.randomBytes(32).toString('hex')};
+ const app=createApp(pool,opts);let root;
+ const req=async(path,key='fleet',method='GET',data)=>{
+  const h={'content-type':'application/json'};if(key==='fleet')h['x-trl-master-key']=opts.fleetKey;else if(key==='master')h['x-ronin-master-key']=opts.masterKey;else if(key.startsWith('device:'))h['x-trl-device-token']=key.slice(7);
+  const r=await fetch(root+path,{method,headers:h,body:data===undefined?undefined:JSON.stringify(data)});return {status:r.status,data:await r.json()};
+ };
+ try{
+  await migrate(pool);await new Promise(r=>app.listen(0,'127.0.0.1',r));root='http://127.0.0.1:'+app.address().port;
+  const invite=await req('/v1/invite','fleet','POST',{role:'P2'}),pair=await req('/v1/pair','none','POST',{deviceId:'native-breach-test',code:invite.data.code}),device='device:'+pair.data.token;
+  assert.equal((await req('/v1/breach-sync','none')).status,401);
+  const now=Date.now()-5000,v={plate:'NAT617',colour:'silver',vehicle:'Toyota Corolla',address:'1 Synthetic Test Street',relation:'at',parking:'visitor',saved_at:now,breach_level:2,last_breach_at:now,revision:0};
+  let r=await req('/v1/breach-sync',device,'POST',{vehicles:[v],tombstones:[]});assert.equal(r.data.results[0].status,'created');
+  let received=r.data.vehicles.find(x=>x.plate==='NAT617');assert.equal(received.vehicle,v.vehicle);assert.equal(received.breach_level,2);
+  r=await req('/v1/breach-sync',device,'POST',{vehicles:[{...v,revision:1}],tombstones:[]});assert.equal(r.data.results[0].status,'unchanged');
+  r=await req('/v1/breach-sync',device,'POST',{vehicles:[{...v,colour:'black',saved_at:now+1000,revision:0,reason:'Synthetic manual correction'}],tombstones:[]});assert.equal(r.data.results[0].status,'conflict');
+  r=await req('/v1/breach-sync',device,'POST',{vehicles:[{...v,colour:'black',saved_at:now+1000,revision:1,reason:'Synthetic manual correction'}],tombstones:[]});assert.equal(r.data.results[0].status,'updated');
+  received=r.data.vehicles.find(x=>x.plate==='NAT617');assert.equal(received.colour,'black');assert.equal(received.manual,true);
+  r=await req('/v1/breach-sync',device,'POST',{vehicles:[],tombstones:[{plate_key:'NAT617',deleted_at:now+2000,revision:1}]});assert.equal(r.data.results[0].status,'conflict');
+  r=await req('/v1/breach-sync',device,'POST',{vehicles:[],tombstones:[{plate_key:'NAT617',deleted_at:now+2000,revision:2}]});assert.equal(r.data.results[0].status,'deleted');assert.ok(r.data.tombstones.some(x=>x.plate_key==='NAT617'));
+  assert.equal(r.data.vehicles.some(x=>x.plate==='NAT617'),false);
+  const source={id:'native-source-event',sourceReportId:'native-source-event',guard:'Synthetic',property:'Synthetic site',issue:'Parking Breach - 3rd Warning',date:new Date(now).toISOString(),vehicle:{plate:'SRC617',make:'Toyota',model:'Corolla',colour:'silver',address:'2 Synthetic Test Street',relation:'at',parking:'visitor'}};
+  assert.equal((await req('/v1/activity','master','POST',{rows:[source]})).status,200);
+  r=await req('/v1/breach-sync',device);received=r.data.vehicles.find(x=>x.plate==='SRC617');assert.equal(received.breach_level,3);assert.equal(received.last_breach_at,now);
+  assert.ok(r.data.breaches.some(x=>x.source_id==='native-source-event'));
+ }finally{if(app.listening)await new Promise(r=>app.close(r));await pool.end();}
+});

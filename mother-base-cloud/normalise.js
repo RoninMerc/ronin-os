@@ -17,11 +17,11 @@ function normalise(row){
  const reg=plate(field(['plate','rego','registration','registration number','vehicle registration'],30));
  const id=clean(row.sourceReportId||row.id,130),property=clean(row.property,260);
  if(!id)return {error:'missing source report ID'};
- if(!/^[A-Z0-9]{3,10}$/.test(reg))return {error:'missing or invalid registration',id};
+ if(!/^[A-Z0-9]{1,10}$/.test(reg))return {error:'missing or invalid registration',id};
  const warning=issue.match(/\b([123])(?:st|nd|rd)?\s*(?:warning|breach)\b/i);
  const happened=clean(row.occurredAt||row.date,100);
  const when=/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)$/.test(happened)&&Number.isFinite(Date.parse(happened))?new Date(happened).toISOString():null;
- const event={source:'SilverTrack',sourceReportId:id,plate:reg,make:field(['make']),model:field(['model']),colour:field(['colour','color']),description:field(['vehicle description','description'],500),warningLevel:warning?Number(warning[1]):null,property,sourceDate:happened,occurredAt:when,notes:field(['notes','comments'],1500),parkingPosition:field(['parking position','address','location'],400),issue};
+ const event={source:'SilverTrack',sourceReportId:id,plate:reg,make:field(['make']),model:field(['model']),colour:field(['colour','color']),description:field(['vehicle description','description'],500),warningLevel:warning?Number(warning[1]):null,property,sourceDate:happened,occurredAt:when,notes:field(['notes','comments'],1500),parkingPosition:field(['parking position','location'],400),vehicle:field(['vehicle','make/model','make and model'],160),address:field(['address','street address'],240),relation:field(['relation'],20),parking:field(['parking','parking area'],16),issue};
  return {event,hash:crypto.createHash('sha256').update(JSON.stringify(event)).digest('hex')};
 }
 function checkpoints(rows){

@@ -6,7 +6,7 @@ const MASTER_KEY=process.env.TRL_MASTER_KEY||'',ENC_HEX=process.env.TRL_EVIDENCE
 const hash=v=>crypto.createHash('sha256').update(String(v)).digest('hex');
 const eq=(a,b)=>{const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&crypto.timingSafeEqual(x,y);};
 const plate=v=>String(v||'').toUpperCase().replace(/[\s-]/g,'');
-const validPlate=v=>/^[A-Z0-9]{3,10}$/.test(plate(v));
+const validPlate=v=>/^[A-Z0-9]{1,10}$/.test(plate(v));
 const clean=(v,n)=>typeof v==='string'?v.trim().replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,n):'';
 function send(res,code,obj){res.writeHead(code,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(obj));}
 function enc(buf,key){const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',key,iv);return {iv,data:Buffer.concat([c.update(buf),c.final()]),tag:c.getAuthTag()};}
@@ -65,6 +65,15 @@ function createApp(pool,opts={}){
        const code=crypto.randomBytes(24).toString('base64url');
        await pool.query("INSERT INTO invitations(code_sha,role,expires_at) VALUES($1,$2,now()+interval '10 minutes')",[hash(code),roleName]);
        return send(res,200,{ok:true,code,role:roleName,expiresInSeconds:600});
+    }
+    if(route==='/v1/breach-sync'&&(method==='GET'||method==='POST')){
+       const native=require('./native-breach');
+       let results=[];
+       if(method==='POST'){
+          const b=await readBody(req,16000000);
+          try{results=await native.upload(pool,actor,b);}catch{return send(res,400,{ok:false,error:'invalid native Breach snapshot'});}
+       }
+       return send(res,200,{...(await native.snapshot(pool)),results});
     }
     if(route==='/v1/breaches'&&method==='GET'){
        const data=(await pool.query('SELECT source_id,plate,event,revision,received_at FROM trl_breaches ORDER BY received_at DESC LIMIT 10000')).rows;
