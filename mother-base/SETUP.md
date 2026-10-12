@@ -13,7 +13,7 @@ Implemented:
 - Patrol Link 1.1.50: cloud checkpoint sync for Master and patrol devices, central ownership enforcement, and optional structured vehicle fields in the Master feed.
 
 Still required:
-- Finish verifying the Breach 6.1.7 signed adapter from RoninMerc/device-monitor, branch trl-breach-mother-base-v617. Its actual v6.1.6 SQLite schema and build/signing path have now been inspected.
+- Verify the Breach 6.1.7 signed adapter from RoninMerc/device-monitor, branch trl-breach-mother-base-v617. Its actual v6.1.6 SQLite schema and build/signing path have now been inspected.
 - Verify the Master-only detail collector against a representative real SilverTrack report. It follows only same-origin report links with stable IDs and extracts labelled fields or the existing TRL report narrative. Browser fixtures are verified; live SilverTrack DOM/session behaviour is not yet verified.
 - Configure/deploy the cloud adapter against the existing Render database.
 - Run the live acceptance check with the real Master and Patrol 1/2/3 devices. Automated tests cover the relay API against real PostgreSQL, not a real SilverTrack session or physical Android devices.
@@ -75,7 +75,7 @@ Generate keys with a trusted cryptographic generator. For example, Node's `crypt
 
 These values are unavailable to this chat's connectors, so production configuration has not been applied. Startup fails closed if database or key configuration is missing. Migrations add `trl_*` tables and retain existing vehicles, correction history, devices and evidence tables.
 
-The existing free PostgreSQL instance is scheduled to expire on 5 November 2026 at 01:45 AEST. Configure its continued hosting before that date if it is to remain the operational database.
+The existing free PostgreSQL instance is scheduled to expire on 4 November 2026. Configure its continued hosting before that date if it is to remain the operational database.
 
 ### Mother Base connection settings
 
@@ -150,7 +150,7 @@ Source history upserts by source report ID and revision. Importing or replaying 
 Automated:
 - Android baseline reconstruction, JVM tests and signed release build passed.
 - Windows self-contained publish, startup smoke test, setup compilation, unattended install and installed startup passed.
-- 24 cloud/browser/native-format regression tests and two real-PostgreSQL integration tests passed, with no skipped tests.
+- 21 cloud/browser/native-format regression tests and two real-PostgreSQL integration tests passed, with no skipped tests.
 - The PostgreSQL test covers authenticated Master upload, paired-device reads, duplicate retries, report revisions, manual correction protection, deleted-record protection, checkpoint revision conflicts, phone write rejection and relay restart persistence.
 - Updated Android certificate verification is compared with the 1.1.48 release in the build workflow.
 
