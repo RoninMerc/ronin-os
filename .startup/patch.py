@@ -11,6 +11,6 @@ shutil.copyfile(here/'StartupRecoveryTest.java',tests/'StartupRecoveryTest.java'
 p=tests/'TabletUpgradeTest.java';s=p.read_text();assert 'assertEquals(168,' in s;s=s.replace('assertEquals(168,','assertEquals(169,')
 anchor='  Activity main=ins.startActivitySync'
 assert anchor in s
-s=s.replace(anchor,'  FleetRelay.configure(c,true,1);TabletSettings.prefs(c).edit().putBoolean("read_existing_master",true).commit();\\n'+anchor)
+s=s.replace(anchor,'  FleetRelay.configure(c,true,1);TabletSettings.prefs(c).edit().putBoolean("read_existing_master",true).commit();\n'+anchor)
 p.write_text(s)
 print('STARTUP_REPAIR_OK: native first frame, isolated browser/map recovery, Reader without renderer, certificate/storage unchanged')
