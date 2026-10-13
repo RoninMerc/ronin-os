@@ -1,0 +1,31 @@
+name: Inspect labelled Patrol Link synthetic UI fixtures
+on:
+  push:
+    branches: [trl-tablet-v1.1.53]
+    paths: ['.github/workflows/patrol-fixture-inspect.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Patrol-v155-device-results-30
+          run-id: 38431009730
+          github-token: ${{ github.token }}
+          path: fixture/
+      - name: Encode only the explicitly labelled synthetic phone UI fixture
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          p=Path('fixture/phone-landscape-api-30-TEST-FIXTURE.png')
+          assert p.is_file() and p.name.endswith('-TEST-FIXTURE.png')
+          print('TRL_SYNTHETIC_PREVIEW_START')
+          print(base64.b64encode(p.read_bytes()).decode('ascii'))
+          print('TRL_SYNTHETIC_PREVIEW_END')
+          PY
