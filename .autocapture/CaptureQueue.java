@@ -14,6 +14,11 @@ final class CaptureQueue {
   SharedPreferences p=prefs(c);
   return p.getString("stage","Automatic capture is ready.")+"\nPages read: "+p.getInt("pages",0)+" · reports linked: "+p.getInt("linked",0)+"\nCloud confirmed — created: "+p.getInt("created",0)+" · updated: "+p.getInt("updated",0)+" · duplicate: "+p.getInt("duplicate",0)+"\nReview needed: "+p.getInt("review",0)+" · skipped: "+p.getInt("ignored",0)+" · failed attempts: "+p.getInt("failed",0)+"\nPhotos confirmed: "+p.getInt("photos",0)+" · photo failures: "+p.getInt("photo_failed",0)+"\nUnresolved report links: "+p.getInt("unlinked",0)+" · photo duplicates: "+p.getInt("photo_duplicate",0)+"\n"+p.getString("last","No cloud receipt yet.");
  }
+ static String badge(Context c){
+  SharedPreferences p=prefs(c);String phase=p.getString("stage","Ready").split(":")[0];if(phase.startsWith("Finished"))phase="FINISHED";else if(phase.startsWith("Paused"))phase="PAUSED — tap for details";else if(phase.startsWith("Waiting"))phase="WAITING — tap for setup";else if(phase.length()>36)phase=phase.substring(0,36);
+  int retained=0;try{retained=new JSONArray(p.getString("failed_queue","[]")).length();}catch(Exception ignored){}
+  return "Parking sync: "+phase+"\nPages "+p.getInt("pages",0)+" | imports "+(p.getInt("created",0)+p.getInt("updated",0))+" | unresolved "+p.getInt("unlinked",0)+" | retry items "+retained+"\nPhotos "+p.getInt("photos",0)+" | photo errors "+p.getInt("photo_failed",0)+" | queued "+load(c).length();
+ }
  static void stage(Context c,String s){prefs(c).edit().putString("stage",s).commit();}
  private CaptureQueue(){}
 }

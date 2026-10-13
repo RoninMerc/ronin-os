@@ -95,6 +95,7 @@ final class SilverTrackVehicleCollector{
  }
  private static void next(){
   if(detail!=null||pending.isEmpty()||context==null||!MasterFeedClient.master(context)||!MasterFeedClient.ready(context,true))return;
+  WebView queuedOwner=monitorOwner.get();if(queuedOwner==null||queuedOwner.getParent()==null)return;
   active=pending.remove();persist();identity=active.optString("identity");attempts=0;uploading=false;awaitingReceipt=false;final int token=++epoch;
   try{
    detail=new WebView(context);detail.getSettings().setJavaScriptEnabled(true);detail.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);detail.getSettings().setDomStorageEnabled(true);detail.getSettings().setOffscreenPreRaster(true);SilverTrackBrowserUi.prepare(detail);

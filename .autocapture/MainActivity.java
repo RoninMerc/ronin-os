@@ -356,7 +356,7 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
     }
 
     private void refreshBrowserTally() {
-        if(captureBadge!=null)captureBadge.setText(AutoCaptureJob.status(this));
+        if(captureBadge!=null)captureBadge.setText(CaptureQueue.badge(this));
         if(browserTallyText==null)return;
         String start=DateTimeFormatter.ofPattern("HH:mm · d MMM").format(
                 Instant.ofEpochMilli(engine.checkpoints.shiftStart()).atZone(engine.zone()));

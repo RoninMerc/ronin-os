@@ -58,12 +58,12 @@ public final class AutoCaptureFlowTest {
   ByteArrayOutputStream bytes=new ByteArrayOutputStream();try(InputStream in=c.getAssets().open("extract.js")){byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))>0)bytes.write(buffer,0,n);}
   String reader=bytes.toString("UTF-8").replace("__GUARD_IDS__","[]");
   for(int i=0;i<100;i++){JSONObject page=new JSONObject(js(CaptureCatalog.wrap(reader)));if(page.getJSONArray("allRows").length()>0)return;Thread.sleep(100);}
-  fail("Synthetic report row not readable: "+js(CaptureCatalog.wrap(reader)));
+  fail("Synthetic report row not readable: "+js(CaptureCatalog.wrap(reader))+"; fixture signature="+js("JSON.stringify({url:location.pathname,fixture:document.body.innerText.includes('SYNTHETIC'),tables:document.querySelectorAll('table').length,frames:document.querySelectorAll('iframe').length})"));
  }
  void begin(){ins.runOnMainSync(()->{CaptureQueue.prefs(c).edit().putBoolean("auto_enabled",true).commit();AutoCaptureJob.start(a,engine.webView(),engine.zone(),true);});}
  void done()throws Exception{for(int i=0;i<800;i++){if(!AutoCaptureJob.running()&&CaptureQueue.prefs(c).getString("stage","").startsWith("Finished"))return;Thread.sleep(100);}fail(AutoCaptureJob.status(c));}
  @Test public void TabletCaptureTraversesPagesReadsDetailsAndReceivesVehicleAndPhotoReceipts()throws Exception{
-  ready();begin();done();assertEquals(AutoCaptureJob.status(c),2,vehicles.size());assertEquals(2,images.size());assertEquals(2,CaptureQueue.count(c,"created"));assertEquals(2,CaptureQueue.count(c,"photos"));assertEquals(0,CaptureQueue.load(c).length());
+  ready();begin();done();assertEquals(AutoCaptureJob.status(c),2,vehicles.size());assertEquals(AutoCaptureJob.status(c),2,images.size());assertEquals(2,CaptureQueue.count(c,"created"));assertEquals(2,CaptureQueue.count(c,"photos"));assertEquals(0,CaptureQueue.load(c).length());
   for(JSONObject row:vehicles.values()){assertTrue(row.getString("sourceReportId").startsWith("SilverTrack:"));assertTrue(row.has("occurredAt"));assertEquals("Toyota Corolla",row.getJSONObject("vehicle").getString("vehicle"));}
  }
  @Test public void TransientTransportFailuresRetryAndOnlyCountConfirmedImports()throws Exception{
