@@ -65,14 +65,14 @@ final class TabletDashboard {
   view=new LinearLayout(a);view.setOrientation(LinearLayout.HORIZONTAL);view.setBackgroundColor(BG);view.setPadding(dp(compact?6:12),dp(compact?6:12),dp(compact?6:12),dp(compact?6:12));view.setId(153001);
   LinearLayout left=column();left.setId(153002);
   LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,.35f);lp.rightMargin=dp(compact?6:12);view.addView(left,lp);
-  TextView title=text("TRL  /  PATROL LINK",compact?13:18,WHITE,true);title.setPadding(dp(8),0,0,dp(4));left.addView(title);
-  source=text("TABLET OPERATIONS",11,MUTED,false);source.setMaxLines(1);source.setPadding(dp(8),0,0,dp(compact?2:8));left.addView(source);
+  TextView title=text("TRL  /  PATROL LINK",compact?13:18,WHITE,true);title.setPadding(dp(8),0,0,dp(4));left.addView(title);if(compact)title.setVisibility(View.GONE);
+  source=text("TABLET OPERATIONS",compact?10:11,MUTED,false);source.setMaxLines(1);source.setPadding(dp(8),0,0,dp(compact?2:8));left.addView(source);
   for(int i=0;i<3;i++){
-   final int index=i;LinearLayout card=column();card.setPadding(dp(compact?6:12),dp(compact?3:8),dp(compact?6:12),dp(compact?3:8));card.setBackground(background(PANEL,COLOURS[i],12));card.setId(153010+i);
-   LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,0,1);cp.bottomMargin=dp(compact?4:8);left.addView(card,cp);
+   final int index=i;LinearLayout card=column();card.setPadding(dp(compact?6:12),dp(compact?2:8),dp(compact?6:12),dp(compact?3:8));card.setBackground(background(PANEL,COLOURS[i],12));card.setId(153010+i);
+   LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,0,1);cp.bottomMargin=dp(compact?2:8);left.addView(card,cp);
    guardArea[i]=text("PATROL "+(i+1)+"  /  AREA UNAVAILABLE",12,COLOURS[i],true);guardArea[i].setMaxLines(1);if(!compact)card.addView(guardArea[i]);
    guardName[i]=text("N/A",22,WHITE,true);guardName[i].setMaxLines(1);guardName[i].setAutoSizeTextTypeUniformWithConfiguration(14,22,1,android.util.TypedValue.COMPLEX_UNIT_SP);guardName[i].setEllipsize(TextUtils.TruncateAt.END);if(compact){guardName[i].setTextSize(13);guardName[i].setAutoSizeTextTypeUniformWithConfiguration(11,14,1,android.util.TypedValue.COMPLEX_UNIT_SP);guardArea[i].setTextSize(10);
-    LinearLayout heading=new LinearLayout(a);heading.setGravity(Gravity.CENTER_VERTICAL);heading.addView(guardArea[i],new LinearLayout.LayoutParams(0,-2,1));heading.addView(guardName[i],new LinearLayout.LayoutParams(0,-2,1));card.addView(heading);
+    LinearLayout heading=new LinearLayout(a);heading.setGravity(Gravity.CENTER_VERTICAL);heading.addView(guardArea[i],new LinearLayout.LayoutParams(0,dp(18),1));heading.addView(guardName[i],new LinearLayout.LayoutParams(0,dp(18),1));card.addView(heading);
    }else card.addView(guardName[i]);
    guardActivity[i]=text("Waiting for activity",18,WHITE,false);guardActivity[i].setMaxLines(2);guardActivity[i].setEllipsize(TextUtils.TruncateAt.END);guardActivity[i].setAutoSizeTextTypeUniformWithConfiguration(13,18,1,android.util.TypedValue.COMPLEX_UNIT_SP);
    if(compact){guardActivity[i].setMaxLines(1);guardActivity[i].setAutoSizeTextTypeUniformWithConfiguration(11,13,1,android.util.TypedValue.COMPLEX_UNIT_SP);}
@@ -86,7 +86,7 @@ final class TabletDashboard {
   LinearLayout bottom=new LinearLayout(a);bottom.setGravity(Gravity.CENTER_VERTICAL);
   Button cog=button("\u2699",()->actions.run("settings"));cog.setId(153003);cog.setTextSize(27);cog.setContentDescription("Open tablet settings");
   bottom.addView(cog,new LinearLayout.LayoutParams(dp(56),dp(compact?48:54)));
-  TextView hint=text("LIVE GPS + VERIFIED ACTIVITY",compact?9:11,MUTED,true);hint.setMaxLines(2);hint.setPadding(dp(10),0,0,0);bottom.addView(hint,new LinearLayout.LayoutParams(0,-2,1));left.addView(bottom);
+  TextView hint=text(compact?"TRL · LIVE PATROLS":"LIVE GPS + VERIFIED ACTIVITY",compact?10:11,MUTED,true);hint.setMaxLines(2);hint.setPadding(dp(10),0,0,0);bottom.addView(hint,new LinearLayout.LayoutParams(0,-2,1));left.addView(bottom);
   mapHost=new FrameLayout(a);mapHost.setId(153004);mapHost.setBackground(background(PANEL,LINE,12));view.addView(mapHost,new LinearLayout.LayoutParams(0,-1,.65f));
   map=new MapView(a);map.setId(153005);
   map.setTileSource(new XYTileSource("OpenStreetMap",0,19,256,".png",new String[]{"https://tile.openstreetmap.org/"},"© OpenStreetMap contributors"));
