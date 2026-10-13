@@ -28,7 +28,9 @@ public final class MonitorService extends Service implements PatrolEngine.Listen
             ((PatrolApp)getApplication()).prepare((prepared,failure)->{
                 if(destroyed)return;
                 if(failure!=null){StartupState.failed(this,"engine",failure);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return;}
-                engine=prepared;engine.add(this);if(!engine.running)engine.start();
+                engine=prepared;engine.add(this);
+                try{if(!engine.running)engine.start();}
+                catch(RuntimeException|LinkageError problem){StartupState.failed(this,"engine",problem);engine.stopRuntime("OS_LIMIT","Monitoring could not start; saved settings retained.");stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
             });
         } catch (RuntimeException ex) {
             if(engine!=null)engine.status("OS_LIMIT", "Android did not allow background monitoring. Opening Patrol Link restarts it."); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf();
