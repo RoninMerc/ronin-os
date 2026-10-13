@@ -6,7 +6,7 @@ import org.junit.*;import org.junit.runner.RunWith;import static org.junit.Asser
 public final class ReleaseColdStartTest {
  @Test public void ColdReleaseLaunchShowsThreePatrolPanelsAndKeepsPairing()throws Exception{
   Instrumentation ins=InstrumentationRegistry.getInstrumentation();Context c=ins.getTargetContext();
-  assertFalse("This probe must target the signed release",BuildConfig.DEBUG);
+  assertFalse("This probe must target the signed release",(c.getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0);
   final Activity[] current={ins.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))};
   boolean ready=false;
   for(int attempt=0;attempt<80&&!ready;attempt++){

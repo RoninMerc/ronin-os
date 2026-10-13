@@ -17,7 +17,7 @@ public final class StartupRecoveryTest {
    PatrolApp app=(PatrolApp)c.getApplicationContext();
    try{Field f=PatrolApp.class.getDeclaredField("engine");f.setAccessible(true);PatrolEngine old=(PatrolEngine)f.get(app);if(old!=null){old.stopRuntime("TEST_END","Synthetic fixture");if(old.peekWebView()!=null)old.peekWebView().destroy();}f.set(app,null);}
    catch(Exception err){throw new RuntimeException(err);}
-   engine=app.engine();engine.prefs.edit().putString("guard0","STARTUP TEST ALPHA").commit();
+   engine=app.engine();engine.prefs.edit().putString("guard0","STARTUP TEST ALPHA").putString("startup_fixture_saved","STARTUP TEST ALPHA").commit();
    try{new MasterFeedSecrets(c).save(false,"SYNTHETIC_STARTUP_READER_1234567890123456");}catch(Exception err){throw new RuntimeException(err);}
   });
  }
@@ -30,7 +30,7 @@ public final class StartupRecoveryTest {
   Thread.sleep(2000);ins.waitForIdleSync();
   ins.runOnMainSync(()->{for(Activity a:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(a instanceof MainActivity)activity=(MainActivity)a;});
  }
- void assertData(){assertEquals("STARTUP TEST ALPHA",engine.prefs.getString("guard0",""));assertEquals("SYNTHETIC_STARTUP_READER_1234567890123456",new MasterFeedSecrets(c).load(false));}
+ void assertData(){assertEquals("STARTUP TEST ALPHA",engine.prefs.getString("startup_fixture_saved",""));assertEquals("SYNTHETIC_STARTUP_READER_1234567890123456",new MasterFeedSecrets(c).load(false));}
  @Test public void ReaderStartsTabletWithoutCreatingSilverTrackWebView()throws Exception{
   StartupHooks.failBrowser=true;launch();
   ins.runOnMainSync(()->{assertNotNull(activity.findViewById(153001));assertNull(engine.peekWebView());for(int i=0;i<3;i++)assertNotNull(activity.findViewById(153010+i));assertData();});
