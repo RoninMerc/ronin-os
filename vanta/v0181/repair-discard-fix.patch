@@ -1,0 +1,22 @@
+--- a/app/src/main/java/com/ronin/vanta/ForgeAuthor.java
++++ b/app/src/main/java/com/ronin/vanta/ForgeAuthor.java
+@@ -196,7 +196,18 @@
+                 + " stubs. Implement the stated interfaces consistently with the referenced files. "
+                 + contract;
+         String contents = writeFile(record, system, user, writer, documents);
+-        ForgeSourceGuard.requireClean(path, contents, record);
++        try {
++          ForgeSourceGuard.requireClean(path, contents, record);
++        } catch (ForgeRecovery.InvalidOutput invalid) {
++          // Repair failures must discard the entire repair plan and its model checkpoints.
++          // Retaining stale plan responses causes the next retry to repeat the invalid repair.
++          if (repair)
++            throw new ForgeRecovery.InvalidOutput(
++                invalid.getMessage(),
++                ForgeOutputRecovery.invalidRepairRecords(prefix, proposed.length()),
++                invalid);
++          throw invalid;
++        }
+         file = new JSONObject().put("path", path).put("content", contents);
+         ProjectArchive.path(path);
+         ProjectArchive.contents(file);
