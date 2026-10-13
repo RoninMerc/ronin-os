@@ -22,7 +22,7 @@ public final class MonitorFilterUiTest {
   ins=InstrumentationRegistry.getInstrumentation();Context c=ins.getTargetContext();
   LocalGpsService.prefs(c).edit().putBoolean("intro_seen",true).putBoolean("background_explained",true).commit();
   activity=ins.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-  ins.runOnMainSync(()->{activity.stopService(new Intent(activity,MonitorService.class));((PatrolApp)activity.getApplication()).engine().stop();
+  ins.runOnMainSync(()->{activity.stopService(new Intent(activity,MonitorService.class));((PatrolApp)activity.getApplication()).engine().running=false;
    web=new WebView(activity.getApplicationContext());web.getSettings().setJavaScriptEnabled(true);activity.setContentView(web);
    MonitorFilterUi.bind(activity,web);web.setWebViewClient(new WebViewClient(){@Override public void onPageFinished(WebView w,String url){MonitorFilterUi.pageReady(w);}});
    web.loadDataWithBaseURL(PatrolEngine.MONITOR,HTML,"text/html","UTF-8",null);
