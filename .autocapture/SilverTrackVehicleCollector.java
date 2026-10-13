@@ -131,12 +131,8 @@ final class SilverTrackVehicleCollector{
     if(vehicle==null){if(attempts>=6){finish(token,false,"Report opened, but labelled registration details were not found.");return;}UI.postDelayed(()->read(token),1200);return;}
     JSONObject source=new JSONObject(active.getJSONObject("source").toString());
     source.put("sourceReportId",sourceId(identity)).put("vehicle",vehicle);
-    String date=source.optString("date",""),reportedDate=result.optString("reportedDate","");
-    if(!date.matches("(?s).*\\b20\\d{2}\\b.*")&&reportedDate.matches("(?s).*\\b20\\d{2}\\b.*"))date=reportedDate;
-    if(date.matches("(?s).*\\b20\\d{2}\\b.*")){
-     long when=TimeParser.parse(date,timezone,System.currentTimeMillis());
-     if(when>0&&when<=System.currentTimeMillis()+86400000L)source.put("occurredAt",java.time.Instant.ofEpochMilli(when).toString());
-    }
+    String occurred=CaptureTimestamp.parse(source.optString("date",""),result.optString("reportedDate",""),timezone);
+    if(occurred!=null&&java.time.Instant.parse(occurred).toEpochMilli()<=System.currentTimeMillis()+86400000L)source.put("occurredAt",occurred);
     uploading=true;awaitingReceipt=true;
     UI.postDelayed(()->{if(token==epoch&&awaitingReceipt)finish(token,false,"Vehicle upload timed out; capture this report again.");},90000);
     MasterFeedClient.publishVehicle(context,source,(data,error)->{

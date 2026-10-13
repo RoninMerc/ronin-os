@@ -29,11 +29,11 @@ public final class AutoCaptureFlowTest {
     if("/v1/report-evidence".equals(path)){assertTrue(body.getBoolean("trainingRequested"));assertTrue(vehicles.containsKey(body.getString("sourceReportId")));boolean duplicate=!images.add(body.getString("sourceReportId"));return new JSONObject().put("ok",true).put("duplicate",duplicate).put("id","synthetic-photo").toString();}
     return "{\"ok\":true,\"rows\":[]}";
    };
-   engine.webView().loadUrl(PatrolEngine.MONITOR);
+   engine.webView().loadUrl(fixtureUrl());
   });
   Thread.sleep(500);a=(MainActivity)ins.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));ins.waitForIdleSync();
   for(int attempt=0;attempt<40;attempt++){ins.runOnMainSync(()->{for(Activity active:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(active instanceof MainActivity&&!active.isFinishing())a=(MainActivity)active;});Thread.sleep(100);}
-  Method show=MainActivity.class.getDeclaredMethod("showBrowser");show.setAccessible(true);ins.runOnMainSync(()->{try{show.invoke(a);engine.webView().setWebViewClient(new WebViewClient(){@Override public WebResourceResponse shouldInterceptRequest(WebView w,WebResourceRequest r){return response(r);}@Override public void onPageFinished(WebView w,String url){MonitorFilterUi.pageReady(w);}});engine.webView().loadUrl(PatrolEngine.MONITOR);}catch(Exception e){throw new RuntimeException(e);}});ins.waitForIdleSync();
+  Method show=MainActivity.class.getDeclaredMethod("showBrowser");show.setAccessible(true);ins.runOnMainSync(()->{try{show.invoke(a);engine.webView().setWebViewClient(new WebViewClient(){@Override public WebResourceResponse shouldInterceptRequest(WebView w,WebResourceRequest r){return response(r);}@Override public void onPageFinished(WebView w,String url){MonitorFilterUi.pageReady(w);}});engine.webView().loadUrl(fixtureUrl());}catch(Exception e){throw new RuntimeException(e);}});ins.waitForIdleSync();
  }
  @After public void stop(){ins.runOnMainSync(()->{AutoCaptureJob.stop(a);engine.stopRuntime("TEST_END","Synthetic capture fixture complete");SilverTrackVehicleCollector.resetForDebug();CaptureHooks.pages=null;CaptureHooks.poster=null;new MasterFeedSecrets(c).clear();a.finish();});ins.waitForIdleSync();}
  WebResourceResponse response(WebResourceRequest r){
@@ -46,7 +46,7 @@ public final class AutoCaptureFlowTest {
    if(unsafe)next="<a class='rgPageNext' href='EditIssue.aspx?IssueID=2000001' title='Next page'>Next</a><a href='Monitor.aspx?page=9' title='Last page'>Last</a>";
    body="<h1>ISSUE MONITOR — SYNTHETIC CAPTURE TEST</h1><table><thead><tr><th>Issue ID</th><th>Property</th><th>Reported Issue</th><th>Created Date</th><th>Created By</th><th>Report</th></tr></thead><tbody><tr><td>"+id+"</td><td>Synthetic Property</td><td>Parking Breach - 1st Warning</td><td>14/07/2026 06:00</td><td>Synthetic Guard</td><td><a href='IssueDetails.aspx?IssueID="+id+"'>View</a></td></tr></tbody></table><span aria-current='page'>"+(second?"2":"1")+"</span>"+next;
   }
-  if(r.isForMainFrame()&&!url.contains("IssueDetails.aspx")&&name.getMethodName().startsWith("TabletCapture")){
+  if(r.isForMainFrame()&&!url.contains("IssueDetails.aspx")&&(name.getMethodName().startsWith("TabletCapture")||name.getMethodName().startsWith("Transient"))){
    body=body.replace("<th>Property</th>","").replace("<th>Created Date</th>","").replace("<th>Created By</th>","").replace("<td>Synthetic Property</td>","").replace("<td>14/07/2026 06:00</td>","").replace("<td>Synthetic Guard</td>","");
    String inner=("<html><body>"+body+"</body></html>").replace("&","&amp;").replace("\"","&quot;");
    body="<h1>SYNTHETIC FRAME CAPTURE FIXTURE</h1><iframe style='width:100%;height:650px' srcdoc=\""+inner+"\"></iframe>";
@@ -60,6 +60,7 @@ public final class AutoCaptureFlowTest {
   for(int i=0;i<100;i++){JSONObject page=new JSONObject(js(CaptureCatalog.wrap(reader)));if(page.getJSONArray("allRows").length()>0)return;Thread.sleep(100);}
   fail("Synthetic report row not readable: "+js(CaptureCatalog.wrap(reader))+"; fixture signature="+js("JSON.stringify({url:location.pathname,fixture:document.body.innerText.includes('SYNTHETIC'),tables:document.querySelectorAll('table').length,frames:document.querySelectorAll('iframe').length})"));
  }
+ String fixtureUrl(){return PatrolEngine.MONITOR+"?synthetic="+name.getMethodName();}
  void begin(){ins.runOnMainSync(()->{CaptureQueue.prefs(c).edit().putBoolean("auto_enabled",true).commit();AutoCaptureJob.start(a,engine.webView(),engine.zone(),true);});}
  void done()throws Exception{for(int i=0;i<800;i++){if(!AutoCaptureJob.running()&&CaptureQueue.prefs(c).getString("stage","").startsWith("Finished"))return;Thread.sleep(100);}fail(AutoCaptureJob.status(c));}
  @Test public void TabletCaptureTraversesPagesReadsDetailsAndReceivesVehicleAndPhotoReceipts()throws Exception{
@@ -67,7 +68,7 @@ public final class AutoCaptureFlowTest {
   for(JSONObject row:vehicles.values()){assertTrue(row.getString("sourceReportId").startsWith("SilverTrack:"));assertTrue(row.has("occurredAt"));assertEquals("Toyota Corolla",row.getJSONObject("vehicle").getString("vehicle"));}
  }
  @Test public void TransientTransportFailuresRetryAndOnlyCountConfirmedImports()throws Exception{
-  single=true;failUploads=2;CaptureQueue.prefs(c).edit().putBoolean("capture_photos",false).commit();ins.runOnMainSync(()->engine.webView().reload());Thread.sleep(500);
+  single=true;failUploads=2;CaptureQueue.prefs(c).edit().putBoolean("capture_photos",false).commit();ins.runOnMainSync(()->engine.webView().loadUrl(fixtureUrl()+"&reload="+System.nanoTime()));Thread.sleep(500);
   ready();begin();done();assertEquals(AutoCaptureJob.status(c),1,vehicles.size());assertTrue(posts.get()>=3);assertEquals(1,CaptureQueue.count(c,"created"));assertTrue(CaptureQueue.count(c,"failed")>=2);assertEquals(0,images.size());
  }
  @Test public void PagerRefusesLastPageAndMutatingLinks()throws Exception{
@@ -77,6 +78,6 @@ public final class AutoCaptureFlowTest {
  }
  @Test public void PhoneKeepsItsOriginalToolbarAndDoesNotAutomaticallyPage()throws Exception{
   assertNull(a.findViewById(155201));assertNull(a.findViewById(156201));assertFalse(AutoCaptureJob.running());Thread.sleep(1800);
-  AtomicReference<String> url=new AtomicReference<>();ins.runOnMainSync(()->url.set(engine.webView().getUrl()));assertEquals(PatrolEngine.MONITOR,url.get());assertEquals(0,images.size());
+  AtomicReference<String> url=new AtomicReference<>();ins.runOnMainSync(()->url.set(engine.webView().getUrl()));assertEquals(fixtureUrl(),url.get());assertEquals(0,images.size());
  }
 }

@@ -7,7 +7,7 @@ for source in here.glob('*.java'):
  if source.stem.endswith('Test'):continue
  shutil.copyfile(source,j/source.name)
 p=root/'app/src/main/AndroidManifest.xml';s=p.read_text();assert 'android:theme="@style/TRLTheme"' in s;p.write_text(s.replace('android:theme="@style/TRLTheme"','android:theme="@style/AppTheme"'))
-tests=root/'app/src/test/java/au/com/roningroup/patrollink';shutil.copyfile(here/'ReportPhotoPolicyTest.java',tests/'ReportPhotoPolicyTest.java')
+tests=root/'app/src/test/java/au/com/roningroup/patrollink';shutil.copyfile(here/'ReportPhotoPolicyTest.java',tests/'ReportPhotoPolicyTest.java');shutil.copyfile(here/'CaptureTimestampTest.java',tests/'CaptureTimestampTest.java')
 android=root/'app/src/androidTest/java/au/com/roningroup/patrollink'
 for name in ['MonitorFilterUiTest','BrowserUiTest','AutoCaptureFlowTest']:shutil.copyfile(here/(name+'.java'),android/(name+'.java'))
 p=android/'TabletUpgradeTest.java';s=p.read_text();assert 'assertEquals(167,' in s;p.write_text(s.replace('assertEquals(167,','assertEquals(168,'))

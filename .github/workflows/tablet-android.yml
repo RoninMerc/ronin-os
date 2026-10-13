@@ -236,7 +236,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import shutil,json,re
-          out=Path('release');assert json.loads((out/'JVM-TESTS.json').read_text())['passed']==91
+          out=Path('release');assert json.loads((out/'JVM-TESTS.json').read_text())['passed']==95
           total=0
           for d in Path('device-results').iterdir():
               if not d.is_dir():continue
@@ -248,7 +248,7 @@ jobs:
                           s=p.read_text();assert 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s
                           matches=re.findall(r'OK \((\d+) tests?\)',s);assert matches;total+=int(matches[-1])
           assert total==64
-          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.56/code168\n\nRelease/debug/instrumentation APKs compiled. 91 JVM checks passed. 64 emulator checks passed across API 30 and API 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
+          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.56/code168\n\nRelease/debug/instrumentation APKs compiled. 95 JVM checks passed. 64 emulator checks passed across API 30 and API 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
           PY
       - uses: actions/upload-artifact@v4
         with:
