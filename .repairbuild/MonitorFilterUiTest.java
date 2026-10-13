@@ -101,7 +101,10 @@ public final class MonitorFilterUiTest {
   assertEquals("2",js("String(window.__trlIssueSelection.values.length)"));assertEquals("none",js("document.getElementById('r3').style.display"));
   assertNotEquals("none",js("document.getElementById('r1').style.display"));assertNotEquals("none",js("document.getElementById('r2').style.display"));
   assertEquals("KEEP-GUARD",js("document.getElementById('guard').value"));assertEquals("2026-07-14",js("document.getElementById('date').value"));
-  ins.runOnMainSync(()->web.loadDataWithBaseURL(PatrolEngine.MONITOR,MULTI,"text/html","UTF-8",PatrolEngine.MONITOR));trustedLoaded();Thread.sleep(500);
+  js("document.documentElement.setAttribute('data-old-fixture','1')");
+  ins.runOnMainSync(()->web.reload());
+  for(int i=0;i<80;i++){if("true".equals(js("!!document.getElementById('reportedIssue')&&!document.documentElement.hasAttribute('data-old-fixture')")))break;Thread.sleep(100);}
+  trustedLoaded();
   assertEquals("2",js("String(window.__trlIssueSelection.values.length)"));assertEquals("none",js("document.getElementById('r3').style.display"));
  }
  @Test public void GuardSelectionKeepsIssueSelectionAndUnbindingRestoresUnfilteredDom()throws Exception{
