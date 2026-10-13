@@ -148,6 +148,7 @@ jobs:
             adb install -r device/app-debug-androidTest.apk
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_FINE_LOCATION
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_COARSE_LOCATION
+            adb shell pm list instrumentation
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee filter-device-tests.txt
             python3 -c "from pathlib import Path; s=Path('filter-device-tests.txt').read_text(); assert 'OK (3 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
       - uses: actions/upload-artifact@v4
