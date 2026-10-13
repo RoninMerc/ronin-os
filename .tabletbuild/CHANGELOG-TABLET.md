@@ -8,3 +8,5 @@
 - Lifecycle callbacks handle deferred initialization and recovery.
 - Retained dark TRL landscape dashboard, satellite imagery, Phone/Tablet/Auto selection, physical QR, fleet/GPS, guard selection, laps, voice, SilverTrack filters, automatic report paging and protected photos.
 No SilverTrack credentials are sent to patrol devices. No cloud service, database or signing key changed.
+
+- Saved engine/voice state loads on a worker, including foreground-service restarts; Android's foreground notification appears promptly while loading.

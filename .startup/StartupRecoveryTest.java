@@ -8,7 +8,7 @@ public final class StartupRecoveryTest {
  @Before public void setup()throws Exception{
   ins=InstrumentationRegistry.getInstrumentation();c=ins.getTargetContext();
   ins.runOnMainSync(()->{
-   c.stopService(new Intent(c,MonitorService.class));StartupHooks.failBrowser=StartupHooks.failMap=StartupHooks.failEngine=false;
+   c.stopService(new Intent(c,MonitorService.class));StartupHooks.failBrowser=StartupHooks.failMap=StartupHooks.failEngine=false;StartupHooks.engineDelay=0;
    StartupState.prefs(c).edit().clear().commit();
    CaptureQueue.prefs(c).edit().putBoolean("auto_enabled",false).commit();
    LocalGpsService.prefs(c).edit().putBoolean("intro_seen",true).putBoolean("background_explained",true).commit();
@@ -21,7 +21,7 @@ public final class StartupRecoveryTest {
   });
  }
  @After public void teardown(){
-  ins.runOnMainSync(()->{StartupHooks.failBrowser=StartupHooks.failMap=StartupHooks.failEngine=false;if(activity!=null)activity.finish();engine.stopRuntime("TEST_END","Synthetic fixture");c.stopService(new Intent(c,MonitorService.class));StartupState.prefs(c).edit().clear().commit();});
+  ins.runOnMainSync(()->{StartupHooks.failBrowser=StartupHooks.failMap=StartupHooks.failEngine=false;StartupHooks.engineDelay=0;if(activity!=null)activity.finish();engine.stopRuntime("TEST_END","Synthetic fixture");c.stopService(new Intent(c,MonitorService.class));StartupState.prefs(c).edit().clear().commit();});
   ins.waitForIdleSync();
  }
  void launch()throws Exception{
@@ -47,5 +47,12 @@ public final class StartupRecoveryTest {
  }
  @Test public void EngineFailureShowsRecoveryAndCanRetryWithoutResettingData()throws Exception{
   StartupHooks.failEngine=true;launch();ins.runOnMainSync(()->{assertNotNull(activity.findViewById(157002));assertData();StartupHooks.failEngine=false;try{Method show=MainActivity.class.getDeclaredMethod("showStartup");show.setAccessible(true);show.invoke(activity);Method retry=MainActivity.class.getDeclaredMethod("initialise");retry.setAccessible(true);retry.invoke(activity);}catch(Exception e){throw new RuntimeException(e);}assertNotNull(activity.findViewById(153001));assertData();});
+ }
+ @Test public void SlowSavedStateLoadingKeepsFirstFrameAndMainThreadResponsive()throws Exception{
+  ins.runOnMainSync(()->{try{Field field=PatrolApp.class.getDeclaredField("engine");field.setAccessible(true);engine.stopRuntime("TEST_END","Synthetic fixture");field.set(c.getApplicationContext(),null);StartupHooks.engineDelay=1400;StartupHooks.engineWasMain=true;}catch(Exception e){throw new RuntimeException(e);}});
+  activity=(MainActivity)ins.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));Thread.sleep(350);
+  ins.runOnMainSync(()->{assertNotNull(activity.findViewById(157001));});
+  Thread.sleep(2400);ins.waitForIdleSync();
+  ins.runOnMainSync(()->{for(Activity a:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(a instanceof MainActivity)activity=(MainActivity)a;assertNotNull(activity.findViewById(153001));assertFalse(StartupHooks.engineWasMain);engine=((PatrolApp)c.getApplicationContext()).engine();assertData();});
  }
 }

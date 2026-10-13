@@ -66,7 +66,16 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
         initialising=true;startupStatus.setText("Loading saved patrol settings…");
         try{
             StartupState.phase(this,"engine");StartupHooks.check("engine");
-            engine=((PatrolApp)getApplication()).engine();
+            ((PatrolApp)getApplication()).prepare((prepared,failure)->{
+                if(isFinishing()||isDestroyed())return;
+                if(failure!=null){initialising=false;StartupState.failed(this,"engine",failure);showStartupFailure();return;}
+                completeInitialise(prepared);
+            });
+        }catch(RuntimeException|LinkageError failure){initialising=false;StartupState.failed(this,"engine",failure);showStartupFailure();}
+    }
+    private void completeInitialise(PatrolEngine prepared){
+        try{
+            engine=prepared;
             gpsUi=new LocalGpsUi(this);checkpointUi=new CheckpointProximityUi(this);
             fleetUi=new FleetUi(this,()->{engine.changeFeedMode();showDashboard();});
             updateManager=new AppUpdateManager(this);
@@ -78,9 +87,8 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
             else timer.postDelayed(()->{if(uiReady&&!isFinishing())gpsUi.offerFirstRun();},350);
             if(getIntent().getBooleanExtra("open_patrol_gps",false))timer.post(()->gpsUi.show());
             updateManager.autoCheck();fleetUi.maybeSetup();
-        }catch(RuntimeException|LinkageError failure){
-            StartupState.failed(this,"engine",failure);showStartupFailure();
-        }finally{initialising=false;}
+        }catch(RuntimeException|LinkageError failure){StartupState.failed(this,"engine",failure);showStartupFailure();}
+        finally{initialising=false;}
     }
     private void showStartupFailure(){
         uiReady=false;LinearLayout shell=vertical();shell.setPadding(dp(24),dp(24),dp(24),dp(24));shell.setBackgroundColor(BG);shell.setId(157002);
@@ -438,7 +446,7 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
         browserTallyText.setTextColor(engine.historyAudit.needsCheck()?AMBER:ACCENT);
     }
 
-    private void detachWeb() { if(attachedWeb != null && attachedWeb.getParent() instanceof ViewGroup) ((ViewGroup)attachedWeb.getParent()).removeView(attachedWeb); attachedWeb=null; }
+    private void detachWeb(){if(attachedWeb!=null&&attachedWeb.getParent() instanceof ViewGroup){ViewGroup parent=(ViewGroup)attachedWeb.getParent();if(parent.getContext()==this)parent.removeView(attachedWeb);}attachedWeb=null;}
 
     @Override public void changed() {
         if (!uiReady||engine==null||isFinishing()||isDestroyed())return;
