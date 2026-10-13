@@ -6,7 +6,7 @@ public final class TabletHostActivity extends Activity {
  public boolean failFleet;public int loads;public double fleetLatitude=-27.47;public float testAccuracy=2;public double localLatitude=-27.47001;
  public static boolean preserveSettings;
  @Override public void onCreate(Bundle state){
-  super.onCreate(state);setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+  super.onCreate(state);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
   getSharedPreferences("patrol_settings",0).edit().putString("guard0","Test Alpha").putString("guard1","Test Bravo").putString("guard2","N/A").apply();
   LocalGpsService.prefs(this).edit().putBoolean("device_mode_configured",true).putString("device_mode","master").putBoolean("intro_seen",true).putBoolean("background_explained",true).apply();
   if(!preserveSettings)TabletSettings.prefs(this).edit().clear().commit();

@@ -29,7 +29,7 @@ public final class TabletDashboardTest {
  }
  @Test public void CogOpensOrganisedSettingsAndMissingPermissionDoesNotCrash()throws Exception{
   main(()->activity.findViewById(153003).performClick());Thread.sleep(500);
-  assertTrue(ins.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText("Tablet settings").size()>0);
+  boolean found=false;for(int i=0;i<40;i++){android.view.accessibility.AccessibilityNodeInfo root=ins.getUiAutomation().getRootInActiveWindow();if(root!=null&&!root.findAccessibilityNodeInfosByText("Tablet settings").isEmpty()){found=true;break;}Thread.sleep(100);}assertTrue("Tablet settings dialog becomes visible",found);
   main(()->{LocalGpsService.prefs(activity).edit().putLong("fix_time",0).remove("lat").remove("lon").commit();activity.dashboard.refresh();});assertEquals(View.GONE,activity.findViewById(153020).getVisibility());
  }
  @Test public void SubscriberRoleCannotFetchOrDisplaySupervisorFleet()throws Exception{

@@ -160,6 +160,10 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
+            adb shell svc power stayon true
+            adb shell settings put system screen_off_timeout 1800000
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
             adb shell wm size 1200x1920
             adb shell wm density 160
             adb shell settings put secure location_mode 3
@@ -182,6 +186,7 @@ jobs:
             adb uninstall au.com.roningroup.patrollink.test
             adb uninstall au.com.roningroup.patrollink
             adb install device/baseline.apk
+            if [ "${{ matrix.api }}" -ge 33 ]; then adb shell pm grant au.com.roningroup.patrollink android.permission.POST_NOTIFICATIONS; fi
             adb install device/tablet-probe-signed.apk
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.TabletUpgradeTest#writeBaseline au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-baseline-tests.txt
             python3 -c "from pathlib import Path; s=Path('upgrade-baseline-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s, s"

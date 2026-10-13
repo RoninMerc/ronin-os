@@ -11,7 +11,7 @@ for name in ['MainActivity.java','CheckpointProximityUi.java','FleetRelay.java',
 tests=root/'app/src/test/java/au/com/roningroup/patrollink';tests.mkdir(parents=True,exist_ok=True);shutil.copyfile(here/'TabletPolicyTest.java',tests/'TabletPolicyTest.java')
 androidtests=root/'app/src/androidTest/java/au/com/roningroup/patrollink';androidtests.mkdir(parents=True,exist_ok=True);shutil.copyfile(here/'TabletDashboardTest.java',androidtests/'TabletDashboardTest.java');shutil.copyfile(here/'TabletUpgradeTest.java',androidtests/'TabletUpgradeTest.java')
 debug=root/'app/src/debug/java/au/com/roningroup/patrollink';debug.mkdir(parents=True,exist_ok=True);shutil.copyfile(here/'TabletHostActivity.java',debug/'TabletHostActivity.java')
-manifest=root/'app/src/debug/AndroidManifest.xml';s=manifest.read_text();s=s.replace('</application>','<activity android:name="au.com.roningroup.patrollink.TabletHostActivity" android:exported="false" android:theme="@android:style/Theme.Material.NoActionBar" /></application>');manifest.write_text(s)
+manifest=root/'app/src/debug/AndroidManifest.xml';s=manifest.read_text();s=s.replace('</application>','<activity android:name="au.com.roningroup.patrollink.TabletHostActivity" android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden" android:exported="false" android:theme="@android:style/Theme.Material.NoActionBar" /></application>');manifest.write_text(s)
 assert 'Math.max(20f' not in (j/'CheckpointProximityUi.java').read_text()
 assert 'MonitorFilterUi.bind' in (j/'MainActivity.java').read_text() and 'Capture parking reports' in (j/'MainActivity.java').read_text()
 assert 'X-Ronin-Key' in (j/'FleetRelay.java').read_text()
