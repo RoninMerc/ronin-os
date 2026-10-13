@@ -68,4 +68,17 @@ public final class MonitorFilterUiTest {
   loaded();ins.runOnMainSync(()->web.loadDataWithBaseURL("https://example.org/",HTML,"text/html","UTF-8","https://example.org/"));Thread.sleep(600);loaded();
   ins.runOnMainSync(()->MonitorFilterUi.show(activity,web));assertEquals("all",js("document.getElementById('reportedIssue').value"));
  }
+
+ @Test public void julyParkingRowsExposeStableReadOnlyReportLinks()throws Exception{
+  String fixture="<html><body><table><tr><td>Synthetic Guard</td><td>Synthetic Property</td><td>Parking Breach - 1st Warning</td><td>14/07/2026 06:00</td><td><a href='IssueDetails.aspx?IssueID=717'>View</a></td></tr></table></body></html>";
+  ins.runOnMainSync(()->web.loadDataWithBaseURL(PatrolEngine.MONITOR,fixture,"text/html","UTF-8",PatrolEngine.MONITOR));
+  for(int i=0;i<80;i++){if("true".equals(js("!!document.querySelector('a')")))break;Thread.sleep(100);}
+  java.lang.reflect.Field f=SilverTrackVehicleCollector.class.getDeclaredField("LINKS");f.setAccessible(true);
+  JSONObject row=new JSONObject().put("id","synthetic").put("guard","Synthetic Guard").put("property","Synthetic Property").put("issue","Parking Breach - 1st Warning").put("date","14/07/2026 06:00");
+  JSONArray result=new JSONArray(js("JSON.stringify("+f.get(null)+"("+new JSONArray().put(row)+"))"));
+  assertEquals(1,result.length());
+  assertEquals("/admincustomer/issues/issuedetails.aspx:issueid=717",result.getJSONObject(0).getString("identity"));
+  assertEquals("14/07/2026 06:00",result.getJSONObject(0).getJSONObject("source").getString("date"));
+  assertEquals("https://trlsecurity.silvertracker.net/AdminCustomer/Issues/IssueDetails.aspx?IssueID=717",result.getJSONObject(0).getString("url"));
+ }
 }

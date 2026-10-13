@@ -20,10 +20,14 @@ final class SilverTrackVehicleCollector{
  private static String identity="";
  private static int epoch,attempts;
  static void collect(Context c,WebView monitor,JSONArray rows,ZoneId zone){
-  if(!MasterFeedClient.master(c)||monitor==null||rows==null||rows.length()==0)return;
+  if(!MasterFeedClient.master(c)||monitor==null)return;
+  if(rows==null||rows.length()==0){scanNote(c,"No monitor rows were read. Load the parking-breach results and capture again.");return;}
   String current=monitor.getUrl();
   if(current==null||!current.startsWith("https://trlsecurity.silvertracker.net/AdminCustomer/Issues/"))return;
   context=c.getApplicationContext();timezone=zone;
+  int eligible=0;for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row!=null&&row.optString("issue").matches("(?is).*\\b(?:parking breach|vehicle breach|parking violation)\\b.*"))eligible++;}
+  final int parkingRows=eligible;
+  scanNote(c,"Reading "+rows.length()+" monitor rows ("+parkingRows+" parking-breach rows)…");
   String script=LINKS+"("+rows.toString()+")";
   monitor.evaluateJavascript("JSON.stringify("+script+")",encoded->{
    try{
@@ -35,8 +39,9 @@ final class SilverTrackVehicleCollector{
      boolean queued=false;for(JSONObject q:pending)if(key.equals(q.optString("identity")))queued=true;
      if(!queued&&pending.size()<30)pending.add(item);
     }
+    scanNote(c,"Parking-breach rows: "+parkingRows+" | Read-only report links: "+targets.length()+" | Waiting: "+pending.size()+(targets.length()==0?"\nNo eligible detail links found on this page.":""));
     next();
-   }catch(Exception ignored){}
+   }catch(Exception ignored){scanNote(c,"Monitor links could not be read. Wait for the results to finish loading and capture again.");}
   });
  }
  private static void next(){
@@ -68,9 +73,9 @@ final class SilverTrackVehicleCollector{
    try{
     Object text=new JSONTokener(encoded).nextValue();if(!(text instanceof String))throw new JSONException("No report fields");
     JSONObject result=new JSONObject((String)text);
-    if(result.optBoolean("login")){finish(token,false);return;}
+    if(result.optBoolean("login")){finish(token,false,"Report opened a sign-in page. Sign into SilverTrack on this Master phone again.");return;}
     JSONObject vehicle=result.optJSONObject("vehicle");
-    if(vehicle==null){UI.postDelayed(()->read(token),1500);return;}
+    if(vehicle==null){if(attempts>=4){finish(token,false,"Report opened, but labelled registration details were not found.");return;}UI.postDelayed(()->read(token),1500);return;}
     JSONObject source=new JSONObject(active.getJSONObject("source").toString());
     source.put("sourceReportId",sourceId(identity)).put("vehicle",vehicle);
     String date=source.optString("date","");
@@ -78,7 +83,13 @@ final class SilverTrackVehicleCollector{
      long when=TimeParser.parse(date,timezone,System.currentTimeMillis());
      if(when>0&&when<=System.currentTimeMillis()+86400000L)source.put("occurredAt",java.time.Instant.ofEpochMilli(when).toString());
     }
-    MasterFeedClient.publishVehicle(context,source,(data,error)->finish(token,error==null));
+    MasterFeedClient.publishVehicle(context,source,(data,error)->{
+     if(error!=null||data==null||!data.optBoolean("ok")){finish(token,false,"Vehicle report upload failed. Check Master feed pairing and internet.");return;}
+     JSONObject imports=data.optJSONObject("imports");
+     if(imports==null){finish(token,false,"Cloud reply did not include an import result.");return;}
+     String note="Cloud result — created: "+imports.optInt("created")+", updated: "+imports.optInt("updated")+", duplicate: "+imports.optInt("duplicate")+", review: "+imports.optInt("review")+", ignored: "+imports.optInt("ignored");
+     finish(token,true,note);
+    });
    }catch(Exception e){finish(token,false);}
   });
  }
@@ -86,11 +97,17 @@ final class SilverTrackVehicleCollector{
   byte[] hash=MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));
   StringBuilder out=new StringBuilder("SilverTrack:");for(byte b:hash)out.append(String.format(Locale.ROOT,"%02x",b&255));return out.toString();
  }
- private static void finish(int token,boolean ok){
+ static String status(Context c){
+  android.content.SharedPreferences p=c.getSharedPreferences("patrol_master_feed_v1",0);
+  return p.getString("vehicle_scan_status","No vehicle capture attempted yet.")+"\n\nLatest report: "+p.getString("vehicle_status","Waiting for capture.");
+ }
+ private static void scanNote(Context c,String note){c.getSharedPreferences("patrol_master_feed_v1",0).edit().putString("vehicle_scan_status",note).apply();}
+ private static void finish(int token,boolean ok){finish(token,ok,ok?"Vehicle report received by cloud":"Report capture stopped: page timed out, could not load, or could not be read.");}
+ private static void finish(int token,boolean ok,String note){
   if(token!=epoch)return;++epoch;
   if(ok)completed.put(identity,System.currentTimeMillis());
   if(completed.size()>1000)completed.clear();
-  if(context!=null)context.getSharedPreferences("patrol_master_feed_v1",0).edit().putString("vehicle_status",ok?"Vehicle report synced":"Vehicle details awaiting report fields or cloud connection").apply();
+  if(context!=null)context.getSharedPreferences("patrol_master_feed_v1",0).edit().putString("vehicle_status",note).apply();
   if(detail!=null){detail.stopLoading();detail.destroy();detail=null;}active=null;identity="";
   UI.postDelayed(SilverTrackVehicleCollector::next,2000);
  }
