@@ -71,6 +71,8 @@ public final class MonitorFilterUiTest {
    long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0),up=MotionEvent.obtain(now,now+80,MotionEvent.ACTION_UP,x,y,0);
    assertTrue("HTML dropdown receives touch",web.dispatchTouchEvent(down));web.dispatchTouchEvent(up);down.recycle();up.recycle();
   });
+  for(int attempt=0;attempt<50&&"0".equals(js("String(window.__trlFilterClicks||0)"));attempt++)Thread.sleep(100);
+  assertNotEquals("Custom filter must receive the real HTML touch","0",js("String(window.__trlFilterClicks||0)"));
   find("Parking Breach - 1st Warning");
   AtomicReference<Boolean> hold=new AtomicReference<>();ins.runOnMainSync(()->hold.set(MonitorFilterUi.interacting(web)));assertTrue("Refresh deferred while selecting",hold.get());
   choose("Parking Breach - 1st Warning");choose("Apply");
