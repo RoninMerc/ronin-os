@@ -1,11 +1,5 @@
-# Verification scope — TRL Patrol Link 1.1.55
-
-Use CONFIRMED-TEST-RESULTS.md, APK-VERIFY.txt, APK-MANIFEST.txt, JVM-TESTS.json and the API-specific test transcripts in the delivery for confirmed build results.
-
-The release pipeline must pass compilation, original-certificate verification, 87 JVM checks, independent sanitized-source compilation and 56 emulator checks across Android API 30 and 35 before publication.
-
-Checks cover Phone/Tablet/Auto switching, tablet/phone panel bounds, settings persistence, satellite zoom/y/x addressing, browser layout and overview settings, multiple reported-issue selections/reload, nested/DIV/JavaScript report links, hidden login/frame fields, date extraction, read-only URL policy, Publisher feedback and a genuine signed upgrade from 1.1.52 preserving UID, encrypted Reader pairing, guard/checkpoint and voice state.
-
-Screenshots are explicitly labelled synthetic fixtures. They do not show actual patrol positions or prove network imagery availability.
-
-Remaining field checks: authenticated SilverTrack report formats and successful real vehicle import; live fleet reception; satellite tile delivery; Ronin Forge/car-monitor rendering; physical QR scanning; GPS accuracy, sleep/wake and battery behavior. The supplied recording was not processed because it was not accessible in this execution environment.
+# Test scope — 1.1.56
+The release pipeline requires 91 JVM tests and 64 emulator checks across APIs 30 and 35, original-signature upgrades from 1.1.52, independent exported-source compilation and genuine APK verification.
+New Android checks exercise a production tablet browser job across two synthetic result pages, actual detail WebViews, field/source-date parsing, vehicle publication and photo receipts through debug test transports, retry failures and phone UI separation. Existing UI/GPS/checkpoint/filter tests remain.
+Cloud checks use real PostgreSQL to verify imported report/photo linkage, encrypted storage, idempotency, protected manifests and image retrieval. There is no public photo endpoint.
+Live authenticated SilverTrack reports, Ronin Forge mirroring, field GPS, physical QR and source-photo fidelity still need device verification. See CONFIRMED-TEST-RESULTS.md for successful run results.
