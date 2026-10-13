@@ -75,12 +75,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          KEY="$HOME/.android/debug.keystore"
+          KEY="$RUNNER_TEMP/vanta-rc2-qa.jks"
           SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          test -s "$KEY"
-          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey \
+          keytool -genkeypair -noprompt -keystore "$KEY" -storepass android -keypass android \
+            -alias vantaqa -keyalg RSA -keysize 3072 -validity 3650 \
+            -dname "CN=Ronin Vanta RC2 QA,O=Ronin Group Australia,C=AU"
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias vantaqa \
             --out distribution/Ronin-Vanta-0.18.1-rc2-QA.apk distribution/Ronin-Vanta-0.18.1-rc2-release-unsigned.apk
-          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey \
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias vantaqa \
             --out distribution/Ronin-Vanta-0.18.1-rc2-Personal-QA.apk distribution/Ronin-Vanta-0.18.1-rc2-Personal-unsigned.apk
           "$SIGNER" verify --verbose --print-certs distribution/Ronin-Vanta-0.18.1-rc2-QA.apk > distribution/qa-signature.txt
           "$SIGNER" verify --verbose --print-certs distribution/Ronin-Vanta-0.18.1-rc2-Personal-QA.apk > distribution/personal-signature.txt
