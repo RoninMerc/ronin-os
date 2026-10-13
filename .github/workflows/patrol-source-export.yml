@@ -1,0 +1,182 @@
+name: Export verified Patrol Link 1.1.52 Android source
+on:
+  push:
+    branches: [trl-mother-base-v1]
+    paths: ['.github/workflows/patrol-source-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '447f184bfc98222ac1a6832f3217999a819f47bc'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct current Patrol Link source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v139.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct original project and apply requested update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          PY
+          mkdir -p /tmp/patrol-v141-patch /tmp/patrol-v142-patch /tmp/patrol-v143-patch
+          unzip -q .patrolbuild/v141/patch_bundle.zip -d /tmp/patrol-v141-patch
+          python3 /tmp/patrol-v141-patch/patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v142/patch_bundle.zip -d /tmp/patrol-v142-patch
+          python3 /tmp/patrol-v142-patch/v142_patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v143/patch_bundle.zip -d /tmp/patrol-v143-patch
+          python3 /tmp/patrol-v143-patch/v143_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v144/v144_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v145/v145_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v146/v146_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v147/v147_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v148/v148_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v149/v149_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v150/v150_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v151/v151_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v152/v152_patch.py /tmp/patrol-v134
+          cp .patrolbuild/v153/MasterFeedSecrets.java .patrolbuild/v153/MasterFeedClient.java .patrolbuild/v153/MasterFeedUi.java /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v153/v153_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v154/v154_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v155/v155_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v156/v156_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v157/v157_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v158/v158_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/monitor-filter-patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/vehicle-capture-patch.py /tmp/patrol-v134
+      - name: Export complete project without production signing material
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,re,json,os,hashlib
+          original=Path('/tmp/patrol-v134')
+          root=Path('/tmp/trl-source/TRL-Patrol-Link-v1.1.52')
+          root.mkdir(parents=True,exist_ok=True)
+          excluded={'build','.gradle','.git','local.properties','bundled_voice'}
+          for p in original.rglob('*'):
+              rel=p.relative_to(original)
+              if not p.is_file() or excluded.intersection(rel.parts):continue
+              if p.suffix.lower() in {'.jks','.keystore','.pem','.key','.p12','.pfx'} and rel.as_posix()!='app/src/androidTest/assets/tls-fixture.p12':continue
+              if p.name.lower() in {'key.properties','keystore.properties','.env'}:continue
+              target=root/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,target)
+          gradle=root/'app/build.gradle';s=gradle.read_text()
+          # Remove production signing blocks and references; debug uses Android's standard debug key.
+          pattern=r'\bsigningConfigs\s*\{'
+          while True:
+              match=re.search(pattern,s)
+              if not match:break
+              depth=1;i=match.end()
+              while depth and i<len(s):
+                  if s[i]=='{':depth+=1
+                  elif s[i]=='}':depth-=1
+                  i+=1
+              assert depth==0
+              s=s[:match.start()]+s[i:]
+          s=re.sub(r'\bsigningConfig\s+signingConfigs\.\w+[ \t]*;?', '',s)
+          assert not re.search(r'storePassword|keyPassword|storeFile|keyAlias|signingConfigs',s)
+          gradle.write_text(s)
+          (root/'.gitignore').write_text('local.properties\n.gradle/\n**/build/\n*.jks\n*.keystore\nkeystore.properties\nkey.properties\n.env\n')
+          (root/'README-HANDOFF.md').write_text("""# TRL Patrol Link 1.1.52 — Android source handoff
+
+          This is the reconstructed Android Studio/Gradle project used for the released 1.1.52 capture fix. It is the phone baseline, not an implemented tablet edition.
+
+          ## Build
+          Use JDK 17 and Android SDK platform/build-tools 36. Open this folder in Android Studio and let Gradle sync.
+          Linux/macOS: ./gradlew :app:testDebugUnitTest :app:assembleDebug
+          Windows: gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+          A local Android SDK path can be set in local.properties. Gradle downloads dependencies on first use.
+
+          Debug APKs use the standard local debug certificate. Release APKs from this exported project are unsigned. For an update that retains installed app data, use the original RoninMerc/ronin-os release workflow and original signing certificate. Do not replace the signing identity or uninstall deployed apps.
+
+          Production signing keys and personal bundled voice recordings are excluded. The synthetic TLS instrumentation fixture is retained for tests. Existing voice code/settings are present; retain the authorised voice bundle through the original build pipeline when preparing the final operational APK.
+
+          ## Existing integration to preserve
+          Android package: au.com.roningroup.patrollink
+          Baseline: versionName 1.1.52, versionCode 162
+          Source commit: 447f184bfc98222ac1a6832f3217999a819f47bc
+          MainActivity.java controls the current dashboard; PatrolEngine.java controls the authenticated monitor session.
+          SilverTrackVehicleCollector.java reads eligible detail reports in the Master session.
+          VehicleCaptureUi.java reports found links and actual cloud outcomes.
+          MonitorFilterUi.java retains the working native Reported issue picker.
+          FleetRelay/FleetUi and LocalGpsService provide patrol assignment, cloud GPS and shift state.
+          CheckpointProximityUi/CheckpointSyncClient retain central checkpoint sync, photos, GPS and prompts.
+          MasterFeedClient/MasterFeedSecrets retain separate Publisher/Reader keys and Android Keystore encryption.
+
+          Cloud source and Windows source remain in RoninMerc/ronin-os branch trl-mother-base-v1. Private TRL Breach source is in RoninMerc/device-monitor branch trl-breach-mother-base-v617 and is not bundled here.
+          Master feed URL: https://ronin-silvertrack-master-feed.onrender.com
+          Patrol relay URL: https://ronin-patrol-link-relay.onrender.com
+          No live relay keys, device tokens, SilverTrack passwords, cookies or operational database snapshots are included.
+
+          Read TABLET-EDITION-BRIEF.md before making the tablet UI changes. Phone UI and Android Auto must remain usable.
+          """.replace('          ',''))
+          (root/'TABLET-EDITION-BRIEF.md').write_text("""# Requested tablet edition — implementation brief
+
+          Implement a landscape tablet dashboard on this working 1.1.52 baseline. The original sketch is not present in this ZIP; the written requirements below are available. This document specifies future work, not completed features.
+
+          - Left: three persistent guard panels showing selected guard name, patrol area, current status and latest activity.
+          - Right: automatically refreshed GPS map showing Patrol 1, 2 and 3 and the tablet's own position with distinct markers. Display stale positions and GPS accuracy honestly; preserve cloud relay, assignments and background GPS.
+          - Keep the three guard panels visible while the map updates.
+          - Show the existing QR checkpoint panel automatically when the tablet enters configured proximity; dismiss after completion or leaving range. Retain camera QR scanning. Proximity alone must not be recorded as a scanned QR.
+          - Offer 5 m, 10 m, 15 m and custom proximity distances. Review local and cloud validation together, retain central checkpoint configuration, and account for reported GPS accuracy.
+          - Bottom-left cog holds guard selection, GPS refresh, checkpoint configuration, authentication, diagnostics and other controls.
+          - Preserve phone layouts, Android Auto behavior, central checkpoint names/groups/order/GPS/radius/QR photos, existing storage and settings.
+          - Preserve the Master-only SilverTrack session, Publisher/Reader separation, safe report-link restrictions, report IDs, source dates, duplicate handling and cloud operation when the Windows PC is off.
+          - Retain the native Reported issue picker and Capture parking reports button/dialog. Real July report ingestion still needs confirmation from the user's live capture; fixture tests do not prove the live page was imported.
+          - Use a higher versionCode than 162 and the existing signing pipeline for the final tablet APK so deployed installs can be updated without deleting data.
+
+          Verification must exercise landscape tablet resizing, map/guard updates, checkpoint entry/exit/completion, small distances with poor GPS accuracy, Master/subscriber role boundaries, capture while the browser is visible, filter touch interaction and phone/Android Auto regressions.
+          """.replace('          ',''))
+          provenance={'version':'1.1.52','versionCode':162,'sourceCommit':'447f184bfc98222ac1a6832f3217999a819f47bc','exportRun':os.environ['GITHUB_RUN_ID'],'productionSigningKeysIncluded':False,'personalVoiceRecordingsIncluded':False,'tabletLayoutImplemented':False}
+          (root/'SOURCE-PROVENANCE.json').write_text(json.dumps(provenance,indent=2))
+          # Reject credential stores accidentally copied from a build workspace.
+          for p in root.rglob('*'):
+              if not p.is_file():continue
+              assert p.name not in {'master_feed.xml','patrol_master_feed_v1.xml'}
+          print('SOURCE_EXPORT_READY')
+          PY
+      - name: Verify exported project and create Gradle wrapper
+        working-directory: /tmp/trl-source/TRL-Patrol-Link-v1.1.52
+        run: gradle --no-daemon wrapper --gradle-version 8.13 :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Package only source and verification summary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,json,hashlib,xml.etree.ElementTree as E
+          root=Path('/tmp/trl-source/TRL-Patrol-Link-v1.1.52')
+          tests=[]
+          for p in (root/'app/build/test-results').rglob('TEST-*.xml'):
+              tree=E.parse(p).getroot()
+              for suite in tree.iter('testsuite'):
+                  assert not any(int(suite.get(k,'0')) for k in ['failures','errors'])
+              tests.extend(c.attrib for c in tree.iter('testcase'))
+          assert tests
+          (root/'EXPORT-VERIFICATION.json').write_text(json.dumps({'exportedDebugProjectBuild':'passed','debugInstrumentationCompilation':'passed','passedJvmTests':len(tests),'tests':tests,'releasedBaselineAndroidChecks':4,'tabletDeviceChecks':'not implemented yet'},indent=2))
+          for p in sorted(root.rglob('*'),reverse=True):
+              if p.is_dir() and p.name in {'build','.gradle'}:shutil.rmtree(p)
+          files=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file():files.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(root).as_posix())
+          (root/'SOURCE-SHA256.txt').write_text('\n'.join(files)+'\n')
+          print('EXPORTED_PROJECT_VERIFIED: '+str(len(tests))+' JVM tests; source files '+str(len(files)))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.52-FULL-SOURCE-PROJECT
+          path: /tmp/trl-source/
+          include-hidden-files: true
+          retention-days: 30
