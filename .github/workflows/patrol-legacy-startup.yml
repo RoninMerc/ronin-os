@@ -161,3 +161,5 @@ jobs:
           git tag trl-patrol-link-v1.1.57-startup-recovery-tablet f7f53c78dc1f7674316b21e9223c5acb97247324
           git push origin refs/tags/trl-patrol-link-v1.1.57-startup-recovery-tablet
           gh release create trl-patrol-link-v1.1.57-startup-recovery-tablet --repo "$GITHUB_REPOSITORY" --target f7f53c78dc1f7674316b21e9223c5acb97247324 --prerelease --title "TRL Patrol Link 1.1.57 — Startup recovery and TRL satellite tablet dashboard" --notes-file .tabletbuild/INSTALL-TABLET.md release/*
+
+# Reuse the verified signed binaries; rerun only the missing legacy image.
