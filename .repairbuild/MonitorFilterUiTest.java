@@ -16,17 +16,24 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public final class MonitorFilterUiTest {
- private Instrumentation ins;private Activity activity;private WebView web;
+ private Instrumentation ins;private Activity activity;private WebView web;private volatile String fixtureContent;
  private static final String HTML="<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body style='padding:24px'><label for='reportedIssue'>Reported issue</label><select id='reportedIssue' style='display:block;width:280px;height:48px' onchange='window.changed=(window.changed||0)+1'><option value='all'>All issues</option><option value='parking1'>Parking Breach - 1st Warning</option><option value='parking2'>Parking Breach - 2nd Warning</option><option value='disabled' disabled>Disabled issue</option></select><input id='guard' value='KEEP-GUARD'></body></html>";
  @Before public void setup(){
   ins=InstrumentationRegistry.getInstrumentation();Context c=ins.getTargetContext();
   LocalGpsService.prefs(c).edit().putBoolean("intro_seen",true).putBoolean("background_explained",true).commit();
   c.getSharedPreferences("patrol_silvertrack_issue_filters_v155",0).edit().clear().commit();
+  fixtureContent=HTML;
   activity=ins.startActivitySync(new Intent(c,MonitorFilterHostActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
   ins.runOnMainSync(()->{
    web=new WebView(activity.getApplicationContext());web.getSettings().setJavaScriptEnabled(true);activity.setContentView(web);
-   MonitorFilterUi.bind(activity,web);web.setWebViewClient(new WebViewClient(){@Override public void onPageFinished(WebView w,String url){MonitorFilterUi.pageReady(w);}});
-   web.loadDataWithBaseURL(PatrolEngine.MONITOR,HTML,"text/html","UTF-8",PatrolEngine.MONITOR);
+   MonitorFilterUi.bind(activity,web);web.setWebViewClient(new WebViewClient(){
+    @Override public WebResourceResponse shouldInterceptRequest(WebView w,WebResourceRequest request){
+     if(request.isForMainFrame()&&PatrolEngine.MONITOR.equals(request.getUrl().toString()))return new WebResourceResponse("text/html","UTF-8",new java.io.ByteArrayInputStream(fixtureContent.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+     return super.shouldInterceptRequest(w,request);
+    }
+    @Override public void onPageFinished(WebView w,String url){MonitorFilterUi.pageReady(w);}
+   });
+   web.loadUrl(PatrolEngine.MONITOR);
   });
  }
  @After public void cleanup(){ins.runOnMainSync(()->{MonitorFilterUi.unbind(activity);web.destroy();activity.finish();});}
@@ -87,7 +94,7 @@ public final class MonitorFilterUiTest {
   assertEquals("https://trlsecurity.silvertracker.net/AdminCustomer/Issues/IssueDetails.aspx?IssueID=717",result.getJSONObject(0).getString("url"));
  }
  private static final String MULTI=HTML.replace("</body>","<label for='other'>Guard filter</label><select id='other'><option value='a'>Fixture Guard A</option><option value='b'>Fixture Guard B</option></select><input id='date' value='2026-07-14'><table><tr id='r1'><td>2000001</td><td>Parking Breach - 1st Warning</td></tr><tr id='r2'><td>2000002</td><td>Parking Breach - 2nd Warning</td></tr><tr id='r3'><td>2000003</td><td>General Patrol</td><td>Earlier Parking Breach - 1st Warning mentioned in notes</td></tr></table></body>").replace("<option value='disabled'","<option value='general'>General Patrol</option><option value='disabled'");
- private void multiLoaded()throws Exception{trustedLoaded();ins.runOnMainSync(()->web.loadDataWithBaseURL(PatrolEngine.MONITOR,MULTI,"text/html","UTF-8",PatrolEngine.MONITOR));for(int i=0;i<80;i++){if("true".equals(js("!!document.getElementById('date')")))break;Thread.sleep(100);}trustedLoaded();}
+ private void multiLoaded()throws Exception{trustedLoaded();fixtureContent=MULTI;ins.runOnMainSync(()->web.loadUrl(PatrolEngine.MONITOR));for(int i=0;i<80;i++){if("true".equals(js("!!document.getElementById('date')")))break;Thread.sleep(100);}trustedLoaded();}
  @Test public void MultipleReportedIssuesApplyOrFilteringWithoutChangingOtherControls()throws Exception{
   multiLoaded();ins.runOnMainSync(()->MonitorFilterUi.show(activity,web));choose("Parking Breach - 1st Warning");choose("Parking Breach - 2nd Warning");choose("Apply");
   assertEquals("all",js("document.getElementById('reportedIssue').value"));
