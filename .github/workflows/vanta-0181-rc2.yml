@@ -1,0 +1,121 @@
+name: Ronin Vanta 0.18.1-rc2 Android APK
+
+on:
+  push:
+    branches: ['fix/vanta-0181-rc2']
+    paths:
+      - 'vanta/v0181/**'
+      - '.github/workflows/vanta-0181-rc2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vanta-0181-rc2
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android 16 build tools
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Download pinned successful Vanta 0.18.0 source artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: vanta-0.18.0-build
+          run-id: 38162425069
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Recreate exact Vanta 0.18.1-rc2 patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'c2a56306cf8cc0fb322841ed5df2d713f75ccd3b0d5d00eb3d12b124215d5b30  baseline/Ronin-Vanta-0.18.0-Source.zip' | sha256sum -c -
+          mkdir -p source distribution
+          unzip -q baseline/Ronin-Vanta-0.18.0-Source.zip -d source
+          git -C source apply --check ../vanta/v0181/rc2.patch
+          git -C source apply ../vanta/v0181/rc2.patch
+          git -C source apply --check ../vanta/v0181/rc1-supplement.patch
+          git -C source apply ../vanta/v0181/rc1-supplement.patch
+          grep -q "versionCode 182" source/app/build.gradle
+          grep -q "versionName '0.18.1-rc2'" source/app/build.gradle
+          grep -q "ForgeSourceGuard.requireClean" source/app/src/main/java/com/ronin/vanta/ForgeAuthor.java
+          grep -q "Removed conflicting project repositories" source/app/src/main/java/com/ronin/vanta/AndroidBuildFoundation.java
+      - name: Build Vanta RC2 Android release and debug APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p source --no-daemon --max-workers=2 assembleRelease assembleDebug --stacktrace 2>&1 | tee distribution/compile.log
+      - name: Build optional side-by-side Personal edition
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk distribution/Ronin-Vanta-0.18.1-rc2-release-unsigned.apk
+          gradle -p source -PvantaApplicationId=com.ronin.vanta.personal --no-daemon --max-workers=2 assembleRelease --stacktrace 2>&1 | tee distribution/personal-compile.log
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk distribution/Ronin-Vanta-0.18.1-rc2-Personal-unsigned.apk
+      - name: Sign QA APKs, preserve unsigned owner-signable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY="$HOME/.android/debug.keystore"
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -s "$KEY"
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey \
+            --out distribution/Ronin-Vanta-0.18.1-rc2-QA.apk distribution/Ronin-Vanta-0.18.1-rc2-release-unsigned.apk
+          "$SIGNER" sign --ks "$KEY" --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey \
+            --out distribution/Ronin-Vanta-0.18.1-rc2-Personal-QA.apk distribution/Ronin-Vanta-0.18.1-rc2-Personal-unsigned.apk
+          "$SIGNER" verify --verbose --print-certs distribution/Ronin-Vanta-0.18.1-rc2-QA.apk > distribution/qa-signature.txt
+          "$SIGNER" verify --verbose --print-certs distribution/Ronin-Vanta-0.18.1-rc2-Personal-QA.apk > distribution/personal-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/Ronin-Vanta-0.18.1-rc2-QA.apk > distribution/qa-package.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging distribution/Ronin-Vanta-0.18.1-rc2-Personal-QA.apk > distribution/personal-package.txt
+          grep -q "package: name='com.ronin.vanta.fixed' versionCode='182'" distribution/qa-package.txt
+          grep -q "package: name='com.ronin.vanta.personal' versionCode='182'" distribution/personal-package.txt
+          sha256sum distribution/*.apk > distribution/SHA256SUMS.txt
+          printf '%s\n' '${{ github.sha }}' > distribution/source-commit.txt
+          printf '%s\n' 'WARNING: QA APK is signed with a GitHub-runner debug key. It WILL NOT update an existing app signed by a different key. Never uninstall the existing Vanta to test this APK.' > distribution/SIGNING-IMPORTANT.txt
+      - name: Run Vanta regression tests
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          gradle -p source --no-daemon --max-workers=2 --continue testDebugUnitTest testReleaseUnitTest lintDebug --stacktrace 2>&1 | tee distribution/regression-tests.log
+      - name: Preserve reconstructed full source
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p distribution
+          if test -d source; then
+            python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path('source')
+          with zipfile.ZipFile('distribution/Ronin-Vanta-0.18.1-rc2-rebuilt-source.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for p in root.rglob('*'):
+                  if p.is_file() and not {'.gradle','build','.git'}.intersection(p.relative_to(root).parts):
+                      z.write(p, p.relative_to(root))
+          PY
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Ronin-Vanta-0.18.1-rc2-APKs
+          path: distribution/
+          if-no-files-found: error
