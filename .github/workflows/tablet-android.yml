@@ -212,15 +212,15 @@ jobs:
             adb install -r device/release.apk
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.TabletUpgradeTest#verifyUpgradeAndLaunchTablet au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-release-tests.txt
             python3 -c "from pathlib import Path; s=Path('upgrade-release-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s, s"
-            for attempt in 1 2 3; do
-              adb shell am force-stop au.com.roningroup.patrollink
-              adb shell am start -W -n au.com.roningroup.patrollink/.MainActivity
-              sleep 6
-              adb shell uiautomator dump /data/local/tmp/trl-cold-start.xml
-              adb pull /data/local/tmp/trl-cold-start.xml /tmp/trl-cold-start.xml
-              python3 -c "import xml.etree.ElementTree as E; nodes=list(E.parse('/tmp/trl-cold-start.xml').iter('node')); ids={n.get('resource-id','') for n in nodes}; texts=[n.get('text','').upper() for n in nodes]; assert all(any(('PATROL '+str(i)) in t for t in texts) for i in (1,2,3)), 'Three native patrol panels missing after cold launch'"
-            done
-            echo 'Three release force-stop/relaunch checks passed; no app data cleared' > release-cold-start-tests.txt
+            adb shell am force-stop au.com.roningroup.patrollink
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-1-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-cold-start-1-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am force-stop au.com.roningroup.patrollink
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-2-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-cold-start-2-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am force-stop au.com.roningroup.patrollink
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-3-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-cold-start-3-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -259,8 +259,8 @@ jobs:
                           if p.name=='release-cold-start-tests.txt':
                               assert 'Three release force-stop/relaunch checks passed' in s;continue
                           matches=re.findall(r'OK \((\d+) tests?\)',s);assert matches;total+=int(matches[-1])
-          assert total==117
-          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.57/code169\n\nRelease/debug/instrumentation APKs compiled. 95 JVM checks passed. 117 emulator checks passed across APIs 27, 30 and 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Startup recovery fault injection for engine, browser and map plus interrupted construction was checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
+          assert total==126
+          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.57/code169\n\nRelease/debug/instrumentation APKs compiled. 95 JVM checks passed. 126 emulator checks passed across APIs 27, 30 and 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Startup recovery fault injection for engine, browser and map plus interrupted construction was checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
           PY
       - uses: actions/upload-artifact@v4
         with:

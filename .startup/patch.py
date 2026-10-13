@@ -8,6 +8,7 @@ for source in here.glob('*.java'):
  shutil.copyfile(source,j/source.name)
 tests=root/'app/src/androidTest/java/au/com/roningroup/patrollink'
 shutil.copyfile(here/'StartupRecoveryTest.java',tests/'StartupRecoveryTest.java')
+shutil.copyfile(here/'ReleaseColdStartTest.java',tests/'ReleaseColdStartTest.java')
 p=tests/'TabletUpgradeTest.java';s=p.read_text();assert 'assertEquals(168,' in s;s=s.replace('assertEquals(168,','assertEquals(169,')
 anchor='  Activity main=ins.startActivitySync'
 assert anchor in s

@@ -7,6 +7,7 @@ public final class StartupRecoveryTest {
  Instrumentation ins;Context c;MainActivity activity;PatrolEngine engine;
  @Before public void setup()throws Exception{
   ins=InstrumentationRegistry.getInstrumentation();c=ins.getTargetContext();
+  ins.runOnMainSync(()->{java.util.Set<Activity> prior=new java.util.HashSet<>();for(androidx.test.runner.lifecycle.Stage stage:androidx.test.runner.lifecycle.Stage.values())prior.addAll(androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(stage));for(Activity a:prior)if(!a.isFinishing())a.finish();});ins.waitForIdleSync();Thread.sleep(350);
   ins.runOnMainSync(()->{
    c.stopService(new Intent(c,MonitorService.class));StartupHooks.failBrowser=StartupHooks.failMap=StartupHooks.failEngine=false;StartupHooks.engineDelay=0;
    StartupState.prefs(c).edit().clear().commit();
