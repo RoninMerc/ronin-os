@@ -1,0 +1,125 @@
+name: Package verified tablet delivery and validate exported source
+on:
+  push:
+    branches: [trl-tablet-v1.1.53]
+    paths: ['.github/workflows/tablet-delivery-bundle.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.53-TABLET-delivery
+          run-id: 38390499833
+          github-token: ${{ github.token }}
+          path: delivery/
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Tablet-v153-device-results-*
+          run-id: 38390499833
+          github-token: ${{ github.token }}
+          path: device-results/
+      - name: Confirm successful build and combine the actual test results
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/RoninMerc/ronin-os/actions/runs/38390499833 --jq '.conclusion' > /tmp/verified-conclusion
+          test "$(cat /tmp/verified-conclusion)" = success
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re,shutil,zipfile
+          out=Path('delivery');jvm=json.loads((out/'JVM-TESTS.json').read_text())
+          assert jvm['passed']==82
+          total=0
+          for d in Path('device-results').iterdir():
+              if not d.is_dir():continue
+              api=d.name.split('-')[-1];apiTotal=0
+              for p in d.iterdir():
+                  if p.suffix=='.txt':
+                      text=p.read_text();assert 'FAILURES' not in text and 'INSTRUMENTATION_FAILED' not in text
+                      matches=re.findall(r'OK \((\d+) tests?\)',text);assert matches;apiTotal+=int(matches[-1])
+                      shutil.copyfile(p,out/('API-'+api+'-'+p.name))
+                  elif p.suffix=='.png':shutil.copyfile(p,out/p.name)
+              assert apiTotal==17
+              total+=apiTotal
+          assert total==34
+          report="""# TRL Patrol Link 1.1.53 Tablet — confirmed results
+
+          Final versionCode: 165. Release build run: 38390499833.
+          Compilation: release, debug and Android instrumentation APKs succeeded.
+          Existing/new JVM regression tests: 82 passed.
+          Android 11/API 30: 14 UI/filter/GPS adapter/proximity/reader-role checks, 1 smaller-screen rendering check, and 2 actual signed upgrade checks passed.
+          Android 15/API 35: the same 17 checks passed.
+          Total emulator checks: 34 passed.
+
+          The actual 1.1.52 APK was installed and upgraded through Android PackageManager to this signed build. Guard/checkpoint settings, muted voice setting, app UID and encrypted Reader pairing were retained. The release certificate matches the original installed-release baseline.
+          Landscape guard panels and the genuine geographic OpenStreetMap view rendered at large and smaller tablet sizes. Tests verified moving markers, offline/stale retention, invalid/missing/mock GPS rejection, role boundaries, actual 5 m activation/poor-accuracy rejection, persisted settings, separate local pin, read-only supervisor feed mode without clearing the local session, and QR viewing with measured distance and no fabricated scan.
+
+          Screenshots are labelled SYNTHETIC TEST FIXTURE. They demonstrate the actual Android UI, not live fleet positions.
+          Physical checks remain necessary: actual tablet GPS accuracy at 5–15 m, live patrol reception and physical QR/source scan recognition, screen-off/battery behavior, device-specific layout/orientation, and Android Auto projection.
+
+          Cloud checkpoint validation for 1–500 m passed regression/PostgreSQL checks and is live on the existing Mother Base service. Existing cloud credentials and data formats were preserved.
+          """.replace('          ','')
+          (out/'CONFIRMED-TEST-RESULTS.md').write_text(report)
+          source=Path('source-project');source.mkdir(exist_ok=True)
+          with zipfile.ZipFile(out/'TRL-Patrol-Link-v1.1.53-TABLET-FULL-SOURCE.zip') as archive:archive.extractall(source)
+          root=next(p for p in source.iterdir() if p.is_dir())
+          shutil.copyfile(out/'CONFIRMED-TEST-RESULTS.md',root/'CONFIRMED-TEST-RESULTS.md')
+          Path('/tmp/tablet-source-path').write_text(str(root.resolve()))
+          print('CONFIRMED: 82 JVM tests; 34 emulator checks; signed package upgrades on API 30 and API 35')
+          PY
+      - name: Build the exported source without private signing keys
+        run: |
+          cd "$(cat /tmp/tablet-source-path)"
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Clean source build outputs and refresh final source archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,zipfile,hashlib
+          root=Path(Path('/tmp/tablet-source-path').read_text())
+          for p in sorted(root.rglob('*'),reverse=True):
+              if p.is_dir() and p.name in {'build','.gradle'}:shutil.rmtree(p)
+          (root/'CONFIRMED-TEST-RESULTS.md').write_text((root/'CONFIRMED-TEST-RESULTS.md').read_text()+'\nExported source independently compiled and passed its JVM suite without production signing material.\n')
+          shutil.copyfile(root/'CONFIRMED-TEST-RESULTS.md',Path('delivery/CONFIRMED-TEST-RESULTS.md'))
+          target=Path('delivery/TRL-Patrol-Link-v1.1.53-TABLET-FULL-SOURCE.zip')
+          with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as archive:
+              for p in sorted(root.rglob('*')):
+                  if p.is_file():archive.write(p,p.relative_to(root.parent))
+          sums=[]
+          for p in sorted(Path('delivery').iterdir()):
+              if p.is_file() and p.suffix in {'.apk','.zip'}:sums.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name)
+          Path('delivery/SHA256.txt').write_text('\n'.join(sums)+'\n')
+          images=Path('docs/trl-tablet-v153/final-fixture-preview');images.mkdir(parents=True,exist_ok=True)
+          for p in Path('delivery').glob('*-TEST-FIXTURE.png'):shutil.copyfile(p,images/p.name)
+          PY
+      - name: Preserve final labelled screenshots and release reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "Ronin tablet build"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/trl-tablet-v153/final-fixture-preview
+          git commit -m "Preserve final labelled tablet rendering previews"
+          git push origin HEAD:trl-tablet-v1.1.53
+          gh release upload trl-patrol-link-v1.1.53-tablet-release --repo "$GITHUB_REPOSITORY" --clobber delivery/TRL-Patrol-Link-v1.1.53-TABLET-FULL-SOURCE.zip delivery/CONFIRMED-TEST-RESULTS.md delivery/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.53-TABLET-APK-AND-REPORTS
+          path: delivery/
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.53-TABLET-FULL-SOURCE
+          path: source-project/
+          include-hidden-files: true
+          retention-days: 30
