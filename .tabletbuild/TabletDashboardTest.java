@@ -10,7 +10,7 @@ public final class TabletDashboardTest {
  @Test public void LandscapeDashboardKeepsThreePanelsAndNativeStreetMap()throws Exception{
   assertTrue(activity.getResources().getDisplayMetrics().widthPixels>activity.getResources().getDisplayMetrics().heightPixels);
   main(()->{View left=activity.findViewById(153002),right=activity.findViewById(153004);assertTrue(left.getWidth()>0&&right.getWidth()>left.getWidth());for(int i=0;i<3;i++){View card=activity.findViewById(153010+i);assertEquals(View.VISIBLE,card.getVisibility());assertTrue(card.getHeight()>80);}assertEquals(View.VISIBLE,activity.findViewById(153003).getVisibility());assertEquals("OpenStreetMap",activity.dashboard.map.getTileProvider().getTileSource().name());});
-  android.graphics.Bitmap screenshot=ins.getUiAutomation().takeScreenshot();assertNotNull(screenshot);java.io.File file=new java.io.File(activity.getExternalFilesDir(null),"tablet-landscape-test-fixture.png");try(java.io.FileOutputStream out=new java.io.FileOutputStream(file)){screenshot.compress(Bitmap.CompressFormat.PNG,100,out);}
+  android.graphics.Bitmap screenshot=ins.getUiAutomation().takeScreenshot();assertNotNull(screenshot);java.io.File file=new java.io.File(activity.getFilesDir(),"tablet-landscape-test-fixture.png");try(java.io.FileOutputStream out=new java.io.FileOutputStream(file)){screenshot.compress(Bitmap.CompressFormat.PNG,100,out);}
  }
  @Test public void RealMarkerAdapterMovesAndRetainsStalePositionsOnLoss()throws Exception{
   Marker[] markers=(Marker[])field("patrolMarkers");assertNotNull(markers[0]);double before=markers[0].getPosition().getLatitude();

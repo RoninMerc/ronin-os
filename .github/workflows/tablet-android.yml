@@ -169,13 +169,13 @@ jobs:
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_COARSE_LOCATION
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest,au.com.roningroup.patrollink.TabletDashboardTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-device-tests.txt
             python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (11 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
-            adb pull /sdcard/Android/data/au.com.roningroup.patrollink/files/tablet-landscape-test-fixture.png tablet-landscape-api-${{ matrix.api }}-TEST-FIXTURE.png
+            adb exec-out run-as au.com.roningroup.patrollink cat files/tablet-landscape-test-fixture.png > tablet-landscape-api-${{ matrix.api }}-TEST-FIXTURE.png
             adb shell wm size 900x1440
             adb shell wm density 240
             adb shell settings put system font_scale 1.15
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.TabletDashboardTest#LandscapeDashboardKeepsThreePanelsAndNativeStreetMap au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-small-screen-tests.txt
             python3 -c "from pathlib import Path; s=Path('tablet-small-screen-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s, s"
-            adb pull /sdcard/Android/data/au.com.roningroup.patrollink/files/tablet-landscape-test-fixture.png tablet-small-api-${{ matrix.api }}-TEST-FIXTURE.png
+            adb exec-out run-as au.com.roningroup.patrollink cat files/tablet-landscape-test-fixture.png > tablet-small-api-${{ matrix.api }}-TEST-FIXTURE.png
             adb shell wm size 1200x1920
             adb shell wm density 160
             adb shell settings put system font_scale 1.0
