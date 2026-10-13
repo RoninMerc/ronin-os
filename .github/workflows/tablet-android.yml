@@ -1,0 +1,229 @@
+name: TRL Patrol Link Tablet v1.1.53
+on:
+  push:
+    branches: [trl-tablet-v1.1.53]
+    paths: ['.tabletbuild/**', '.github/workflows/tablet-android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: tablet-v153
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.13'}
+      - name: Reconstruct current Patrol Link source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v139.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct original project and apply requested update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          PY
+          mkdir -p /tmp/patrol-v141-patch /tmp/patrol-v142-patch /tmp/patrol-v143-patch
+          unzip -q .patrolbuild/v141/patch_bundle.zip -d /tmp/patrol-v141-patch
+          python3 /tmp/patrol-v141-patch/patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v142/patch_bundle.zip -d /tmp/patrol-v142-patch
+          python3 /tmp/patrol-v142-patch/v142_patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v143/patch_bundle.zip -d /tmp/patrol-v143-patch
+          python3 /tmp/patrol-v143-patch/v143_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v144/v144_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v145/v145_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v146/v146_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v147/v147_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v148/v148_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v149/v149_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v150/v150_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v151/v151_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v152/v152_patch.py /tmp/patrol-v134
+          cp .patrolbuild/v153/MasterFeedSecrets.java .patrolbuild/v153/MasterFeedClient.java .patrolbuild/v153/MasterFeedUi.java /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v153/v153_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v154/v154_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v155/v155_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v156/v156_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v157/v157_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v158/v158_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/monitor-filter-patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/vehicle-capture-patch.py /tmp/patrol-v134
+      - name: Apply tablet edition and check retained integrations
+        run: |
+          python3 .tabletbuild/tablet-patch.py /tmp/patrol-v134
+          J=/tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink
+          grep -q 'versionCode 163' /tmp/patrol-v134/app/build.gradle
+          grep -q "versionName '1.1.53'" /tmp/patrol-v134/app/build.gradle
+          grep -q 'MonitorFilterUi.bind' "$J/MainActivity.java"
+          grep -q 'Capture parking reports' "$J/MainActivity.java"
+          grep -q 'MasterFeedClient.publish' "$J/PatrolEngine.java"
+          grep -q 'CheckpointSyncClient.central' "$J/CheckpointProximityUi.java"
+          ! grep -q 'Math.max(20f' "$J/CheckpointProximityUi.java"
+      - name: Compile signed APK and run existing plus tablet unit tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest wrapper --gradle-version 8.13
+      - name: Verify real APK and original signing certificate
+        run: |
+          mkdir -p /tmp/tablet-release /tmp/tablet-device
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk
+          CHECK="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$CHECK" verify --verbose --print-certs /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk | tee /tmp/tablet-release/APK-VERIFY.txt
+          "$CHECK" verify --print-certs dist/TRL-Patrol-Link-v1.1.48.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/previous-cert
+          "$CHECK" verify --print-certs /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/new-cert
+          diff /tmp/previous-cert /tmp/new-cert
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk > /tmp/tablet-release/APK-MANIFEST.txt
+          grep -q "package: name='au.com.roningroup.patrollink' versionCode='163'" /tmp/tablet-release/APK-MANIFEST.txt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk > /tmp/tablet-release/manifest.xml
+          ! grep -q 'TabletHostActivity' /tmp/tablet-release/manifest.xml
+          sha256sum /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk > /tmp/tablet-release/SHA256.txt
+      - name: Prepare a release-signed upgrade probe and source project
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/patrol-v134/app/build.gradle')
+          p.write_text(p.read_text()+'''
+          // TABLET_TEST_SIGNING
+          tasks.register("tabletSigningForProbe") {
+              doLast {
+                  def cfg=android.signingConfigs.release
+                  new File("/tmp/tablet-signing-private.json").text=groovy.json.JsonOutput.toJson([
+                      path:cfg.storeFile.absolutePath, password:cfg.storePassword,
+                      alias:cfg.keyAlias, keyPassword:cfg.keyPassword])
+              }
+          }
+          ''')
+          PY
+          cd /tmp/patrol-v134
+          gradle --no-daemon :app:tabletSigningForProbe
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          cfg=json.loads(Path('/tmp/tablet-signing-private.json').read_text())
+          tool=os.environ['ANDROID_HOME']+'/build-tools/36.0.0/apksigner'
+          result=subprocess.run([tool,'sign','--ks',cfg['path'],'--ks-pass','pass:'+cfg['password'],'--ks-key-alias',cfg['alias'],'--key-pass','pass:'+cfg['keyPassword'],'--out','/tmp/tablet-probe-signed.apk','/tmp/patrol-v134/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'],capture_output=True)
+          assert result.returncode==0,'Upgrade instrumentation signing failed'
+          Path('/tmp/tablet-signing-private.json').unlink()
+          PY
+          python3 .tabletbuild/package-source.py
+          cp .tabletbuild/CHANGELOG-TABLET.md .tabletbuild/INSTALL-TABLET.md .tabletbuild/TABLET-TEST-RESULTS.md /tmp/tablet-release/
+          cp /tmp/tablet-delivery/* /tmp/tablet-release/
+          gh release download trl-patrol-link-v1.1.52-vehicle-capture --repo "$GITHUB_REPOSITORY" --pattern TRL-Patrol-Link-v1.1.52.apk --dir /tmp/tablet-baseline
+          cp /tmp/patrol-v134/app/build/outputs/apk/debug/app-debug.apk /tmp/tablet-device/
+          cp /tmp/patrol-v134/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk /tmp/tablet-device/
+          cp /tmp/tablet-probe-signed.apk /tmp/tablet-device/
+          cp /tmp/tablet-baseline/TRL-Patrol-Link-v1.1.52.apk /tmp/tablet-device/baseline.apk
+          cp /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk /tmp/tablet-device/release.apk
+      - uses: actions/upload-artifact@v4
+        with: {name: Tablet-v153-device-inputs, path: /tmp/tablet-device/, retention-days: 7}
+      - uses: actions/upload-artifact@v4
+        with: {name: TRL-Patrol-Link-v1.1.53-TABLET-delivery, path: /tmp/tablet-release/, retention-days: 30}
+  device:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 35]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: Tablet-v153-device-inputs, path: device/}
+      - name: Free space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install, render, test policies and verify signed upgrade
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          target: google_apis
+          ram-size: 2048M
+          disk-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb shell wm size 1200x1920
+            adb shell wm density 160
+            adb shell settings put secure location_mode 3
+            adb install -r device/app-debug.apk
+            adb install -r device/app-debug-androidTest.apk
+            adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_FINE_LOCATION
+            adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_COARSE_LOCATION
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest,au.com.roningroup.patrollink.TabletDashboardTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-device-tests.txt
+            python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (10 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb pull /sdcard/Android/data/au.com.roningroup.patrollink/files/tablet-landscape-test-fixture.png tablet-landscape-api-${{ matrix.api }}-TEST-FIXTURE.png
+            adb shell wm size 900x1440
+            adb shell wm density 240
+            adb shell settings put system font_scale 1.15
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.TabletDashboardTest#LandscapeDashboardKeepsThreePanelsAndNativeStreetMap au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-small-screen-tests.txt
+            python3 -c "from pathlib import Path; s=Path('tablet-small-screen-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s, s"
+            adb pull /sdcard/Android/data/au.com.roningroup.patrollink/files/tablet-landscape-test-fixture.png tablet-small-api-${{ matrix.api }}-TEST-FIXTURE.png
+            adb shell wm size 1200x1920
+            adb shell wm density 160
+            adb shell settings put system font_scale 1.0
+            adb uninstall au.com.roningroup.patrollink.test
+            adb uninstall au.com.roningroup.patrollink
+            adb install device/baseline.apk
+            adb install device/tablet-probe-signed.apk
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.TabletUpgradeTest#writeBaseline au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-baseline-tests.txt
+            python3 -c "from pathlib import Path; s=Path('upgrade-baseline-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s, s"
+            adb install -r device/release.apk
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.TabletUpgradeTest#verifyUpgradeAndLaunchTablet au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-release-tests.txt
+            python3 -c "from pathlib import Path; s=Path('upgrade-release-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s, s"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Tablet-v153-device-results-${{ matrix.api }}
+          path: |
+            *-tests.txt
+            *-TEST-FIXTURE.png
+          retention-days: 30
+  publish:
+    needs: [build, device]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: TRL-Patrol-Link-v1.1.53-TABLET-delivery, path: release/}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Tablet-v153-device-results-*
+          path: device-results/
+      - name: Collect API-specific results and fixture screenshots
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          out=Path('release')
+          for d in Path('device-results').iterdir():
+              if not d.is_dir():continue
+              api=d.name.split('-')[-1]
+              for p in d.iterdir():
+                  if p.is_file():shutil.copyfile(p,out/(p.name if p.suffix=='.png' else 'API-'+api+'-'+p.name))
+          PY
+      - name: Publish the verified operational APK and complete source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag trl-patrol-link-v1.1.53-tablet "$GITHUB_SHA"
+          git push origin refs/tags/trl-patrol-link-v1.1.53-tablet
+          gh release create trl-patrol-link-v1.1.53-tablet --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "TRL Patrol Link 1.1.53 — Tablet Edition" --notes-file .tabletbuild/INSTALL-TABLET.md release/*
