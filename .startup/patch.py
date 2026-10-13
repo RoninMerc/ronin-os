@@ -12,5 +12,6 @@ p=tests/'TabletUpgradeTest.java';s=p.read_text();assert 'assertEquals(168,' in s
 anchor='  Activity main=ins.startActivitySync'
 assert anchor in s
 s=s.replace(anchor,'  FleetRelay.configure(c,true,1);TabletSettings.prefs(c).edit().putBoolean("read_existing_master",true).commit();\n'+anchor)
+s=s.replace('c.getPackageManager().getPackageInfo(c.getPackageName(),0).getLongVersionCode()','(Build.VERSION.SDK_INT>=28?c.getPackageManager().getPackageInfo(c.getPackageName(),0).getLongVersionCode():c.getPackageManager().getPackageInfo(c.getPackageName(),0).versionCode)')
 p.write_text(s)
 print('STARTUP_REPAIR_OK: native first frame, isolated browser/map recovery, Reader without renderer, certificate/storage unchanged')

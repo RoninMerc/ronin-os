@@ -146,7 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [30, 35]
+        api: [27, 30, 35]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -185,7 +185,7 @@ jobs:
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_COARSE_LOCATION
             if [ "${{ matrix.api }}" -ge 33 ]; then adb shell pm grant au.com.roningroup.patrollink android.permission.POST_NOTIFICATIONS; fi
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest,au.com.roningroup.patrollink.TabletDashboardTest,au.com.roningroup.patrollink.SilverTrackCaptureTest,au.com.roningroup.patrollink.BrowserUiTest,au.com.roningroup.patrollink.AutoCaptureFlowTest,au.com.roningroup.patrollink.StartupRecoveryTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-device-tests.txt
-            python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (34 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (35 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
             adb exec-out run-as au.com.roningroup.patrollink cat files/tablet-landscape-test-fixture.png > tablet-landscape-api-${{ matrix.api }}-TEST-FIXTURE.png
             adb shell wm size 900x1440
             adb shell wm density 240
@@ -259,8 +259,8 @@ jobs:
                           if p.name=='release-cold-start-tests.txt':
                               assert 'Three release force-stop/relaunch checks passed' in s;continue
                           matches=re.findall(r'OK \((\d+) tests?\)',s);assert matches;total+=int(matches[-1])
-          assert total==76
-          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.57/code169\n\nRelease/debug/instrumentation APKs compiled. 95 JVM checks passed. 76 emulator checks passed across API 30 and API 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Startup recovery fault injection for engine, browser and map plus interrupted construction was checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
+          assert total==117
+          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.57/code169\n\nRelease/debug/instrumentation APKs compiled. 95 JVM checks passed. 117 emulator checks passed across APIs 27, 30 and 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Startup recovery fault injection for engine, browser and map plus interrupted construction was checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
           PY
       - uses: actions/upload-artifact@v4
         with:

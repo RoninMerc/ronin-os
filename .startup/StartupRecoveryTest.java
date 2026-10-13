@@ -55,4 +55,10 @@ public final class StartupRecoveryTest {
   Thread.sleep(2400);ins.waitForIdleSync();
   ins.runOnMainSync(()->{for(Activity a:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(a instanceof MainActivity)activity=(MainActivity)a;assertNotNull(activity.findViewById(153001));assertFalse(StartupHooks.engineWasMain);engine=((PatrolApp)c.getApplicationContext()).engine();assertData();});
  }
+ @Test public void LocationStatusUsesSupportedProviderApi()throws Exception{
+  android.location.LocationManager manager=c.getSystemService(android.location.LocationManager.class);boolean expected=false;
+  if(manager!=null)expected=Build.VERSION.SDK_INT>=28?manager.isLocationEnabled():manager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)||manager.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER);
+  assertEquals(expected,LocalGpsService.locationEnabled(c));launch();
+  ins.runOnMainSync(()->{assertNotNull(activity.findViewById(153001));assertData();});
+ }
 }
