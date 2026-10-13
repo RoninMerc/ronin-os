@@ -18,7 +18,7 @@ public final class TabletUpgradeTest {
  }
  @Test public void verifyUpgradeAndLaunchTablet()throws Exception{
   Instrumentation ins=InstrumentationRegistry.getInstrumentation();Context c=ins.getTargetContext();
-  assertEquals(164,c.getPackageManager().getPackageInfo(c.getPackageName(),0).getLongVersionCode());
+  assertEquals(165,c.getPackageManager().getPackageInfo(c.getPackageName(),0).getLongVersionCode());
   assertEquals(c.getSharedPreferences("tablet_upgrade_probe",0).getInt("uid",-1),android.os.Process.myUid());
   assertEquals("Upgrade Test Guard",c.getSharedPreferences("patrol_settings",0).getString("guard0",""));assertFalse(c.getSharedPreferences("patrol_settings",0).getBoolean("voice",true));
   assertTrue(c.getSharedPreferences("patrol_checkpoint_proximity_v1",0).getString("checkpoints_json","").contains("upgrade-qr"));

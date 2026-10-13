@@ -62,7 +62,7 @@ jobs:
         run: |
           python3 .tabletbuild/tablet-patch.py /tmp/patrol-v134
           J=/tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink
-          grep -q 'versionCode 164' /tmp/patrol-v134/app/build.gradle
+          grep -q 'versionCode 165' /tmp/patrol-v134/app/build.gradle
           grep -q "versionName '1.1.53'" /tmp/patrol-v134/app/build.gradle
           grep -q 'MonitorFilterUi.bind' "$J/MainActivity.java"
           grep -q 'Capture parking reports' "$J/MainActivity.java"
@@ -82,7 +82,7 @@ jobs:
           "$CHECK" verify --print-certs /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/new-cert
           diff /tmp/previous-cert /tmp/new-cert
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk > /tmp/tablet-release/APK-MANIFEST.txt
-          grep -q "package: name='au.com.roningroup.patrollink' versionCode='164'" /tmp/tablet-release/APK-MANIFEST.txt
+          grep -q "package: name='au.com.roningroup.patrollink' versionCode='165'" /tmp/tablet-release/APK-MANIFEST.txt
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk > /tmp/tablet-release/manifest.xml
           ! grep -q 'TabletHostActivity' /tmp/tablet-release/manifest.xml
           sha256sum /tmp/tablet-release/TRL-Patrol-Link-v1.1.53-TABLET.apk > /tmp/tablet-release/SHA256.txt
@@ -172,7 +172,7 @@ jobs:
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_FINE_LOCATION
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_COARSE_LOCATION
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest,au.com.roningroup.patrollink.TabletDashboardTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-device-tests.txt
-            python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (13 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (14 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
             adb exec-out run-as au.com.roningroup.patrollink cat files/tablet-landscape-test-fixture.png > tablet-landscape-api-${{ matrix.api }}-TEST-FIXTURE.png
             adb shell wm size 900x1440
             adb shell wm density 240
@@ -229,6 +229,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git tag trl-patrol-link-v1.1.53-tablet-final "$GITHUB_SHA"
-          git push origin refs/tags/trl-patrol-link-v1.1.53-tablet-final
-          gh release create trl-patrol-link-v1.1.53-tablet-final --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "TRL Patrol Link 1.1.53 — Tablet Edition" --notes-file .tabletbuild/INSTALL-TABLET.md release/*
+          git tag trl-patrol-link-v1.1.53-tablet-release "$GITHUB_SHA"
+          git push origin refs/tags/trl-patrol-link-v1.1.53-tablet-release
+          gh release create trl-patrol-link-v1.1.53-tablet-release --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "TRL Patrol Link 1.1.53 — Tablet Edition" --notes-file .tabletbuild/INSTALL-TABLET.md release/*

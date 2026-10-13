@@ -17,3 +17,5 @@ Nearby panels require two distinct eligible precise fixes. Open checkpoint QR re
 The Master SilverTrack browser, Reported issue picker and parking capture are accessible through the cog. Real July capture still requires confirmation on the actual session.
 
 The unchanged persistent cloud remains available while the Windows PC is offline.
+
+Use Checkpoint configuration to select your existing PBC1 or combined PBC2/PBC3 route. That route's checkpoints drive proximity prompts; the map displays all configured checkpoint locations.

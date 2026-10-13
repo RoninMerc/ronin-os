@@ -62,4 +62,13 @@ public final class TabletDashboardTest {
    assertTrue(android.webkit.CookieManager.getInstance().getCookie("https://trlsecurity.silvertracker.net").contains("observer_fixture=kept"));
   });
  }
+
+ @Test public void OpenQrRetainsPhysicalWorkflowAndShowsActualDistance()throws Exception{
+  main(()->{activity.testAccuracy=2;activity.updateLocal();activity.dashboard.refresh();});Thread.sleep(30);main(()->{activity.updateLocal();activity.dashboard.refresh();});
+  assertEquals(View.VISIBLE,activity.findViewById(153020).getVisibility());
+  main(()->activity.findViewById(153021).performClick());
+  boolean found=false;for(int i=0;i<40;i++){android.view.accessibility.AccessibilityNodeInfo root=ins.getUiAutomation().getRootInActiveWindow();if(root!=null&&!root.findAccessibilityNodeInfosByText("Fixture checkpoint · 1 m").isEmpty()){found=true;break;}Thread.sleep(100);}
+  assertTrue("QR photo dialog must show measured distance rather than zero",found);
+  assertEquals(0,activity.engine.checkpoints.total("Test Alpha"));
+ }
 }

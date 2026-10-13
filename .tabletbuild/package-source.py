@@ -38,7 +38,7 @@ for p in (original/'app/build/test-results').rglob('TEST-*.xml'):
  for t in tree.iter('testsuite'):assert not any(int(t.get(k,'0')) for k in ['failures','errors'])
  tests.extend(c.attrib for c in tree.iter('testcase'))
 assert tests
-provenance={'version':'1.1.53','versionCode':164,'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'jvmTestsPassed':len(tests),'productionSigningKeysIncluded':False,'personalVoiceRecordingsIncluded':False,'syntheticFixtureExcludedFromRelease':True}
+provenance={'version':'1.1.53','versionCode':165,'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'jvmTestsPassed':len(tests),'productionSigningKeysIncluded':False,'personalVoiceRecordingsIncluded':False,'syntheticFixtureExcludedFromRelease':True}
 (root/'BUILD-PROVENANCE.json').write_text(json.dumps(provenance,indent=2))
 (root/'.gitignore').write_text('.gradle/\n**/build/\nlocal.properties\n*.jks\n*.keystore\nkey.properties\nkeystore.properties\n.env\n')
 out=Path('/tmp/tablet-delivery');out.mkdir(parents=True,exist_ok=True)

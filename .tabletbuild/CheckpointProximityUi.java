@@ -72,7 +72,14 @@ public final class CheckpointProximityUi {
         syncTick();
         return new ArrayList<>(onlyActive?activeRoute():checkpoints);
     }
-    public void openTabletQr(String id){Checkpoint c=find(id);if(c!=null)showScanDialog(c,0);}
+    public void openTabletQr(String id){
+        Checkpoint c=find(id);if(c==null)return;
+        SharedPreferences gp=LocalGpsService.prefs(activity);
+        double lat=Double.longBitsToDouble(gp.getLong("lat",0)),lon=Double.longBitsToDouble(gp.getLong("lon",0));
+        long age=LocalGpsService.fixAgeSeconds(activity);
+        float metres=gp.getLong("fix_time",0)>0&&age>=0&&age<=10&&gp.contains("lat")&&gp.contains("lon")&&TabletPolicy.point(lat,lon)?distance(lat,lon,c.lat,c.lon):Float.NaN;
+        showScanDialog(c,metres);
+    }
     public void closeTabletQr(){if(scanDialog!=null&&scanDialog.isShowing())scanDialog.dismiss();scanDialog=null;scanDialogId="";}
     public boolean tabletMatches(String id,Observation o){
         return id.equals(canonicalId(o.property))||id.equals(canonicalId(o.issue));
@@ -492,7 +499,7 @@ public final class CheckpointProximityUi {
         if(scanDialog!=null&&scanDialog.isShowing())scanDialog.dismiss();
 
         LinearLayout shell=new LinearLayout(activity);shell.setOrientation(LinearLayout.VERTICAL);shell.setPadding(dp(14),dp(12),dp(14),dp(14));
-        TextView h=text(c.name+" · "+Math.round(metres)+" m",20,0xffeef4f9,true);h.setGravity(Gravity.CENTER);shell.addView(h);shell.addView(gap(10));
+        TextView h=text(c.name+" · "+(Float.isFinite(metres)?Math.round(metres)+" m":"distance unavailable"),20,0xffeef4f9,true);h.setGravity(Gravity.CENTER);shell.addView(h);shell.addView(gap(10));
 
         Bitmap b=bitmapFor(c);
         if(b!=null){

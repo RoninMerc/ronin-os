@@ -266,7 +266,7 @@ final class TabletDashboard {
   CheckBox alert=new CheckBox(activity);alert.setText("Announce new proximity prompts to accessibility services");alert.setTextColor(WHITE);alert.setChecked(TabletSettings.prefs(activity).getBoolean("proximity_alert",false));form.addView(alert);
   item(form,"Individual checkpoints, route, QR photos and cloud sync",()->actions.run("checkpoints"));
   section(form,"CONNECTIONS");
-  if(FleetRelay.master(activity))item(form,"SilverTrack session and parking report capture",()->actions.run("silvertrack"));
+  if(MasterFeedClient.master(activity))item(form,"SilverTrack session and parking report capture",()->actions.run("silvertrack"));
   CheckBox existingMaster=new CheckBox(activity);existingMaster.setText("Read the existing Master phone's feed on this supervisor tablet");existingMaster.setTextColor(WHITE);existingMaster.setChecked(TabletSettings.prefs(activity).getBoolean("read_existing_master",false));
   if(FleetRelay.master(activity)){form.addView(existingMaster);form.addView(text("Reader mode uses the saved Reader key and keeps SilverTrack collection on the existing Master. Saved local credentials and session are retained. Save this setting, then use Master feed pairing.",12,MUTED,false));}
   item(form,"Master feed pairing",()->actions.run("pairing"));
