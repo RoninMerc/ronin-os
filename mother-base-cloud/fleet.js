@@ -36,6 +36,7 @@ function createApp(pool,opts={}){
        catch{return send(res,503,{ok:false,persistent:false});}
     }
     if(route==='/v1/pair'&&method==='POST'){
+       res.once('finish',()=>console.log('Breach pairing HTTP '+res.statusCode));
        const b=await readBody(req,2000),id=clean(b.deviceId,90),code=String(b.code||'');
        if(!/^[a-zA-Z0-9_-]{2,90}$/.test(id)||code.length<25)return send(res,400,{ok:false});
        const client=await pool.connect();
