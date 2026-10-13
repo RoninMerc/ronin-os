@@ -12,3 +12,5 @@ No SilverTrack credentials are sent to patrol devices. No cloud service, databas
 - Saved engine/voice state loads on a worker, including foreground-service restarts; Android's foreground notification appears promptly while loading.
 
 - Existing Android 9 minimum retained; startup checks include the oldest supported Android version.
+
+- Vehicle report links no longer require String.matchAll; labelled field enumeration avoids Array.flatMap, preserving capture on the Android9 bundled browser.
