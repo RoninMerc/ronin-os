@@ -1,5 +1,10 @@
-# TRL Patrol Link 1.1.56 / code 168
-Tablet mode automatically captures parking reports and advances through selected result pages. No per-page capture press is required. Native issue choices support multiple selections; single-select sites request All issues then filter loaded rows.
-Jobs retain pending sources, retry temporary upload failures up to three times, and show confirmed created/updated/duplicate/review/failed counts. Failed sources remain available for retry. Paused jobs resume from the current results page.
-Report photo collection uses the existing authenticated Master session, accepts read-only portal and permitted media CDN image routes and uploads JPEGs to encrypted cloud evidence linked to imported source report IDs. Images are resized to a maximum dimension of 2048 pixels, metadata stripped and deduplicated per report/content. Training labels remain report transcriptions that need validation.
-TRL styling, satellite map and simplified SilverTrack tools are Tablet-mode changes. Phone mode restores its original palette, dashboard and toolbar. Core signing, pairing, storage, guard/checkpoint and QR workflows remain.
+# 1.1.57 / code169
+- Native TRL startup frame appears before engine, map and embedded browser initialization.
+- Paired Readers display fleet/activity without constructing SilverTrack WebView.
+- Dashboard renderer attachment no longer rebuilds the satellite map on every renderer replacement.
+- Browser construction/renderer failures have a native retry path; incomplete browser/map startup is remembered across process restarts.
+- Engine startup failures show bounded phase/class diagnostics and a retry control, with no credentials or exception messages.
+- Removed offscreen browser preraster allocation during startup; saved sessions and original authentication formats remain intact.
+- Lifecycle callbacks handle deferred initialization and recovery.
+- Retained dark TRL landscape dashboard, satellite imagery, Phone/Tablet/Auto selection, physical QR, fleet/GPS, guard selection, laps, voice, SilverTrack filters, automatic report paging and protected photos.
+No SilverTrack credentials are sent to patrol devices. No cloud service, database or signing key changed.

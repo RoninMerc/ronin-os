@@ -1,9 +1,8 @@
-# TRL Patrol Link 1.1.56
-Extract the delivery ZIP and install TRL-Patrol-Link-v1.1.56.apk over the existing app. Do not uninstall or clear data. The original release certificate is retained.
-Choose Tablet mode in Display settings, including when mirroring a phone through Ronin Forge. Phone mode retains its normal interface.
-On the authorised Master collector, open SilverTrack, choose your dates and reported issues, and let the results load. Automatic capture follows available Next pages and records cloud receipts; no per-page button presses are needed.
-The browser progress panel opens full job status. Pause or Resume / retry there. Leaving the browser or minimising pauses pagination; pending report links are retained. Collection requires the saved Publisher key and signed-in Master session. Reader mode does not publish.
-Tablet settings let you disable automatic paging or report photos. Only eligible report images are collected, and only the Master session fetches them. Photos are encrypted in the existing cloud database and linked by stable source report ID; retries deduplicate images.
-For model preparation, authorised Mother Base administrators can read GET /v1/training-evidence using their existing TRL fleet admin authentication, then download the returned protected downloadPath values. Ordinary patrol/Reader devices cannot access that dataset. Photo labels are source-report transcriptions; verify them before using them as ground truth. No model training runs automatically.
-Source ZIP omits signing keys and personal voice recordings. Debug-only synthetic transport seams are inactive in release builds.
-\nAt home on the Windows PC, right-click Export-TRL-Training-Photos.ps1 → Run with PowerShell and choose a private destination folder. It reads Mother Base’s saved settings using the current Windows user’s DPAPI protection; no keys need to be pasted. It downloads and verifies JPEG hashes and writes source-manifest.json and report-labels.csv. The existing Mother Base program can remain installed.\n
+# TRL Patrol Link 1.1.57 — signed operational update
+Install TRL-Patrol-Link-v1.1.57.apk over the existing TRL Patrol Link app. Do not uninstall or clear its storage. Package and original signing certificate are unchanged; Android preserves the existing pairing, checkpoint data, roles, settings and voice library.
+On tablets the default Auto mode opens the dark TRL landscape dashboard: three patrol panels on the left, satellite map on the right, and the settings cog at bottom left.
+Choose Phone, Tablet or Auto in Display mode. The same APK supports phone operation and Ronin Forge mirroring.
+A native startup screen now appears before map/browser initialization. Paired Reader devices no longer create an unnecessary SilverTrack browser. If renderer or map construction fails, a recovery screen offers a retry while retaining saved data. The last startup stage is shown in diagnostics without credentials or page contents.
+Automatic parking paging, multiple Reported Issue selections, compact tablet browser controls and protected report photos are retained. Keep the authorised Master browser open with the required date/issue filters for historical imports.
+Export-TRL-Training-Photos.ps1 exports private evidence with Mother Base's saved Windows settings. Labels are report transcriptions and need verification before training.
+Tests use synthetic source/GPS data. Actual affected devices must confirm the repair; emulator success cannot identify an unrecorded device-specific native failure.
