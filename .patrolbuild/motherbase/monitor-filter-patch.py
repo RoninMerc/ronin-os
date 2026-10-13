@@ -31,15 +31,15 @@ print('MONITOR_FILTER_PATCH_OK: v1.1.51; native HTML-select bridge; fallback but
 
 # Use AndroidJUnitRunner for the new real-WebView checks, including older fixture hooks.
 gradle=root/'app/build.gradle';s=gradle.read_text()
-runners=re.findall(r"testInstrumentationRunner\\s+['\\\"]([^'\\\"]+)['\\\"]",s)
+runners=re.findall(r'''testInstrumentationRunner\s+["']([^"']+)["']''',s)
 for runner in runners:s=s.replace(runner,'androidx.test.runner.AndroidJUnitRunner')
 if not runners:
- s,n=re.subn(r'(defaultConfig\\s*\\{)',lambda m:m[1]+'\\n        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"',s,count=1)
+ s,n=re.subn(r'(defaultConfig\s*\{)',lambda m:m[1]+'\n        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"',s,count=1)
  if n!=1:raise RuntimeError('defaultConfig instrumentation anchor missing')
 gradle.write_text(s)
 manifest=root/'app/src/androidTest/AndroidManifest.xml'
 if manifest.exists():
  xml=manifest.read_text()
- xml=re.sub(r'(<instrumentation\\b[^>]*?android:name=)["\\\'][^"\\\']+["\\\']',lambda m:m[1]+'"androidx.test.runner.AndroidJUnitRunner"',xml)
+ xml=re.sub(r'''(<instrumentation\b[^>]*?android:name=)["'][^"']+["']''',lambda m:m[1]+'"androidx.test.runner.AndroidJUnitRunner"',xml)
  manifest.write_text(xml)
 print('FILTER_RUNNER: AndroidJUnitRunner; previous runner names: '+','.join(runners))
