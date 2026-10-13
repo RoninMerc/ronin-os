@@ -114,6 +114,11 @@ test('SilverTrack photos: actual import, encrypted storage, idempotent retry, pr
   const manifest=await (await req('/v1/training-evidence',{'x-trl-master-key':opts.fleetKey})).json();
   const photo=manifest.photos.find(x=>x.id===first.id);assert.equal(photo.meta.sourceReportId,sourceReportId);
   assert.equal((await req(photo.downloadPath)).status,403);
+  const invitation=await (await req('/v1/invite',{'x-trl-master-key':opts.fleetKey},{role:'P1'})).json();
+  assert.equal((await req('/v1/pair',{}, {deviceId:'SILVERTRACK_COLLECTOR',code:invitation.code})).status,400);
+  const paired=await (await req('/v1/pair',{}, {deviceId:'photo-reader-synthetic',code:invitation.code})).json();
+  assert.equal((await req('/v1/evidence/'+first.id,{'x-trl-device-token':paired.token})).status,403);
+  assert.equal((await req(photo.downloadPath,{'x-trl-device-token':paired.token})).status,403);
   const fetched=await req(photo.downloadPath,{'x-trl-master-key':opts.fleetKey});assert.equal(fetched.status,200);assert.deepEqual(Buffer.from(await fetched.arrayBuffer()),jpg);
  }finally{await new Promise(r=>app.close(r));await pool.end();}
 });

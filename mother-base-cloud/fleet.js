@@ -38,7 +38,7 @@ function createApp(pool,opts={}){
     if(route==='/v1/pair'&&method==='POST'){
        res.once('finish',()=>console.log('Breach pairing HTTP '+res.statusCode));
        const b=await readBody(req,2000),id=clean(b.deviceId,90),code=String(b.code||'');
-       if(!/^[a-zA-Z0-9_-]{2,90}$/.test(id)||code.length<25)return send(res,400,{ok:false});
+       if(id==='SILVERTRACK_COLLECTOR'||!/^[a-zA-Z0-9_-]{2,90}$/.test(id)||code.length<25)return send(res,400,{ok:false});
        const client=await pool.connect();
        try{
          await client.query('BEGIN');
@@ -141,7 +141,7 @@ function createApp(pool,opts={}){
        if(!/^[0-9a-f-]{36}$/i.test(id))return send(res,400,{ok:false});
        const row=(await pool.query('SELECT device,iv,ciphertext,tag FROM evidence WHERE id=$1',[id])).rows[0];
        if(!row)return send(res,404,{ok:false});
-       if(role!=='MASTER'&&actor!==row.device)return send(res,403,{ok:false,error:'not authorised for this evidence'});
+       if(role!=='MASTER'&&(row.device==='SILVERTRACK_COLLECTOR'||actor!==row.device))return send(res,403,{ok:false,error:'not authorised for this evidence'});
        const image=dec(row,key);
        res.writeHead(200,{'content-type':'image/jpeg','cache-control':'no-store','x-content-type-options':'nosniff'});return res.end(image);
     }
