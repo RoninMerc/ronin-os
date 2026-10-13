@@ -54,7 +54,7 @@ final class TabletDashboard {
  TabletDashboard(Activity a,PatrolEngine e,CheckpointProximityUi c,Actions x){this(a,e,c,x,cb->FleetRelay.load(a,cb));}
  TabletDashboard(Activity a,PatrolEngine e,CheckpointProximityUi c,Actions x,FleetLoader l){
   activity=a;engine=e;checkpoints=c;actions=x;loader=l;
-  Configuration config=Configuration.getInstance();
+  org.osmdroid.config.IConfigurationProvider config=Configuration.getInstance();
   config.setUserAgentValue(a.getPackageName()+"/"+BuildConfig.VERSION_NAME+" (TRL patrol map)");
   config.setOsmdroidBasePath(new File(a.getFilesDir(),"street-maps"));
   config.setOsmdroidTileCache(new File(a.getCacheDir(),"street-map-tiles"));

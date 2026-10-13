@@ -97,7 +97,7 @@ jobs:
           // TABLET_TEST_SIGNING
           tasks.register("tabletSigningForProbe") {
               doLast {
-                  def cfg=android.signingConfigs.release
+                  def cfg=android.buildTypes.release.signingConfig
                   new File("/tmp/tablet-signing-private.json").text=groovy.json.JsonOutput.toJson([
                       path:cfg.storeFile.absolutePath, password:cfg.storePassword,
                       alias:cfg.keyAlias, keyPassword:cfg.keyPassword])
