@@ -1,21 +1,19 @@
-# Installation and use
+# TRL Patrol Link 1.1.54 — Phone and Tablet modes
 
-Install TRL-Patrol-Link-v1.1.53-TABLET.apk over the existing app. It retains package au.com.roningroup.patrollink and the original release certificate. Do not clear data or uninstall. If Android reports a signature mismatch, keep the existing installation and verify that you are using the original signed delivery rather than a debug build.
+Install TRL-Patrol-Link-v1.1.54.apk over the existing app. Original package and signing certificate are retained. Do not uninstall or clear app data.
 
-The tablet dashboard activates at 600 dp smallest screen width and opens in landscape. Smaller phones retain their interface. Android system orientation behavior can vary on newer tablets.
+The same APK supports phones and tablets. Default Auto uses the normal phone dashboard below 600 dp smallest screen width and the landscape dashboard on larger tablets.
 
-For all three fleet markers, configure this tablet as Master / Supervisor using the existing PIN-protected device-role setup. For a second supervisor tablet, enable Connections → Read the existing Master phone's feed, save, then pair with the existing Reader key. This keeps collection on the Master phone and requires no SilverTrack sign-in on the viewing tablet. Leave reader mode off if this tablet is the authorised collector and preserve its Publisher/Reader pairing. Patrol roles do not gain supervisor access through the map.
+On the phone dashboard, tap **Display mode** near the top, then **Tablet — landscape map dashboard**. The app switches to landscape with three patrol panels and an interactive street map, even on a phone. The choice is saved between launches.
 
-Open the bottom-left cog → GPS status, permissions and reporting interval → Start / resume GPS. Allow precise location and enable Android Location. The Master's red ME marker stays local; it does not publish as Patrol 1/2/3. Existing on-duty patrol phones publish to the fleet relay. Background permission/battery settings may be required for screen-off shifts.
+While in Tablet mode: bottom-left cog → **Display mode** → **Phone** to return to the normal phone dashboard, or **Auto** to follow the physical device size.
 
-Street tiles require internet for an uncached area. Cached tiles remain available subject to eviction. No paid mapping subscription or API key is required.
+For Ronin Forge: connect and mirror your phone as usual, open Patrol Link, then select Tablet mode on the phone or through the mirrored controls. Use the mirror's fit-to-screen/preserve-aspect-ratio option where available. This changes the app layout; monitor dimensions/resolution and the mirroring software still determine letterboxing or scaling. No new Forge API, login or server is required. Actual car-monitor/Ronin Forge projection needs testing on your equipment.
 
-Cog → Checkpoints: retain configured checkpoint distances or select a local override of 5, 10, 15, 20, 25, 50 or custom 1–500 m. Save display settings. The override controls actual activation and does not change Mother Base's central record. A 5 m radius will not activate with an 8 m accuracy estimate.
+Display mode does not change Master/Patrol roles, credentials, duty status or access permissions. Full three-patrol fleet access still requires the existing Master/Supervisor role. Optional supervisor Reader mode keeps SilverTrack collection on the existing authorised Master phone.
 
-Nearby panels require two distinct eligible precise fixes. Open checkpoint QR retains the existing QR-photo/physical scanning workflow. Dismiss hides the prompt until departure and does not complete a scan.
+Use the cog for GPS permissions/status, precise GPS, duty assignments, feed pairing, checkpoint settings, diagnostics and existing voice controls. Enable Android Location and precise location for proximity. Street-map tiles need internet for uncached areas. Small-radius activation requires two fresh accurate fixes; GPS proximity never completes a physical QR scan.
 
-The Master SilverTrack browser, Reported issue picker and parking capture are accessible through the cog. Real July capture still requires confirmation on the actual session.
+Configured checkpoint radii or a local override of 5/10/15/20/25/50/custom 1–500 m remain available and persisted. Existing SilverTrack filter/capture, central checkpoint sync, Android Auto components, storage formats and pairing are retained. Cloud operation remains independent of the Windows PC.
 
-The unchanged persistent cloud remains available while the Windows PC is offline.
-
-Use Checkpoint configuration to select your existing PBC1 or combined PBC2/PBC3 route. That route's checkpoints drive proximity prompts; the map displays all configured checkpoint locations.
+Screenshots and automated GPS test positions are explicitly labelled test fixtures. Real fleet availability, physical GPS/QR behavior, background battery behavior and car projection are separate physical-device checks.

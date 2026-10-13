@@ -51,36 +51,42 @@ final class TabletDashboard {
  private AlertDialog settingsDialog;
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final Runnable poll=()->{if(!closed&&resumed){refresh();schedule();}};
- static boolean enabled(Activity a){return a.getResources().getConfiguration().smallestScreenWidthDp>=600;}
+ static boolean enabled(Activity a){return TabletSettings.tablet(a);}
+ private final boolean compact;
  TabletDashboard(Activity a,PatrolEngine e,CheckpointProximityUi c,Actions x){this(a,e,c,x,cb->FleetRelay.load(a,cb));}
  TabletDashboard(Activity a,PatrolEngine e,CheckpointProximityUi c,Actions x,FleetLoader l){
   activity=a;engine=e;checkpoints=c;actions=x;loader=l;
+  android.content.res.Configuration screen=a.getResources().getConfiguration();compact=Math.min(screen.screenWidthDp,screen.screenHeightDp)<520;
   org.osmdroid.config.IConfigurationProvider config=Configuration.getInstance();
   config.setUserAgentValue(a.getPackageName()+"/"+BuildConfig.VERSION_NAME+" (TRL patrol map)");
   config.setOsmdroidBasePath(new File(a.getFilesDir(),"street-maps"));
   config.setOsmdroidTileCache(new File(a.getCacheDir(),"street-map-tiles"));
   config.setTileFileSystemCacheMaxBytes(80L*1024*1024);config.setTileFileSystemCacheTrimBytes(60L*1024*1024);
-  view=new LinearLayout(a);view.setOrientation(LinearLayout.HORIZONTAL);view.setBackgroundColor(BG);view.setPadding(dp(12),dp(12),dp(12),dp(12));view.setId(153001);
+  view=new LinearLayout(a);view.setOrientation(LinearLayout.HORIZONTAL);view.setBackgroundColor(BG);view.setPadding(dp(compact?6:12),dp(compact?6:12),dp(compact?6:12),dp(compact?6:12));view.setId(153001);
   LinearLayout left=column();left.setId(153002);
-  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,.35f);lp.rightMargin=dp(12);view.addView(left,lp);
-  TextView title=text("TRL  /  PATROL LINK",18,WHITE,true);title.setPadding(dp(8),0,0,dp(4));left.addView(title);
-  source=text("TABLET OPERATIONS",11,MUTED,false);source.setMaxLines(1);source.setPadding(dp(8),0,0,dp(8));left.addView(source);
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,.35f);lp.rightMargin=dp(compact?6:12);view.addView(left,lp);
+  TextView title=text("TRL  /  PATROL LINK",compact?13:18,WHITE,true);title.setPadding(dp(8),0,0,dp(4));left.addView(title);
+  source=text("TABLET OPERATIONS",11,MUTED,false);source.setMaxLines(1);source.setPadding(dp(8),0,0,dp(compact?2:8));left.addView(source);
   for(int i=0;i<3;i++){
-   final int index=i;LinearLayout card=column();card.setPadding(dp(12),dp(8),dp(12),dp(8));card.setBackground(background(PANEL,COLOURS[i],12));card.setId(153010+i);
-   LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,0,1);cp.bottomMargin=dp(8);left.addView(card,cp);
-   guardArea[i]=text("PATROL "+(i+1)+"  /  AREA UNAVAILABLE",12,COLOURS[i],true);guardArea[i].setMaxLines(1);card.addView(guardArea[i]);
-   guardName[i]=text("N/A",22,WHITE,true);guardName[i].setMaxLines(1);guardName[i].setAutoSizeTextTypeUniformWithConfiguration(14,22,1,android.util.TypedValue.COMPLEX_UNIT_SP);guardName[i].setEllipsize(TextUtils.TruncateAt.END);card.addView(guardName[i]);
+   final int index=i;LinearLayout card=column();card.setPadding(dp(compact?6:12),dp(compact?3:8),dp(compact?6:12),dp(compact?3:8));card.setBackground(background(PANEL,COLOURS[i],12));card.setId(153010+i);
+   LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,0,1);cp.bottomMargin=dp(compact?4:8);left.addView(card,cp);
+   guardArea[i]=text("PATROL "+(i+1)+"  /  AREA UNAVAILABLE",12,COLOURS[i],true);guardArea[i].setMaxLines(1);if(!compact)card.addView(guardArea[i]);
+   guardName[i]=text("N/A",22,WHITE,true);guardName[i].setMaxLines(1);guardName[i].setAutoSizeTextTypeUniformWithConfiguration(14,22,1,android.util.TypedValue.COMPLEX_UNIT_SP);guardName[i].setEllipsize(TextUtils.TruncateAt.END);if(compact){guardName[i].setTextSize(13);guardName[i].setAutoSizeTextTypeUniformWithConfiguration(11,14,1,android.util.TypedValue.COMPLEX_UNIT_SP);guardArea[i].setTextSize(10);
+    LinearLayout heading=new LinearLayout(a);heading.setGravity(Gravity.CENTER_VERTICAL);heading.addView(guardArea[i],new LinearLayout.LayoutParams(0,-2,1));heading.addView(guardName[i],new LinearLayout.LayoutParams(0,-2,1));card.addView(heading);
+   }else card.addView(guardName[i]);
    guardActivity[i]=text("Waiting for activity",18,WHITE,false);guardActivity[i].setMaxLines(2);guardActivity[i].setEllipsize(TextUtils.TruncateAt.END);guardActivity[i].setAutoSizeTextTypeUniformWithConfiguration(13,18,1,android.util.TypedValue.COMPLEX_UNIT_SP);
+   if(compact){guardActivity[i].setMaxLines(1);guardActivity[i].setAutoSizeTextTypeUniformWithConfiguration(11,13,1,android.util.TypedValue.COMPLEX_UNIT_SP);}
    card.addView(guardActivity[i],new LinearLayout.LayoutParams(-1,0,1));
    guardTime[i]=text("Activity time unavailable",14,MUTED,false);guardTime[i].setMaxLines(1);card.addView(guardTime[i]);
    guardProgress[i]=text("Recorded hits: 0",14,MUTED,false);guardProgress[i].setMaxLines(1);card.addView(guardProgress[i]);
    guardState[i]=text("GPS UNAVAILABLE",13,AMBER,true);guardState[i].setMaxLines(1);card.addView(guardState[i]);
+   if(compact){guardTime[i].setTextSize(10);guardProgress[i].setVisibility(View.GONE);guardState[i].setTextSize(11);}
    card.setOnClickListener(v->actions.run("guard:"+index));
   }
   LinearLayout bottom=new LinearLayout(a);bottom.setGravity(Gravity.CENTER_VERTICAL);
   Button cog=button("\u2699",()->actions.run("settings"));cog.setId(153003);cog.setTextSize(27);cog.setContentDescription("Open tablet settings");
-  bottom.addView(cog,new LinearLayout.LayoutParams(dp(56),dp(54)));
-  TextView hint=text("LIVE GPS + VERIFIED ACTIVITY",11,MUTED,true);hint.setMaxLines(2);hint.setPadding(dp(10),0,0,0);bottom.addView(hint,new LinearLayout.LayoutParams(0,-2,1));left.addView(bottom);
+  bottom.addView(cog,new LinearLayout.LayoutParams(dp(56),dp(compact?48:54)));
+  TextView hint=text("LIVE GPS + VERIFIED ACTIVITY",compact?9:11,MUTED,true);hint.setMaxLines(2);hint.setPadding(dp(10),0,0,0);bottom.addView(hint,new LinearLayout.LayoutParams(0,-2,1));left.addView(bottom);
   mapHost=new FrameLayout(a);mapHost.setId(153004);mapHost.setBackground(background(PANEL,LINE,12));view.addView(mapHost,new LinearLayout.LayoutParams(0,-1,.65f));
   map=new MapView(a);map.setId(153005);
   map.setTileSource(new XYTileSource("OpenStreetMap",0,19,256,".png",new String[]{"https://tile.openstreetmap.org/"},"© OpenStreetMap contributors"));
@@ -90,20 +96,20 @@ final class TabletDashboard {
   mapHost.addView(map,new FrameLayout.LayoutParams(-1,-1));
   LinearLayout top=new LinearLayout(a);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(10),dp(8),dp(10),dp(8));top.setBackground(background(0xed191c24,LINE,10));
   fleetStatus=text("FLEET: CONNECTING",12,AMBER,true);fleetStatus.setMaxLines(2);top.addView(fleetStatus,new LinearLayout.LayoutParams(0,-2,1));
-  Button locate=button("My location",this::recenter);locate.setContentDescription("Return map to this device location");top.addView(locate,new LinearLayout.LayoutParams(dp(112),dp(48)));
-  Button fit=button("Fleet",this::fitFleet);top.addView(fit,new LinearLayout.LayoutParams(dp(65),dp(48)));
+  Button locate=button("My location",this::recenter);locate.setContentDescription("Return map to this device location");top.addView(locate,new LinearLayout.LayoutParams(dp(compact?90:112),dp(48)));
+  Button fit=button("Fleet",this::fitFleet);top.addView(fit,new LinearLayout.LayoutParams(dp(compact?55:65),dp(48)));
   FrameLayout.LayoutParams tp=new FrameLayout.LayoutParams(-1,-2,Gravity.TOP);tp.setMargins(dp(10),dp(10),dp(10),0);mapHost.addView(top,tp);
   LinearLayout footer=column();footer.setPadding(dp(10),dp(6),dp(10),dp(6));footer.setBackground(background(0xed191c24,LINE,10));
   gpsStatus=text("THIS DEVICE: GPS UNAVAILABLE",12,AMBER,true);gpsStatus.setMaxLines(2);footer.addView(gpsStatus);
   TextView credit=text("© OpenStreetMap contributors · Street tiles need internet or a cached area",10,MUTED,false);credit.setMaxLines(2);credit.setOnClickListener(v->{try{a.startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://www.openstreetmap.org/copyright")));}catch(Exception ignored){}});
   footer.addView(credit);FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);fp.setMargins(dp(10),0,dp(10),dp(10));mapHost.addView(footer,fp);
   checkpointPanel=column();checkpointPanel.setId(153020);checkpointPanel.setPadding(dp(14),dp(12),dp(14),dp(12));checkpointPanel.setBackground(background(0xfa191c24,RED,14));checkpointPanel.setVisibility(View.GONE);
-  checkpointTitle=text("",20,WHITE,true);checkpointTitle.setMaxLines(2);checkpointPanel.addView(checkpointTitle);
-  checkpointDetail=text("",13,MUTED,false);checkpointDetail.setMaxLines(2);checkpointPanel.addView(checkpointDetail);
+  checkpointTitle=text("",compact?14:20,WHITE,true);checkpointTitle.setMaxLines(compact?1:2);checkpointPanel.addView(checkpointTitle);
+  checkpointDetail=text("",13,MUTED,false);checkpointDetail.setMaxLines(compact?1:2);checkpointPanel.addView(checkpointDetail);
   checkpointState=text("Awaiting physical QR scan",13,AMBER,true);checkpointPanel.addView(checkpointState);
   LinearLayout row=new LinearLayout(a);Button qr=button("Open checkpoint QR",()->checkpoints.openTabletQr(activeCheckpoint));qr.setId(153021);row.addView(qr,new LinearLayout.LayoutParams(0,dp(48),1));
   Button dismiss=button("Dismiss",()->{gate.dismiss(activeCheckpoint);checkpointPanel.setVisibility(View.GONE);});row.addView(dismiss,new LinearLayout.LayoutParams(dp(88),dp(48)));checkpointPanel.addView(row);
-  FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);pp.setMargins(dp(24),0,dp(24),dp(92));mapHost.addView(checkpointPanel,pp);
+  FrameLayout.LayoutParams pp=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);pp.setMargins(dp(compact?8:24),0,dp(compact?8:24),dp(compact?72:92));mapHost.addView(checkpointPanel,pp);
   restoreCache();refresh();
  }
  private int dp(float n){return Math.round(n*activity.getResources().getDisplayMetrics().density);}
@@ -156,6 +162,9 @@ final class TabletDashboard {
    guardActivity[i].setText(unused?"Unused patrol slot":o==null?"Waiting for activity":o.activity()+" · "+o.locationLine());
    guardTime[i].setText(o==null?"Activity time unavailable":"Activity: "+(o.recordedAt>0?time(o.recordedAt):o.recordedText));
    guardProgress[i].setText(unused?"Recorded hits: N/A":"Recorded checkpoint hits: "+engine.checkpoints.total(g));
+   if(compact){String stamp=o==null?"No activity time":o.recordedAt>0?DateTimeFormatter.ofPattern("HH:mm d/M").format(Instant.ofEpochMilli(o.recordedAt).atZone(engine.zone())):o.recordedText;
+    guardTime[i].setText(stamp+" · Hits: "+(unused?"N/A":engine.checkpoints.total(g)));
+    guardTime[i].setContentDescription((o==null?"Activity time unavailable":"Activity: "+o.recordedText)+" · "+guardProgress[i].getText());}
    String status=unused?"N/A":p==null?"GPS UNAVAILABLE":!p.onDuty?"OFF DUTY":!p.hasFix?"GPS UNAVAILABLE":!connected()||!receivedSlots.contains(i+1)||p.retained||!TabletPolicy.fresh(p.time,now)?"STALE GPS — "+age(p.time):p.state+" · GPS "+age(p.time);
    guardState[i].setText(status);guardState[i].setTextColor(unused?MUTED:p!=null&&p.onDuty&&p.hasFix&&connected()&&receivedSlots.contains(i+1)&&!p.retained&&TabletPolicy.fresh(p.time,now)?COLOURS[i]:AMBER);
    if(p!=null&&p.hasFix&&TabletPolicy.point(p.lat,p.lon)){
@@ -247,6 +256,7 @@ final class TabletDashboard {
  void settings(){
   LinearLayout form=column();form.setPadding(dp(18),dp(10),dp(18),dp(10));
   section(form,"GENERAL");
+  item(form,"Display mode · "+TabletSettings.displayMode(activity),()->{if(settingsDialog!=null)settingsDialog.dismiss();actions.run("display");});
   if(MasterFeedClient.master(activity))item(form,"Guard selection",()->actions.run("guards"));
   item(form,"Patrol duty / assignments",()->actions.run("fleet"));
   section(form,"GPS AND TRACKING");

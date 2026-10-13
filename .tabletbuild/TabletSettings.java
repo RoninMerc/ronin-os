@@ -9,5 +9,9 @@ final class TabletSettings {
   try{return TabletPolicy.radius(r);}catch(Exception e){return 20;}
  }
  static void saveRadius(Context c,boolean override,float r){TabletPolicy.radius(r);prefs(c).edit().putBoolean("radius_override",override).putFloat("radius_metres",r).apply();}
+ static String displayMode(Context c){return TabletPolicy.displayMode(prefs(c).getString("display_mode","auto"));}
+ static void saveDisplayMode(Context c,String mode){if(!prefs(c).edit().putString("display_mode",TabletPolicy.displayMode(mode)).commit())throw new IllegalStateException("Display setting could not be saved.");}
+ static boolean tablet(Context c){return TabletPolicy.tablet(displayMode(c),c.getResources().getConfiguration().smallestScreenWidthDp);}
+ static void orient(android.app.Activity a){a.setRequestedOrientation(tablet(a)?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);}
  private TabletSettings(){}
 }

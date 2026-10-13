@@ -43,7 +43,7 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         engine = ((PatrolApp)getApplication()).engine();
-        if(TabletDashboard.enabled(this))setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        TabletSettings.orient(this);
         gpsUi=new LocalGpsUi(this);
         checkpointUi=new CheckpointProximityUi(this);
         fleetUi=new FleetUi(this,()->{engine.changeFeedMode();showDashboard();});
@@ -116,6 +116,7 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
     private void showDashboard() {
         if(TabletDashboard.enabled(this)){showTabletDashboard();return;}
         browserMode=false; engine.browserVisible=false; base();
+        root.setId(153100);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); root.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
         dashboard=vertical(); dashboard.setPadding(dp(22),dp(24),dp(22),dp(20)); scroll.addView(dashboard);
         LinearLayout brandRow=new LinearLayout(this);brandRow.setOrientation(LinearLayout.HORIZONTAL);brandRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -125,7 +126,8 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
         TextView eyebrow=text("TRL SECURITY  /  PATROL SYSTEMS",11,TRL_RED,true);eyebrow.setLetterSpacing(.12f);brandText.addView(eyebrow);
         brandText.addView(text("TRL Patrol Link",30,WHITE,true));
         brandRow.addView(brandText,new LinearLayout.LayoutParams(0,-2,1));dashboard.addView(brandRow);gap(dashboard,6);
-        dashboard.addView(text("LIVE SHIFT ACTIVITY",11,MUTED,true)); gap(dashboard,22);
+        dashboard.addView(text("LIVE SHIFT ACTIVITY",11,MUTED,true)); gap(dashboard,10);
+        Button display=button("Display mode · "+TabletSettings.displayMode(this),false,this::displayMode);display.setId(153101);addCard(dashboard,display);gap(dashboard,10);
 
         LinearLayout status=card(); stateText=text("",14,ACCENT,true); status.addView(stateText); gap(status,8);
         detailText=text("",13,MUTED,false); status.addView(detailText); gap(status,14);
@@ -173,10 +175,12 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
         root.addView(tabletDashboard.view,new LinearLayout.LayoutParams(-1,-1));
         tabletDashboard.resume();
     }
+    private void displayMode(){DisplayModeUi.show(this,this::recreate);}
     private void tabletAction(String action){
         if(action.startsWith("guard:")){showCheckpointTally(Integer.parseInt(action.substring(6)));return;}
         switch(action){
             case "settings":tabletDashboard.settings();break;
+            case "display":displayMode();break;
             case "gps":gpsUi.show();break;
             case "fleet":fleetUi.open();break;
             case "checkpoints":checkpointUi.showManager();break;
