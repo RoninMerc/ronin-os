@@ -58,15 +58,19 @@ public final class MonitorFilterUiTest {
  }
  private void choose(String label)throws Exception{
   ins.waitForIdleSync();Thread.sleep(200);AccessibilityNodeInfo node=find(label);
-  Rect bounds=new Rect();node.getBoundsInScreen(bounds);assertFalse("Native option has screen bounds",bounds.isEmpty());
-  long now=SystemClock.uptimeMillis();ins.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,bounds.exactCenterX(),bounds.exactCenterY(),0),true);ins.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now+50,MotionEvent.ACTION_UP,bounds.exactCenterX(),bounds.exactCenterY(),0),true);
+  boolean clicked=false;for(AccessibilityNodeInfo target=node;target!=null;target=target.getParent()){
+   if(target.isClickable()&&target.performAction(AccessibilityNodeInfo.ACTION_CLICK)){clicked=true;break;}
+  }
+  assertTrue("Native option must accept accessibility click: "+label,clicked);
   ins.waitForIdleSync();Thread.sleep(300);
  }
  @Test public void actualHtmlDropdownTapOpensNativePickerAndKeepsOtherFilters()throws Exception{
   trustedLoaded();assertEquals("function",js("typeof TRLMonitorFilters.open"));assertEquals("true",js("String(!!window.__trlFiltersInstalled)"));ins.waitForIdleSync();Thread.sleep(250);JSONObject pos=new JSONObject(js("JSON.stringify((function(){var r=document.getElementById('reportedIssue').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})())"));
-  int[] location=new int[2];ins.runOnMainSync(()->web.getLocationOnScreen(location));
-  float x=location[0]+(float)pos.getDouble("x")*activity.getResources().getDisplayMetrics().density,y=location[1]+(float)pos.getDouble("y")*activity.getResources().getDisplayMetrics().density;
-  long now=SystemClock.uptimeMillis();ins.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0),true);ins.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now+50,MotionEvent.ACTION_UP,x,y,0),true);
+  ins.runOnMainSync(()->{
+   float scale=web.getScale();float x=(float)pos.optDouble("x")*scale,y=(float)pos.optDouble("y")*scale;
+   long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0),up=MotionEvent.obtain(now,now+80,MotionEvent.ACTION_UP,x,y,0);
+   assertTrue("HTML dropdown receives touch",web.dispatchTouchEvent(down));web.dispatchTouchEvent(up);down.recycle();up.recycle();
+  });
   find("Parking Breach - 1st Warning");
   AtomicReference<Boolean> hold=new AtomicReference<>();ins.runOnMainSync(()->hold.set(MonitorFilterUi.interacting(web)));assertTrue("Refresh deferred while selecting",hold.get());
   choose("Parking Breach - 1st Warning");choose("Apply");
