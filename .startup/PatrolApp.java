@@ -5,6 +5,7 @@ public final class PatrolApp extends Application {
  private final ExecutorService startup=Executors.newSingleThreadExecutor();
  private final Handler main=new Handler(Looper.getMainLooper());
  private final List<Ready> waiting=new ArrayList<>();private boolean preparing;
+ @Override public void onCreate(){super.onCreate();StartupState.begin(this);}
  interface Ready{void done(PatrolEngine engine,Throwable failure);}
  public PatrolEngine engine(){if(engine==null)engine=new PatrolEngine(this);return engine;}
  /** Saved voice/checkpoint files are read off the UI thread on operational startup. */

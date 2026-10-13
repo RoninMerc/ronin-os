@@ -48,7 +48,6 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
         setTheme(TabletSettings.tablet(this)?R.style.TRLTheme:R.style.AppTheme);
         super.onCreate(saved);
         if(!TabletSettings.tablet(this)){BG=0xff080d12;PANEL=0xff121d27;LINE=0xff263746;WHITE=0xffeef4f9;MUTED=0xff9daebb;ACCENT=0xff70d7c4;TRL_RED=0xffc7333a;}
-        StartupState.begin(this);
         TabletSettings.orient(this);
         showStartup();
         // A native frame is drawn before engine, map or browser construction.

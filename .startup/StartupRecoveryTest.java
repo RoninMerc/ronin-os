@@ -39,7 +39,7 @@ public final class StartupRecoveryTest {
   launch();ins.runOnMainSync(()->{try{Method show=MainActivity.class.getDeclaredMethod("showBrowser");show.setAccessible(true);show.invoke(activity);}catch(Exception e){throw new RuntimeException(e);}assertNotNull(activity.findViewById(153100));assertTrue(StartupState.held(c,"browser"));assertNull(engine.peekWebView());assertData();});
  }
  @Test public void InterruptedBrowserConstructionDoesNotRepeatOnNextLaunch()throws Exception{
-  ins.runOnMainSync(()->{StartupState.prefs(c).edit().putString("phase","browser").putInt("pid",-123).commit();TabletSettings.saveDisplayMode(c,"phone");TabletSettings.prefs(c).edit().putBoolean("read_existing_master",false).commit();});
+  ins.runOnMainSync(()->{StartupState.prefs(c).edit().putString("phase","browser").putInt("pid",-123).commit();StartupState.begin(c);TabletSettings.saveDisplayMode(c,"phone");TabletSettings.prefs(c).edit().putBoolean("read_existing_master",false).commit();});
   launch();ins.runOnMainSync(()->{assertNotNull(activity.findViewById(153100));assertTrue(StartupState.held(c,"browser"));assertNull(engine.peekWebView());assertData();});
  }
  @Test public void MapFailureShowsControlsAndRetryRestoresRealMap()throws Exception{
