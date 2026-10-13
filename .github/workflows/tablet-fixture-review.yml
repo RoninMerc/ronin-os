@@ -1,0 +1,29 @@
+name: Review labelled tablet fixture screenshots
+on:
+  push:
+    branches: [trl-tablet-v1.1.53]
+    paths: ['.github/workflows/tablet-fixture-review.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Tablet-v153-device-results-30
+          run-id: 38385262571
+          github-token: ${{ github.token }}
+          path: qa/
+      - name: Preserve labelled synthetic fixture images for review
+        run: |
+          mkdir -p docs/trl-tablet-v153/fixture-preview
+          cp qa/*-TEST-FIXTURE.png docs/trl-tablet-v153/fixture-preview/
+          git config user.name "Ronin tablet build"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/trl-tablet-v153/fixture-preview
+          git commit -m "Add labelled synthetic tablet screenshots for visual review"
+          git push origin HEAD:trl-tablet-v1.1.53
