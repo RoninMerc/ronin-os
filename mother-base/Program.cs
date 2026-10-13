@@ -1,0 +1,151 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Nodes;
+namespace TRL.MotherBase;
+static class Program {
+ [STAThread] static void Main(string[] args) {
+  ApplicationConfiguration.Initialize();
+  if(args.Contains("--smoke-test")) { using var f=new MainWindow(); f.CreateControl(); return; }
+  Application.Run(new MainWindow());
+ }
+}
+sealed class SecureStore {
+ readonly string dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TRL","MotherBase");
+ public SecureStore(){Directory.CreateDirectory(dir);}
+ public string Read(string name) {try {return Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(Path.Combine(dir,name)),null,DataProtectionScope.CurrentUser));} catch {return "";}}
+ public void Write(string name,string value) {
+  string path=Path.Combine(dir,name),temp=path+".tmp";
+  File.WriteAllBytes(temp,ProtectedData.Protect(Encoding.UTF8.GetBytes(value),null,DataProtectionScope.CurrentUser));File.Move(temp,path,true);
+ }
+}
+sealed partial class MainWindow:Form {
+ readonly SecureStore store=new();
+ readonly HttpClient http=new(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(45)};
+ readonly TextBox feedUrl=new(){Text="https://ronin-silvertrack-master-feed.onrender.com",Width=510};
+ readonly TextBox fleetUrl=new(){Text="https://ronin-silvertrack-master-feed.onrender.com",Width=510};
+ readonly TextBox relayUrl=new(){Text="https://ronin-patrol-link-relay.onrender.com",Width=510};
+ readonly TextBox masterKey=new(){UseSystemPasswordChar=true,Width=510};
+ readonly TextBox readerKey=new(){UseSystemPasswordChar=true,Width=510};
+ readonly TextBox fleetKey=new(){UseSystemPasswordChar=true,Width=510};
+ readonly TextBox relayKey=new(){UseSystemPasswordChar=true,Width=510};
+ readonly Label status=new(){Text="Configure your relay connection in Settings.",AutoSize=true,Padding=new Padding(12)};
+ readonly DataGridView checkpoints=Grid(false),vehicles=Grid(true);
+ readonly DataGridView activity=Grid(true),patrols=Grid(true),history=Grid(true),review=Grid(true);
+ readonly Dictionary<string,JsonNode> vehicleRecords=new();
+ readonly System.Windows.Forms.Timer poll=new(){Interval=30000};
+ long checkpointRevision=-1;bool busy=false;
+ static TextBox Report()=>new(){Multiline=true,ReadOnly=true,Dock=DockStyle.Fill,ScrollBars=ScrollBars.Both,Font=new Font("Consolas",10)};
+ static DataGridView Grid(bool readOnly)=>new(){Dock=DockStyle.Fill,ReadOnly=readOnly,AllowUserToAddRows=!readOnly,AllowUserToDeleteRows=!readOnly,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill,SelectionMode=DataGridViewSelectionMode.FullRowSelect,MultiSelect=false};
+ public MainWindow(){
+  Text="TRL Mother Base";Width=1360;Height=880;MinimumSize=new Size(1050,700);StartPosition=FormStartPosition.CenterScreen;
+  Font=new Font("Segoe UI",10);BackColor=ThemeBackground;ForeColor=ThemeText;
+  BuildInterface();LoadSettings();LoadCache();
+  poll.Tick+=async(_,_)=>await RefreshCloud();
+  Shown+=async(_,_)=>{await RefreshCloud();poll.Start();};
+ }
+ static void AddTab(TabControl tabs,string title,Control body){var tab=new TabPage(title);tab.Controls.Add(body);tabs.TabPages.Add(tab);}
+ Button Button(string title,Func<Task> action){var b=ActionButton(title);b.Click+=async(_,_)=>{b.Enabled=false;try{await action();}catch(Exception e){MessageBox.Show(this,e.Message,"TRL Mother Base",MessageBoxButtons.OK,MessageBoxIcon.Information);}finally{b.Enabled=true;}};return b;}
+ void LoadSettings(){try{var j=JsonNode.Parse(store.Read("settings.dpapi"));if(j==null)return;feedUrl.Text=j["feedUrl"]?.ToString()??feedUrl.Text;fleetUrl.Text=j["fleetUrl"]?.ToString()??fleetUrl.Text;relayUrl.Text=j["relayUrl"]?.ToString()??relayUrl.Text;masterKey.Text=j["masterKey"]?.ToString()??"";fleetKey.Text=j["fleetKey"]?.ToString()??"";readerKey.Text=j["readerKey"]?.ToString()??"";relayKey.Text=j["relayKey"]?.ToString()??"";}catch{}}
+ void SaveSettings(){foreach(var url in new[]{feedUrl.Text,fleetUrl.Text,relayUrl.Text})ValidateUrl(url);store.Write("settings.dpapi",new JsonObject{["feedUrl"]=feedUrl.Text,["fleetUrl"]=fleetUrl.Text,["relayUrl"]=relayUrl.Text,["masterKey"]=masterKey.Text,["fleetKey"]=fleetKey.Text,["readerKey"]=readerKey.Text,["relayKey"]=relayKey.Text}.ToJsonString());}
+ static Uri ValidateUrl(string url){if(!Uri.TryCreate(url.Trim(),UriKind.Absolute,out var uri)||uri.Scheme!="https"||!string.IsNullOrEmpty(uri.UserInfo)||uri.AbsolutePath!="/"||!string.IsNullOrEmpty(uri.Query)||!string.IsNullOrEmpty(uri.Fragment))throw new Exception("Use an HTTPS service root URL, without a path, query or credentials.");return uri;}
+ async Task<JsonNode> Request(string root,string path,string header,string key,HttpMethod? method=null,JsonNode? data=null){
+  if(string.IsNullOrWhiteSpace(key))throw new Exception("Configure the relay key in Settings first.");
+  using var req=new HttpRequestMessage(method??HttpMethod.Get,new Uri(ValidateUrl(root),path));
+  req.Headers.Add(header,key.Trim());if(data!=null)req.Content=new StringContent(data.ToJsonString(),Encoding.UTF8,"application/json");
+  using var response=await http.SendAsync(req);
+  if(!response.IsSuccessStatusCode)throw new Exception(response.StatusCode==System.Net.HttpStatusCode.Conflict?"Cloud configuration changed. Load the latest checkpoint set before publishing.":"Relay returned HTTP "+(int)response.StatusCode+". Check setup and pairing.");
+  string text=await response.Content.ReadAsStringAsync();return JsonNode.Parse(text)??throw new Exception("Relay returned an empty response.");
+ }
+ async Task RefreshCloud(){
+  if(busy)return;busy=true;var messages=new List<string>();
+  try{
+   await RefreshOne("activity.dpapi",async()=>await Request(feedUrl.Text,"/v1/admin/activity","x-ronin-master-key",masterKey.Text),ShowActivity,messages,"Activity");
+   await RefreshOne("vehicles.dpapi",async()=>await Request(fleetUrl.Text,"/v1/vehicles","x-trl-master-key",fleetKey.Text),ShowVehicles,messages,"Vehicles");
+   await RefreshOne("history.dpapi",async()=>await Request(fleetUrl.Text,"/v1/breaches","x-trl-master-key",fleetKey.Text),ShowHistory,messages,"Breach history");
+   await RefreshOne("review.dpapi",async()=>await Request(fleetUrl.Text,"/v1/import-review","x-trl-master-key",fleetKey.Text),ShowReview,messages,"Import review");
+   await RefreshOne("patrols.dpapi",async()=>await Request(relayUrl.Text,"/api/fleet","X-Ronin-Key",relayKey.Text),ShowPatrols,messages,"Patrols");
+   status.Text="Last refresh "+DateTime.Now.ToString("HH:mm")+"   •   "+string.Join("  |  ",messages);
+  }finally{busy=false;}
+ }
+ async Task RefreshOne(string name,Func<Task<JsonNode>> load,Action<JsonNode> show,List<string> messages,string label){try{var j=await load();store.Write(name,j.ToJsonString());show(j);SetConnection(label,true);messages.Add(label+": connected");}catch(Exception){SetConnection(label,false);messages.Add(label+": offline / cached");}}
+ static string Pretty(JsonNode j)=>j.ToJsonString(new System.Text.Json.JsonSerializerOptions{WriteIndented=true});
+ void LoadCache(){
+  foreach(var item in new (string,Action<JsonNode>)[]{("activity.dpapi",ShowActivity),("vehicles.dpapi",ShowVehicles),("history.dpapi",ShowHistory),("review.dpapi",ShowReview),("patrols.dpapi",ShowPatrols)})
+   try{var j=JsonNode.Parse(store.Read(item.Item1));if(j!=null)item.Item2(j);}catch{}
+ }
+ void ShowVehicles(JsonNode j){
+  vehicleRecords.Clear();
+  foreach(var v in j["vehicles"]?.AsArray()??new JsonArray()){if(v?["plate"]==null)continue;vehicleRecords[v["plate"]!.ToString()]=v.DeepClone();}
+  FilterVehicles();
+ }
+ async Task LoadCheckpoints(){
+  JsonNode j;try{j=await Request(feedUrl.Text,"/v1/admin/checkpoints","x-ronin-master-key",masterKey.Text);}
+  catch{if(string.IsNullOrWhiteSpace(readerKey.Text))throw;j=await Request(feedUrl.Text,"/v1/checkpoints","x-ronin-reader-key",readerKey.Text);}
+  FillCheckpoints(j);checkpointRevision=j["generation"]?.GetValue<long>()??0;checkpointState.Text=j["central"]?.ToString()=="true"?"Central configuration active":"Loaded from cloud • ready to publish";
+  status.Text="Loaded checkpoint revision "+checkpointRevision+".";
+ }
+ void FillCheckpoints(JsonNode j){checkpoints.Rows.Clear();foreach(var c in j["checkpoints"]?.AsArray()??new JsonArray()){if(c==null)continue;checkpoints.Rows.Add(new[]{"id","name","group","order","lat","lon","radius","photoBase64"}.Select(k=>(object?)(c[k]?.ToString()??"")).ToArray());}metricValues["Checkpoints"].Text=checkpoints.Rows.Cast<DataGridViewRow>().Count(r=>!r.IsNewRow).ToString();}
+ JsonArray CheckpointRows(){
+  checkpoints.EndEdit();var rows=new JsonArray();
+  foreach(DataGridViewRow r in checkpoints.Rows){if(r.IsNewRow)continue;var j=new JsonObject();
+   foreach(string k in new[]{"id","name","group","photoBase64"})j[k]=Convert.ToString(r.Cells[k].Value)??"";
+   foreach(string k in new[]{"order","lat","lon","radius"}){if(!double.TryParse(Convert.ToString(r.Cells[k].Value),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var n)||!double.IsFinite(n))throw new Exception("Enter a valid number for "+k+". Use a dot for decimals.");j[k]=n;}
+   rows.Add(j);
+  }return rows;
+ }
+ Task ExportCheckpoints(){using var dialog=new SaveFileDialog(){Filter="Checkpoint backup|*.json",FileName="TRL-checkpoints-backup.json"};if(dialog.ShowDialog(this)==DialogResult.OK)File.WriteAllText(dialog.FileName,Pretty(new JsonObject{["checkpoints"]=CheckpointRows()}));return Task.CompletedTask;}
+ Task ImportCheckpoints(){if(checkpointRevision<0)throw new Exception("Load the cloud checkpoint set first, then import the backup.");using var dialog=new OpenFileDialog(){Filter="Checkpoint backup|*.json"};if(dialog.ShowDialog(this)==DialogResult.OK){var file=new FileInfo(dialog.FileName);if(file.Length>12500000)throw new Exception("Backup exceeds the checkpoint payload limit.");var data=JsonNode.Parse(File.ReadAllText(dialog.FileName));if(data?["checkpoints"] is not JsonArray)throw new Exception("Select a Mother Base checkpoint backup.");FillCheckpoints(data);status.Text="Backup loaded into the editor. Publish to save it to the cloud.";}return Task.CompletedTask;}
+ Task AttachPhoto(){if(checkpoints.CurrentRow==null||checkpoints.CurrentRow.IsNewRow)throw new Exception("Select a checkpoint row first.");using var dialog=new OpenFileDialog(){Filter="QR photographs|*.jpg;*.jpeg;*.png"};if(dialog.ShowDialog(this)==DialogResult.OK){var bytes=File.ReadAllBytes(dialog.FileName);if(bytes.Length>650000)throw new Exception("Choose a QR photograph smaller than 650 KB.");using var stream=new MemoryStream(bytes);using var image=Image.FromStream(stream);checkpoints.CurrentRow.Cells["photoBase64"].Value=Convert.ToBase64String(bytes);}return Task.CompletedTask;}
+ async Task PublishCheckpoints(){
+  if(checkpointRevision<0)throw new Exception("Load the cloud checkpoint set before editing.");
+  var rows=CheckpointRows();
+  var answer=await Request(feedUrl.Text,"/v1/admin/checkpoints","x-ronin-master-key",masterKey.Text,HttpMethod.Put,new JsonObject{["generation"]=checkpointRevision,["checkpoints"]=rows});
+  checkpointRevision=answer["generation"]?.GetValue<long>()??checkpointRevision;
+  status.Text="Checkpoint revision "+checkpointRevision+" published. Phones sync from the cloud while this PC is offline.";checkpointState.Text="Central configuration active • revision "+checkpointRevision;
+ }
+
+ string SelectedPlate(){if(vehicles.CurrentRow==null)throw new Exception("Select a vehicle first.");return Convert.ToString(vehicles.CurrentRow.Cells["plate"].Value)??throw new Exception("Select a vehicle first.");}
+ Dictionary<string,string>? PromptFields(string title,Dictionary<string,string> values,bool registrationReadOnly=false){
+  using var dialog=new Form(){Text=title,Width=620,Height=760,StartPosition=FormStartPosition.CenterParent,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false};
+  var panel=new FlowLayoutPanel(){Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,Padding=new Padding(15)};
+  var fields=new Dictionary<string,TextBox>();
+  foreach(var p in values){panel.Controls.Add(new Label(){Text=p.Key,AutoSize=true});var box=new TextBox(){Text=p.Value,Width=480,ReadOnly=registrationReadOnly&&p.Key=="Registration"};fields[p.Key]=box;panel.Controls.Add(box);}
+  var save=ActionButton("Save");save.DialogResult=DialogResult.OK;panel.Controls.Add(save);dialog.AcceptButton=save;dialog.Controls.Add(panel);StyleControl(dialog);
+  return dialog.ShowDialog(this)==DialogResult.OK?fields.ToDictionary(x=>x.Key,x=>x.Value.Text.Trim()):null;
+ }
+ async Task EditVehicle(bool add){
+  string plate=add?"":SelectedPlate();JsonNode? old=add?null:vehicleRecords[plate];var details=old?["details"]?.DeepClone()??new JsonObject();
+  string originalLevel=details["breach_level"]?.ToString()??"",originalDate="";long last=0;
+  if(long.TryParse(details["last_breach_at"]?.ToString(),out last)&&last>0)originalDate=DateTimeOffset.FromUnixTimeMilliseconds(last).ToOffset(TimeSpan.FromHours(10)).ToString("dd/MM/yyyy HH:mm",System.Globalization.CultureInfo.InvariantCulture);
+  var values=PromptFields(add?"Add vehicle":"Correct vehicle",new(){{"Registration",plate},{"Make",details["make"]?.ToString()??""},{"Model",details["model"]?.ToString()??""},{"Colour",details["colour"]?.ToString()??""},{"Description",details["description"]?.ToString()??""},{"Vehicle",details["vehicle"]?.ToString()??""},{"Address",details["address"]?.ToString()??""},{"Relation (at/on/across from/in front of)",details["relation"]?.ToString()??"at"},{"Parking (common/visitor)",details["parking"]?.ToString()??""},{"Warning level (0–3; blank keeps source state)",originalLevel},{"Last warning (Brisbane dd/MM/yyyy HH:mm)",originalDate},{"Correction reason",""}},!add);
+  if(values==null)return;if(!add&&values["Correction reason"].Length<10)throw new Exception("Provide a correction reason of at least 10 characters.");
+  foreach(var p in new[]{("Make","make"),("Model","model"),("Colour","colour"),("Description","description"),("Vehicle","vehicle"),("Address","address"),("Relation (at/on/across from/in front of)","relation"),("Parking (common/visitor)","parking")})details[p.Item2]=values[p.Item1];
+  string chosenLevel=values["Warning level (0–3; blank keeps source state)"],chosenDate=values["Last warning (Brisbane dd/MM/yyyy HH:mm)"];
+  if(chosenLevel!=originalLevel||chosenDate!=originalDate){
+   if(!int.TryParse(chosenLevel,out var level)||level<0||level>3)throw new Exception("Choose warning level 0, 1, 2 or 3.");
+   long when=0;
+   if(level>0){
+    if(!DateTime.TryParseExact(chosenDate,"dd/MM/yyyy HH:mm",System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out var date))throw new Exception("Enter the actual last warning date and time in Brisbane time: dd/MM/yyyy HH:mm.");
+    when=new DateTimeOffset(DateTime.SpecifyKind(date,DateTimeKind.Unspecified),TimeSpan.FromHours(10)).ToUnixTimeMilliseconds();
+    if(when<=0||when>DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+86400000)throw new Exception("Check the last warning date.");
+   }
+   details["breach_level"]=level;details["last_breach_at"]=when;
+  }
+  await Request(fleetUrl.Text,"/v1/vehicles","x-trl-master-key",fleetKey.Text,HttpMethod.Put,new JsonObject{["plate"]=values["Registration"],["revision"]=old?["revision"]?.GetValue<long>()??0,["details"]=details,["reason"]=values["Correction reason"]});
+  await RefreshCloud();
+ }
+ async Task DeleteVehicle(){
+  string plate=SelectedPlate();var values=PromptFields("Delete "+plate,new(){{"Reason",""}});
+  if(values==null)return;if(values["Reason"].Length<10)throw new Exception("Provide a deletion reason of at least 10 characters.");
+  await Request(fleetUrl.Text,"/v1/vehicles/delete","x-trl-master-key",fleetKey.Text,HttpMethod.Post,new JsonObject{["plate"]=plate,["reason"]=values["Reason"]});await RefreshCloud();
+ }
+ async Task PairDevice(){
+  var values=PromptFields("Create Breach device pairing code",new(){{"Patrol role (P1, P2 or P3)","P1"}});
+  if(values==null)return;string role=values["Patrol role (P1, P2 or P3)"].ToUpperInvariant();
+  if(!new[]{"P1","P2","P3"}.Contains(role))throw new Exception("Choose P1, P2 or P3.");
+  var answer=await Request(fleetUrl.Text,"/v1/invite","x-trl-master-key",fleetKey.Text,HttpMethod.Post,new JsonObject{["role"]=role});
+  ShowPairingCode(answer["code"]?.ToString()??"");
+ }
+
+ protected override void Dispose(bool disposing){if(disposing){poll.Dispose();http.Dispose();}base.Dispose(disposing);}
+}

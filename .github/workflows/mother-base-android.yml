@@ -1,0 +1,181 @@
+name: TRL Patrol Link Mother Base integration v1.1.52
+on:
+  push:
+    branches: ['trl-mother-base-v1']
+    paths:
+      - '.patrolbuild/motherbase/**'
+      - '.github/workflows/mother-base-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Reconstruct current Patrol Link source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          lines=Path('.github/workflows/patrol-link-v139.yml').read_text().splitlines()
+          marker=next(i for i,s in enumerate(lines) if s.strip()=='- name: Reconstruct original project and apply requested update')
+          start=next(i for i in range(marker,len(lines)) if lines[i].strip()=='run: |')+1
+          end=next(i for i in range(start,len(lines)) if lines[i].startswith('      - name:'))
+          script='\n'.join(s[10:] if s.startswith('          ') else s for s in lines[start:end])
+          subprocess.run(['bash','-euo','pipefail','-c',script],check=True)
+          PY
+          mkdir -p /tmp/patrol-v141-patch /tmp/patrol-v142-patch /tmp/patrol-v143-patch
+          unzip -q .patrolbuild/v141/patch_bundle.zip -d /tmp/patrol-v141-patch
+          python3 /tmp/patrol-v141-patch/patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v142/patch_bundle.zip -d /tmp/patrol-v142-patch
+          python3 /tmp/patrol-v142-patch/v142_patch.py /tmp/patrol-v134
+          unzip -q .patrolbuild/v143/patch_bundle.zip -d /tmp/patrol-v143-patch
+          python3 /tmp/patrol-v143-patch/v143_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v144/v144_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v145/v145_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v146/v146_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v147/v147_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v148/v148_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v149/v149_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v150/v150_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v151/v151_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v152/v152_patch.py /tmp/patrol-v134
+          cp .patrolbuild/v153/MasterFeedSecrets.java .patrolbuild/v153/MasterFeedClient.java .patrolbuild/v153/MasterFeedUi.java /tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink/
+          python3 .patrolbuild/v153/v153_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v154/v154_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v155/v155_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v156/v156_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v157/v157_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/v158/v158_patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/monitor-filter-patch.py /tmp/patrol-v134
+          python3 .patrolbuild/motherbase/vehicle-capture-patch.py /tmp/patrol-v134
+      - name: Rebrand regression audit
+        run: |
+          set -euo pipefail
+          J=/tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink
+          grep -q "versionCode 162" /tmp/patrol-v134/app/build.gradle
+          grep -q "versionName '1.1.52'" /tmp/patrol-v134/app/build.gradle
+          grep -q 'android:label="TRL Patrol Link"' /tmp/patrol-v134/app/src/main/AndroidManifest.xml
+          grep -q 'TRL SECURITY  /  PATROL SYSTEMS' "$J/MainActivity.java"
+          grep -q 'TRL Patrol Link' "$J/MainActivity.java"
+          grep -q 'TRL Master SilverTrack feed' "$J/MasterFeedUi.java"
+          test -f /tmp/patrol-v134/app/src/main/res/drawable/trl_patrol_icon.xml
+          grep -q 'X-Ronin-Key' "$J/FleetRelay.java"
+          grep -q 'publishGuards' "$J/FleetRelay.java"
+          grep -q 'MasterFeedClient.publish' "$J/PatrolEngine.java"
+          grep -q '"hexgrad/Kokoro-82M"' "$J/FeatherlessCatalog.java"
+          grep -q 'CHECKPOINT SYNC / RECOVERY' "$J/CheckpointProximityUi.java"
+          grep -q 'button("CLOSE"' "$J/CheckpointProximityUi.java"
+          ! grep -q 'MyCentsys' "$J/CheckpointProximityUi.java"
+          echo REBRAND_AUDIT_OK
+      - name: Compile and run JVM tests
+        working-directory: /tmp/patrol-v134
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Verify and package
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/deliver158
+          APK=/tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk
+          OUT=/tmp/deliver158/TRL-Patrol-Link-v1.1.52.apk
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee /tmp/deliver158/VERIFY.txt
+          sha256sum "$OUT" | tee /tmp/deliver158/SHA256.txt
+      - name: Verify signing compatibility with installed release
+        run: |
+          set -euo pipefail
+          CHECK="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          BASE=dist/TRL-Patrol-Link-v1.1.48.apk
+          test -f "$BASE"
+          "$CHECK" verify --print-certs "$BASE" | sed -n '/certificate SHA-256 digest/p' > /tmp/baseline-cert
+          "$CHECK" verify --print-certs /tmp/deliver158/TRL-Patrol-Link-v1.1.52.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/new-cert
+          diff /tmp/baseline-cert /tmp/new-cert
+      - name: Package emulator fixtures without signing material
+        run: |
+          mkdir -p /tmp/filter-device
+          cp /tmp/patrol-v134/app/build/outputs/apk/debug/app-debug.apk /tmp/filter-device/
+          cp /tmp/patrol-v134/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk /tmp/filter-device/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monitor-filter-device-fixtures
+          path: /tmp/filter-device/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.52
+          path: /tmp/deliver158/
+          retention-days: 30
+  device:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: monitor-filter-device-fixtures
+          path: device/
+      - name: Free space for Android emulator
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test real WebView taps and native filter selection
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          ram-size: 1536M
+          disk-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb install -r device/app-debug.apk
+            adb install -r device/app-debug-androidTest.apk
+            adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_FINE_LOCATION
+            adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_COARSE_LOCATION
+            adb shell pm list instrumentation
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee filter-device-tests.txt
+            python3 -c "from pathlib import Path; s=Path('filter-device-tests.txt').read_text(); assert 'OK (4 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Monitor-filter-Android-device-results
+          path: filter-device-tests.txt
+          retention-days: 30
+  publish:
+    needs: [build, device]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.52
+          path: release/
+      - uses: actions/download-artifact@v4
+        with:
+          name: Monitor-filter-Android-device-results
+          path: release/
+      - name: Publish verified browser capture fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag trl-patrol-link-v1.1.52-vehicle-capture "$GITHUB_SHA"
+          git push origin refs/tags/trl-patrol-link-v1.1.52-vehicle-capture
+          gh release create trl-patrol-link-v1.1.52-vehicle-capture --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "TRL Patrol Link 1.1.52 — parking report capture" --notes-file .patrolbuild/motherbase/VEHICLE-CAPTURE-SETUP.md release/*

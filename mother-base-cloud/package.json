@@ -1,0 +1,16 @@
+{
+  "name": "trl-mother-base-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test normalise.test.js fleet.test.js native-breach.test.js silvertrack-dom.test.js report-evidence.test.js",
+    "test:integration": "node --test integration.test.js"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
+  }
+}
