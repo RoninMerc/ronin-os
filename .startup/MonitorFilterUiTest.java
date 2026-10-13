@@ -58,6 +58,16 @@ public final class MonitorFilterUiTest {
  }
  private void choose(String label)throws Exception{
   ins.waitForIdleSync();Thread.sleep(200);
+  ins.runOnMainSync(()->{
+   try{
+    java.lang.reflect.Field field=MonitorFilterUi.class.getDeclaredField("picker");field.setAccessible(true);
+    AlertDialog dialog=(AlertDialog)field.get(null);assertNotNull("Native picker must remain open",dialog);
+    android.widget.ListView list=dialog.getListView();
+    if(list!=null)for(int index=0;index<list.getAdapter().getCount();index++)
+     if(label.equals(String.valueOf(list.getAdapter().getItem(index)))){list.setSelection(index);break;}
+   }catch(ReflectiveOperationException error){throw new RuntimeException(error);}
+  });
+  ins.waitForIdleSync();Thread.sleep(300);
   final AtomicReference<Throwable> failure=new AtomicReference<>();
   ins.runOnMainSync(()->{
    try{
