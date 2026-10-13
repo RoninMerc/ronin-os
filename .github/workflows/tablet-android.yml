@@ -158,6 +158,7 @@ jobs:
         with:
           api-level: ${{ matrix.api }}
           arch: x86_64
+          profile: pixel_2
           target: google_apis
           ram-size: 2048M
           disk-size: 2048M
@@ -189,10 +190,6 @@ jobs:
             adb shell wm density 480
             adb shell settings put system font_scale 1.0
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.DisplayModeTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee phone-display-mode-tests.txt
-            adb logcat -d -s AndroidRuntime:V TestRunner:V ActivityTaskManager:V > phone-diagnostic-logcat.txt
-            adb shell uiautomator dump /sdcard/display-mode-window.xml || true
-            adb pull /sdcard/display-mode-window.xml phone-diagnostic-window.xml || true
-            adb exec-out screencap -p > phone-diagnostic-screen.png
             python3 -c "from pathlib import Path; s=Path('phone-display-mode-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
             adb exec-out run-as au.com.roningroup.patrollink cat files/phone-landscape-TEST-FIXTURE.png > phone-landscape-api-${{ matrix.api }}-TEST-FIXTURE.png
             adb shell wm size 1200x1920
@@ -215,7 +212,6 @@ jobs:
           path: |
             *-tests.txt
             *-TEST-FIXTURE.png
-            phone-diagnostic-*
           retention-days: 30
   publish:
     needs: [build, device]
