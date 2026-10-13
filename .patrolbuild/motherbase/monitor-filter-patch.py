@@ -8,7 +8,7 @@ def replace(path,old,new):
  path.write_text(s.replace(old,new,1))
 def rx(path,pattern,change):
  s=path.read_text();s,n=re.subn(pattern,change,s,count=0)
- if n!=1:raise RuntimeError('Monitor filter method anchor mismatch: '+str(path)+' '+pattern)
+ if n!=1:\n  for line in path.read_text().splitlines():\n   if any(x in line for x in ['Runnable','nextCheckElapsed','onPageFinished','public void run']):print('FILTER_FLOW: '+line[:240])\n  raise RuntimeError('Monitor filter method anchor mismatch: '+str(path)+' '+pattern)
  path.write_text(s)
 replace(root/'app/build.gradle','versionCode 160','versionCode 161')
 replace(root/'app/build.gradle',"versionName '1.1.50'","versionName '1.1.51'")
@@ -20,7 +20,7 @@ rx(main,r'(void\s+onPause\s*\([^)]*\)\s*\{)',lambda m:m[1]+' MonitorFilterUi.pau
 rx(main,r'(void\s+onDestroy\s*\([^)]*\)\s*\{)',lambda m:m[1]+' MonitorFilterUi.unbind(this); ')
 engine=j/'PatrolEngine.java'
 rx(engine,r'(web\s*=\s*new WebView\(context\);)',lambda m:m[1]+'\n        MonitorFilterUi.prepare(web);')
-rx(engine,r'if\s*\(\s*now\s*>=\s*nextCheckElapsed\s*\)',lambda m:'if(now>=nextCheckElapsed&&!MonitorFilterUi.interacting(web))')
+rx(engine,r'(Runnable\s+cycle\s*=\s*new Runnable\s*\(\s*\)\s*\{\s*(?:@Override\s*)?public\s+void\s+run\s*\(\s*\)\s*\{)',lambda m:m[1]+' if(MonitorFilterUi.interacting(web)){handler.postDelayed(this,1000);return;} ')
 rx(engine,r'(void\s+onPageFinished\s*\(WebView\s+(\w+),\s*String\s+\w+\)\s*\{)',lambda m:m[1]+' MonitorFilterUi.pageReady('+m[2]+'); ')
 testdir=root/'app/src/androidTest/java/au/com/roningroup/patrollink';testdir.mkdir(parents=True,exist_ok=True)
 shutil.copyfile(here/'MonitorFilterUiTest.java',testdir/'MonitorFilterUiTest.java')
