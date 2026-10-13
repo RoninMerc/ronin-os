@@ -146,7 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [27, 30, 35]
+        api: [28, 30, 35]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -164,7 +164,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
-          arch: ${{ matrix.api == 27 && 'x86' || 'x86_64' }}
+          arch: ${{ matrix.api == 28 && 'x86' || 'x86_64' }}
           profile: pixel_2
           target: google_apis
           ram-size: 2048M
@@ -260,7 +260,7 @@ jobs:
                               assert 'Three release force-stop/relaunch checks passed' in s;continue
                           matches=re.findall(r'OK \((\d+) tests?\)',s);assert matches;total+=int(matches[-1])
           assert total==126
-          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.57/code169\n\nRelease/debug/instrumentation APKs compiled. 95 JVM checks passed. 126 emulator checks passed across APIs 27, 30 and 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Startup recovery fault injection for engine, browser and map plus interrupted construction was checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
+          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.57/code169\n\nRelease/debug/instrumentation APKs compiled. 95 JVM checks passed. 126 emulator checks passed across APIs 28, 30 and 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Tablet-only TRL styling and automatic paging, actual WebView detail read through publication/evidence receipts with synthetic transports, retry behavior, original phone toolbar, source photo URL policy, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Startup recovery fault injection for engine, browser and map plus interrupted construction was checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
           PY
       - uses: actions/upload-artifact@v4
         with:

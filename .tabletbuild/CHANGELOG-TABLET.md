@@ -11,4 +11,4 @@ No SilverTrack credentials are sent to patrol devices. No cloud service, databas
 
 - Saved engine/voice state loads on a worker, including foreground-service restarts; Android's foreground notification appears promptly while loading.
 
-- Android 8/8.1 GPS status checks use supported provider APIs, avoiding the unguarded Android 9 method call during launch.
+- Existing Android 9 minimum retained; startup checks include the oldest supported Android version.
