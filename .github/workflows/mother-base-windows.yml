@@ -47,14 +47,6 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "UI navigation/search/render checks failed" }
           if ((Get-ChildItem mother-base/screenshots-v03/*.png).Count -ne 7) { throw "Screenshots missing" }
           git restore mother-base/Program.cs
-      - name: Publish Windows desktop refresh
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $assets = @((Get-ChildItem mother-base/installer/*).FullName) + @((Get-ChildItem mother-base/screenshots-v03/*.png).FullName) + @("mother-base/DESKTOP-0.3.md")
-          gh release create trl-mother-base-preview-0.3.0 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title "TRL Mother Base 0.3.0 — desktop refresh" --notes-file mother-base/DESKTOP-0.3.md @assets
-          if ($LASTEXITCODE -ne 0) { throw "Release publication failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: TRL-Mother-Base-Windows-Setup
@@ -65,3 +57,31 @@ jobs:
           name: TRL-Mother-Base-Screenshots-0.3
           path: mother-base/screenshots-v03/*.png
           retention-days: 30
+      - name: Publish Windows desktop refresh
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @((Get-ChildItem mother-base/installer/*).FullName) + @((Get-ChildItem mother-base/screenshots-v03/*.png).FullName) + @("mother-base/DESKTOP-0.3.md")
+          git tag trl-mother-base-preview-0.3.0 $env:GITHUB_SHA
+          git push origin refs/tags/trl-mother-base-preview-0.3.0
+          if ($LASTEXITCODE -ne 0) { throw "Release tag publication failed; verified installer is available as an artifact" }
+          gh release create trl-mother-base-preview-0.3.0 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title "TRL Mother Base 0.3.0 — desktop refresh" --notes-file mother-base/DESKTOP-0.3.md @assets
+          if ($LASTEXITCODE -ne 0) { throw "Release publication failed" }
+      - name: Save interface previews for review
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mother-base/screenshots-v03/*.png
+          git commit -m "Add dark Mother Base desktop screenshots with sample data [skip ci]"
+          git push origin HEAD:trl-mother-base-v1
+          if ($LASTEXITCODE -ne 0) { throw "Screenshot publication failed" }
+      - name: Emit sample screenshots for visual review
+        shell: pwsh
+        run: |
+          foreach ($name in @("01-overview","02-vehicles")) {
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path "mother-base/screenshots-v03/$name.png"))
+            Write-Output ("TRL_SCREENSHOT_" + $name + "=" + [Convert]::ToBase64String($bytes))
+          }
