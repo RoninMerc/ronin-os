@@ -45,6 +45,10 @@ public final class AutoCaptureFlowTest {
    if(unsafe)next="<a class='rgPageNext' href='EditIssue.aspx?IssueID=2000001' title='Next page'>Next</a><a href='Monitor.aspx?page=9' title='Last page'>Last</a>";
    body="<h1>ISSUE MONITOR — SYNTHETIC CAPTURE TEST</h1><table><thead><tr><th>Issue ID</th><th>Property</th><th>Reported Issue</th><th>Created Date</th><th>Created By</th><th>Report</th></tr></thead><tbody><tr><td>"+id+"</td><td>Synthetic Property</td><td>Parking Breach - 1st Warning</td><td>14/07/2026 06:00</td><td>Synthetic Guard</td><td><a href='IssueDetails.aspx?IssueID="+id+"'>View</a></td></tr></tbody></table><span aria-current='page'>"+(second?"2":"1")+"</span>"+next;
   }
+  if(r.isForMainFrame()&&!url.contains("IssueDetails.aspx")&&name.getMethodName().startsWith("TabletCapture")){
+   String inner=("<html><body>"+body+"</body></html>").replace("&","&amp;").replace("\"","&quot;");
+   body="<h1>SYNTHETIC FRAME CAPTURE FIXTURE</h1><iframe style='width:100%;height:650px' srcdoc=\""+inner+"\"></iframe>";
+  }
   return new WebResourceResponse("text/html","UTF-8",new ByteArrayInputStream(("<html><body>"+body+"</body></html>").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
  }
  void begin(){ins.runOnMainSync(()->{CaptureQueue.prefs(c).edit().putBoolean("auto_enabled",true).commit();AutoCaptureJob.start(a,engine.webView(),engine.zone(),true);});}
@@ -64,6 +68,6 @@ public final class AutoCaptureFlowTest {
  }
  @Test public void PhoneKeepsItsOriginalToolbarAndDoesNotAutomaticallyPage()throws Exception{
   assertNull(a.findViewById(155201));assertNull(a.findViewById(156201));assertFalse(AutoCaptureJob.running());Thread.sleep(1800);
-  assertEquals(PatrolEngine.MONITOR,engine.webView().getUrl());assertEquals(0,images.size());
+  AtomicReference<String> url=new AtomicReference<>();ins.runOnMainSync(()->url.set(engine.webView().getUrl()));assertEquals(PatrolEngine.MONITOR,url.get());assertEquals(0,images.size());
  }
 }

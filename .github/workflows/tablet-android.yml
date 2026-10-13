@@ -121,6 +121,7 @@ jobs:
           PY
           python3 .tabletbuild/package-source.py
           cp .tabletbuild/CHANGELOG-TABLET.md .tabletbuild/INSTALL-TABLET.md .tabletbuild/TABLET-TEST-RESULTS.md /tmp/tablet-release/
+          cp .autocapture/Export-TRL-Training-Photos.ps1 /tmp/tablet-release/
           cp /tmp/tablet-delivery/* /tmp/tablet-release/
           gh release download trl-patrol-link-v1.1.52-vehicle-capture --repo "$GITHUB_REPOSITORY" --pattern TRL-Patrol-Link-v1.1.52.apk --dir /tmp/tablet-baseline
           cp /tmp/patrol-v134/app/build/outputs/apk/debug/app-debug.apk /tmp/tablet-device/

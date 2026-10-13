@@ -32,6 +32,7 @@ final class AutoCaptureJob {
   if(a==null||a.isFinishing()||!((PatrolApp)a.getApplication()).engine().browserVisible){if(a!=null)pause(a,"Paused: reopen the tablet SilverTrack browser to resume.");return;}
   if(!MasterFeedClient.master(a)||!MasterFeedClient.ready(a,true)){pause(a,"Paused: collector role or Publisher pairing changed.");return;}
   if(!PatrolEngine.monitorPage(w.getUrl())){pause(a,"Paused: SilverTrack session changed; sign in again.");return;}
+  if(MonitorFilterUi.interacting(w)){schedule(token);return;}
   if(SystemClock.elapsedRealtime()<nextAt){schedule(token);return;}
   if(reading&&SystemClock.elapsedRealtime()-began>25000){failedPage(context,"The page reader did not return usable results.");return;}
   if(SilverTrackVehicleCollector.busy()||reading){schedule(token);return;}

@@ -12,7 +12,7 @@ final class CaptureQueue {
  static int count(Context c,String key){return prefs(c).getInt(key,0);}
  static String status(Context c){
   SharedPreferences p=prefs(c);
-  return p.getString("stage","Automatic capture is ready.")+"\nPages read: "+p.getInt("pages",0)+" · reports linked: "+p.getInt("linked",0)+"\nCloud confirmed — created: "+p.getInt("created",0)+" · updated: "+p.getInt("updated",0)+" · duplicate: "+p.getInt("duplicate",0)+"\nReview needed: "+p.getInt("review",0)+" · skipped: "+p.getInt("ignored",0)+" · failed: "+p.getInt("failed",0)+"\nPhotos confirmed: "+p.getInt("photos",0)+" · photo failures: "+p.getInt("photo_failed",0)+"\nUnresolved report links: "+p.getInt("unlinked",0)+" · photo duplicates: "+p.getInt("photo_duplicate",0)+"\n"+p.getString("last","No cloud receipt yet.");
+  return p.getString("stage","Automatic capture is ready.")+"\nPages read: "+p.getInt("pages",0)+" · reports linked: "+p.getInt("linked",0)+"\nCloud confirmed — created: "+p.getInt("created",0)+" · updated: "+p.getInt("updated",0)+" · duplicate: "+p.getInt("duplicate",0)+"\nReview needed: "+p.getInt("review",0)+" · skipped: "+p.getInt("ignored",0)+" · failed attempts: "+p.getInt("failed",0)+"\nPhotos confirmed: "+p.getInt("photos",0)+" · photo failures: "+p.getInt("photo_failed",0)+"\nUnresolved report links: "+p.getInt("unlinked",0)+" · photo duplicates: "+p.getInt("photo_duplicate",0)+"\n"+p.getString("last","No cloud receipt yet.");
  }
  static void stage(Context c,String s){prefs(c).edit().putString("stage",s).commit();}
  private CaptureQueue(){}
