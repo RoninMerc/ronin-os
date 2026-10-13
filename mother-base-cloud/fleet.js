@@ -63,7 +63,8 @@ function createApp(pool,opts={}){
        if(role!=='MASTER')return send(res,403,{ok:false});
        const b=await readBody(req,1000),roleName=clean(b.role,8);
        if(!['P1','P2','P3'].includes(roleName))return send(res,400,{ok:false});
-       const code=crypto.randomBytes(24).toString('base64url');
+       const alphabet='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+       const code=Array.from({length:32},()=>alphabet[crypto.randomInt(alphabet.length)]).join('');
        await pool.query("INSERT INTO invitations(code_sha,role,expires_at) VALUES($1,$2,now()+interval '10 minutes')",[hash(code),roleName]);
        return send(res,200,{ok:true,code,role:roleName,expiresInSeconds:600});
     }
