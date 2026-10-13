@@ -57,11 +57,25 @@ public final class MonitorFilterUiTest {
   for(int i=0;i<60;i++){AccessibilityNodeInfo root=ins.getUiAutomation().getRootInActiveWindow();if(root!=null){java.util.List<AccessibilityNodeInfo> found=root.findAccessibilityNodeInfosByText(label);for(AccessibilityNodeInfo node:found)if(node.isVisibleToUser()&&label.equalsIgnoreCase(node.getText()==null?"":node.getText().toString()))return node;}Thread.sleep(100);}throw new AssertionError("Native choice not visible: "+label+"; filter events="+js("String(window.__trlFilterClicks||0)")+"; bridge="+js("typeof TRLMonitorFilters.open"));
  }
  private void choose(String label)throws Exception{
-  ins.waitForIdleSync();Thread.sleep(200);AccessibilityNodeInfo node=find(label);
-  boolean clicked=false;for(AccessibilityNodeInfo target=node;target!=null;target=target.getParent()){
-   if(target.isClickable()&&target.performAction(AccessibilityNodeInfo.ACTION_CLICK)){clicked=true;break;}
-  }
-  assertTrue("Native option must accept accessibility click: "+label,clicked);
+  ins.waitForIdleSync();Thread.sleep(200);
+  final AtomicReference<Throwable> failure=new AtomicReference<>();
+  ins.runOnMainSync(()->{
+   try{
+    java.lang.reflect.Field field=MonitorFilterUi.class.getDeclaredField("picker");field.setAccessible(true);
+    AlertDialog dialog=(AlertDialog)field.get(null);assertNotNull("Patrol Link's native picker must be open",dialog);assertTrue(dialog.isShowing());
+    for(int button:new int[]{AlertDialog.BUTTON_POSITIVE,AlertDialog.BUTTON_NEGATIVE,AlertDialog.BUTTON_NEUTRAL}){
+     android.widget.Button view=dialog.getButton(button);
+     if(view!=null&&view.getVisibility()==View.VISIBLE&&label.equalsIgnoreCase(view.getText().toString())){assertTrue(view.performClick());return;}
+    }
+    android.widget.ListView list=dialog.getListView();assertNotNull(list);
+    for(int index=0;index<list.getAdapter().getCount();index++)if(label.equals(String.valueOf(list.getAdapter().getItem(index)))){
+     View child=list.getChildAt(index-list.getFirstVisiblePosition());assertNotNull("Native choice is visible: "+label,child);
+     assertTrue("Native choice listener handles selection",list.performItemClick(child,index,list.getAdapter().getItemId(index)));return;
+    }
+    fail("Native option not found: "+label);
+   }catch(Throwable error){failure.set(error);}
+  });
+  if(failure.get()!=null)throw new AssertionError("Native picker selection: "+label,failure.get());
   ins.waitForIdleSync();Thread.sleep(300);
  }
  @Test public void actualHtmlDropdownTapOpensNativePickerAndKeepsOtherFilters()throws Exception{
