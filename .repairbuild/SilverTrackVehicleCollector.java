@@ -23,6 +23,7 @@ final class SilverTrackVehicleCollector{
  private static JSONObject active;
  private static String identity="";
  private static int epoch,attempts,pageRead;
+ private static boolean uploading;
  private static WeakReference<WebView> monitorOwner=new WeakReference<>(null);
  static void captureLoadedPage(Context c,WebView monitor,ZoneId zone){
   if(!eligible(c,monitor))return;context=c.getApplicationContext();timezone=zone;monitorOwner=new WeakReference<>(monitor);
@@ -80,7 +81,7 @@ final class SilverTrackVehicleCollector{
  }
  private static void next(){
   if(detail!=null||pending.isEmpty()||context==null||!MasterFeedClient.master(context)||!MasterFeedClient.ready(context,true))return;
-  active=pending.remove();identity=active.optString("identity");attempts=0;final int token=++epoch;
+  active=pending.remove();identity=active.optString("identity");attempts=0;uploading=false;final int token=++epoch;
   try{
    detail=new WebView(context);detail.getSettings().setJavaScriptEnabled(true);detail.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);detail.getSettings().setDomStorageEnabled(true);detail.getSettings().setOffscreenPreRaster(true);SilverTrackBrowserUi.prepare(detail);
    WebView owner=monitorOwner.get();ViewParent parent=owner==null?null:owner.getParent();while(parent instanceof View&&! (parent instanceof FrameLayout))parent=parent.getParent();
@@ -96,16 +97,16 @@ final class SilverTrackVehicleCollector{
     @Override public void onPageFinished(WebView w,String url){if(token==epoch&&allowed(url))read(token);}
    });
    String url=active.getString("url");if(!allowed(url)){finish(token,false);return;}
-   detail.loadUrl(url);UI.postDelayed(()->finish(token,false),18000);
+   detail.loadUrl(url);UI.postDelayed(()->{if(token==epoch&&!uploading)finish(token,false);},18000);
   }catch(Exception e){finish(token,false);}
  }
  private static boolean allowed(String url){return CaptureLinkPolicy.allowed(url);}
  private static void read(int token){
-  if(token!=epoch||detail==null)return;
+  if(token!=epoch||detail==null||uploading)return;
   if(!MasterFeedClient.master(context)||!MasterFeedClient.ready(context,true)){finish(token,false,"Capture stopped because the collector role or Publisher pairing changed.");return;}
   if(attempts++>=6){finish(token,false,"The report did not expose labelled registration details.");return;}
   detail.evaluateJavascript("JSON.stringify("+FIELDS+"())",encoded->{
-   if(token!=epoch||detail==null)return;
+   if(token!=epoch||detail==null||uploading)return;
    try{
     Object text=new JSONTokener(encoded).nextValue();if(!(text instanceof String))throw new JSONException("No report fields");
     JSONObject result=new JSONObject((String)text);
@@ -120,7 +121,10 @@ final class SilverTrackVehicleCollector{
      long when=TimeParser.parse(date,timezone,System.currentTimeMillis());
      if(when>0&&when<=System.currentTimeMillis()+86400000L)source.put("occurredAt",java.time.Instant.ofEpochMilli(when).toString());
     }
+    uploading=true;
+    UI.postDelayed(()->{if(token==epoch&&uploading)finish(token,false,"Vehicle upload timed out; capture this report again.");},30000);
     MasterFeedClient.publishVehicle(context,source,(data,error)->{
+     if(token!=epoch)return;
      if(error!=null||data==null||!data.optBoolean("ok")){finish(token,false,error==null?"Vehicle report upload was rejected by the cloud.":error);return;}
      JSONObject imports=data.optJSONObject("imports");
      if(imports==null){finish(token,false,"Cloud reply did not include an import result.");return;}
@@ -145,7 +149,7 @@ final class SilverTrackVehicleCollector{
   if(ok)completed.put(identity,System.currentTimeMillis());
   if(completed.size()>1000)completed.clear();
   if(context!=null)context.getSharedPreferences("patrol_master_feed_v1",0).edit().putString("vehicle_status",note).apply();
-  if(detail!=null){detail.stopLoading();if(detail.getParent() instanceof ViewGroup)((ViewGroup)detail.getParent()).removeView(detail);detail.destroy();detail=null;}active=null;identity="";
+  if(detail!=null){detail.stopLoading();if(detail.getParent() instanceof ViewGroup)((ViewGroup)detail.getParent()).removeView(detail);detail.destroy();detail=null;}active=null;identity="";uploading=false;
   UI.postDelayed(SilverTrackVehicleCollector::next,2000);
  }
  private static final String LINKS=VehicleCaptureScripts.LINKS;

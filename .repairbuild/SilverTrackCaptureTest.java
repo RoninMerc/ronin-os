@@ -3,11 +3,11 @@ import android.app.*;import android.content.*;import android.webkit.*;import and
 import org.json.*;import org.junit.*;import org.junit.runner.RunWith;import static org.junit.Assert.*;import java.util.concurrent.*;import java.util.concurrent.atomic.*;
 @RunWith(AndroidJUnit4.class)
 public final class SilverTrackCaptureTest {
- Instrumentation ins;Activity activity;WebView web;
+ Instrumentation ins;Activity activity;WebView web;int fixtureSequence;
  @Before public void setup(){ins=InstrumentationRegistry.getInstrumentation();activity=ins.startActivitySync(new Intent(ins.getTargetContext(),MonitorFilterHostActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));ins.runOnMainSync(()->{web=new WebView(activity);web.getSettings().setJavaScriptEnabled(true);activity.setContentView(web);});}
  @After public void end(){ins.runOnMainSync(()->{web.destroy();activity.finish();});}
  String js(String script)throws Exception{CountDownLatch latch=new CountDownLatch(1);AtomicReference<String> data=new AtomicReference<>();ins.runOnMainSync(()->web.evaluateJavascript(script,x->{data.set(x);latch.countDown();}));assertTrue(latch.await(10,TimeUnit.SECONDS));return String.valueOf(new JSONTokener(data.get()).nextValue());}
- void html(String body)throws Exception{ins.runOnMainSync(()->web.loadDataWithBaseURL(PatrolEngine.MONITOR,"<html><body>"+body+"<span id='done'>fixture</span></body></html>","text/html","UTF-8",PatrolEngine.MONITOR));for(int i=0;i<80;i++){if("true".equals(js("!!document.getElementById('done')")))return;Thread.sleep(100);}fail("Fixture load");}
+ void html(String body)throws Exception{final int sequence=++fixtureSequence;ins.runOnMainSync(()->web.loadDataWithBaseURL(PatrolEngine.MONITOR,"<html><body>"+body+"<span id='done' data-fixture='"+sequence+"'>SYNTHETIC TEST FIXTURE</span></body></html>","text/html","UTF-8",PatrolEngine.MONITOR));for(int i=0;i<80;i++){if(String.valueOf(sequence).equals(js("document.getElementById('done')&&document.getElementById('done').getAttribute('data-fixture')")))return;Thread.sleep(100);}fail("Fixture load");}
  JSONObject row(String id)throws Exception{return new JSONObject().put("id",id).put("guard","Synthetic Guard").put("property","Synthetic Property").put("issue","Parking Breach - 1st Warning").put("date","14/07/2026 06:00");}
  String cells(String id,String link){return "<td>"+id+"</td><td>Synthetic Property</td><td>Parking Breach - 1st Warning</td><td>14/07/2026 06:00</td><td>Synthetic Guard</td><td>"+link+"</td>";}
  JSONArray links(JSONArray rows)throws Exception{return new JSONArray(js("JSON.stringify("+VehicleCaptureScripts.LINKS+"("+rows+"))"));}

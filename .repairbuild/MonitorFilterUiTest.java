@@ -38,11 +38,15 @@ public final class MonitorFilterUiTest {
  private void loaded()throws Exception{for(int i=0;i<80;i++){if("true".equals(js("!!document.getElementById('reportedIssue')")))return;Thread.sleep(100);}fail("Fixture monitor did not load");}
  private void trustedLoaded()throws Exception{
   loaded();AtomicReference<String> url=new AtomicReference<>();AtomicReference<Boolean> ready=new AtomicReference<>();
-  ins.runOnMainSync(()->{url.set(web.getUrl());ready.set(MonitorFilterUi.ready(activity,web));});
+  for(int attempt=0;attempt<80;attempt++){
+   ins.runOnMainSync(()->{url.set(web.getUrl());ready.set(MonitorFilterUi.ready(activity,web));});
+   if(PatrolEngine.MONITOR.equals(url.get())&&Boolean.TRUE.equals(ready.get())&&"true".equals(js("String(!!window.__trlFiltersInstalled)")))break;
+   Thread.sleep(100);
+  }
   assertEquals(PatrolEngine.MONITOR,url.get());assertTrue("Trusted monitor fixture must enable the picker: "+url.get(),ready.get());
  }
  private AccessibilityNodeInfo find(String label)throws Exception{
-  for(int i=0;i<60;i++){AccessibilityNodeInfo root=ins.getUiAutomation().getRootInActiveWindow();if(root!=null){java.util.List<AccessibilityNodeInfo> found=root.findAccessibilityNodeInfosByText(label);for(AccessibilityNodeInfo node:found)if(node.isVisibleToUser()&&label.contentEquals(node.getText()==null?"":node.getText()))return node;}Thread.sleep(100);}throw new AssertionError("Native choice not visible: "+label+"; filter events="+js("String(window.__trlFilterClicks||0)")+"; bridge="+js("typeof TRLMonitorFilters.open"));
+  for(int i=0;i<60;i++){AccessibilityNodeInfo root=ins.getUiAutomation().getRootInActiveWindow();if(root!=null){java.util.List<AccessibilityNodeInfo> found=root.findAccessibilityNodeInfosByText(label);for(AccessibilityNodeInfo node:found)if(node.isVisibleToUser()&&label.equalsIgnoreCase(node.getText()==null?"":node.getText().toString()))return node;}Thread.sleep(100);}throw new AssertionError("Native choice not visible: "+label+"; filter events="+js("String(window.__trlFilterClicks||0)")+"; bridge="+js("typeof TRLMonitorFilters.open"));
  }
  private void choose(String label)throws Exception{
   ins.waitForIdleSync();Thread.sleep(200);AccessibilityNodeInfo node=find(label);
@@ -83,7 +87,7 @@ public final class MonitorFilterUiTest {
   assertEquals("https://trlsecurity.silvertracker.net/AdminCustomer/Issues/IssueDetails.aspx?IssueID=717",result.getJSONObject(0).getString("url"));
  }
  private static final String MULTI=HTML.replace("</body>","<label for='other'>Guard filter</label><select id='other'><option value='a'>Fixture Guard A</option><option value='b'>Fixture Guard B</option></select><input id='date' value='2026-07-14'><table><tr id='r1'><td>2000001</td><td>Parking Breach - 1st Warning</td></tr><tr id='r2'><td>2000002</td><td>Parking Breach - 2nd Warning</td></tr><tr id='r3'><td>2000003</td><td>General Patrol</td></tr></table></body>").replace("<option value='disabled'","<option value='general'>General Patrol</option><option value='disabled'");
- private void multiLoaded()throws Exception{ins.runOnMainSync(()->web.loadDataWithBaseURL(PatrolEngine.MONITOR,MULTI,"text/html","UTF-8",PatrolEngine.MONITOR));trustedLoaded();}
+ private void multiLoaded()throws Exception{ins.runOnMainSync(()->web.loadDataWithBaseURL(PatrolEngine.MONITOR,MULTI,"text/html","UTF-8",PatrolEngine.MONITOR));for(int i=0;i<80;i++){if("true".equals(js("!!document.getElementById('date')")))break;Thread.sleep(100);}trustedLoaded();}
  @Test public void MultipleReportedIssuesApplyOrFilteringWithoutChangingOtherControls()throws Exception{
   multiLoaded();ins.runOnMainSync(()->MonitorFilterUi.show(activity,web));choose("Parking Breach - 1st Warning");choose("Parking Breach - 2nd Warning");choose("Apply");
   assertEquals("all",js("document.getElementById('reportedIssue').value"));
