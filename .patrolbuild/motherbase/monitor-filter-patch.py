@@ -43,3 +43,9 @@ if manifest.exists():
  xml=re.sub(r'''(<instrumentation\b[^>]*?android:name=)["'][^"']+["']''',lambda m:m[1]+'"androidx.test.runner.AndroidJUnitRunner"',xml)
  manifest.write_text(xml)
 print('FILTER_RUNNER: AndroidJUnitRunner; previous runner names: '+','.join(runners))
+
+debug=root/'app/src/debug/java/au/com/roningroup/patrollink';debug.mkdir(parents=True,exist_ok=True)
+(debug/'MonitorFilterHostActivity.java').write_text('package au.com.roningroup.patrollink; public final class MonitorFilterHostActivity extends android.app.Activity {}')
+debugmanifest=root/'app/src/debug/AndroidManifest.xml'
+debugmanifest.parent.mkdir(parents=True,exist_ok=True)
+debugmanifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><activity android:name="au.com.roningroup.patrollink.MonitorFilterHostActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar"/></application></manifest>')
