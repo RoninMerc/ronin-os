@@ -1,13 +1,13 @@
-name: TRL Patrol Link Phone and Tablet v1.1.54
+name: TRL Patrol Link Phone and Tablet v1.1.55
 on:
   push:
     branches: [trl-tablet-v1.1.53]
-    paths: ['.tabletbuild/**', '.github/workflows/tablet-android.yml']
+    paths: ['.repairbuild/**', '.tabletbuild/**', '.github/workflows/tablet-android.yml']
   workflow_dispatch:
 permissions:
   contents: write
 concurrency:
-  group: patrol-v154
+  group: patrol-v155
   cancel-in-progress: true
 jobs:
   build:
@@ -61,9 +61,10 @@ jobs:
       - name: Apply tablet edition and check retained integrations
         run: |
           python3 .tabletbuild/tablet-patch.py /tmp/patrol-v134
+          python3 .repairbuild/patch.py /tmp/patrol-v134
           J=/tmp/patrol-v134/app/src/main/java/au/com/roningroup/patrollink
-          grep -q 'versionCode 166' /tmp/patrol-v134/app/build.gradle
-          grep -q "versionName '1.1.54'" /tmp/patrol-v134/app/build.gradle
+          grep -q 'versionCode 167' /tmp/patrol-v134/app/build.gradle
+          grep -q "versionName '1.1.55'" /tmp/patrol-v134/app/build.gradle
           grep -q 'MonitorFilterUi.bind' "$J/MainActivity.java"
           grep -q 'Capture parking reports' "$J/MainActivity.java"
           grep -q 'MasterFeedClient.publish' "$J/PatrolEngine.java"
@@ -75,17 +76,17 @@ jobs:
       - name: Verify real APK and original signing certificate
         run: |
           mkdir -p /tmp/tablet-release /tmp/tablet-device
-          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk /tmp/tablet-release/TRL-Patrol-Link-v1.1.54.apk
+          cp /tmp/patrol-v134/app/build/outputs/apk/release/app-release.apk /tmp/tablet-release/TRL-Patrol-Link-v1.1.55.apk
           CHECK="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          "$CHECK" verify --verbose --print-certs /tmp/tablet-release/TRL-Patrol-Link-v1.1.54.apk | tee /tmp/tablet-release/APK-VERIFY.txt
+          "$CHECK" verify --verbose --print-certs /tmp/tablet-release/TRL-Patrol-Link-v1.1.55.apk | tee /tmp/tablet-release/APK-VERIFY.txt
           "$CHECK" verify --print-certs dist/TRL-Patrol-Link-v1.1.48.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/previous-cert
-          "$CHECK" verify --print-certs /tmp/tablet-release/TRL-Patrol-Link-v1.1.54.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/new-cert
+          "$CHECK" verify --print-certs /tmp/tablet-release/TRL-Patrol-Link-v1.1.55.apk | sed -n '/certificate SHA-256 digest/p' > /tmp/new-cert
           diff /tmp/previous-cert /tmp/new-cert
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/tablet-release/TRL-Patrol-Link-v1.1.54.apk > /tmp/tablet-release/APK-MANIFEST.txt
-          grep -q "package: name='au.com.roningroup.patrollink' versionCode='166'" /tmp/tablet-release/APK-MANIFEST.txt
-          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print /tmp/tablet-release/TRL-Patrol-Link-v1.1.54.apk > /tmp/tablet-release/manifest.xml
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging /tmp/tablet-release/TRL-Patrol-Link-v1.1.55.apk > /tmp/tablet-release/APK-MANIFEST.txt
+          grep -q "package: name='au.com.roningroup.patrollink' versionCode='167'" /tmp/tablet-release/APK-MANIFEST.txt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print /tmp/tablet-release/TRL-Patrol-Link-v1.1.55.apk > /tmp/tablet-release/manifest.xml
           ! grep -q 'TabletHostActivity' /tmp/tablet-release/manifest.xml
-          sha256sum /tmp/tablet-release/TRL-Patrol-Link-v1.1.54.apk > /tmp/tablet-release/SHA256.txt
+          sha256sum /tmp/tablet-release/TRL-Patrol-Link-v1.1.55.apk > /tmp/tablet-release/SHA256.txt
       - name: Prepare a release-signed upgrade probe and source project
         env:
           GH_TOKEN: ${{ github.token }}
@@ -125,15 +126,15 @@ jobs:
           cp /tmp/patrol-v134/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk /tmp/tablet-device/
           cp /tmp/tablet-probe-signed.apk /tmp/tablet-device/
           cp /tmp/tablet-baseline/TRL-Patrol-Link-v1.1.52.apk /tmp/tablet-device/baseline.apk
-          cp /tmp/tablet-release/TRL-Patrol-Link-v1.1.54.apk /tmp/tablet-device/release.apk
+          cp /tmp/tablet-release/TRL-Patrol-Link-v1.1.55.apk /tmp/tablet-device/release.apk
       - name: Independently compile the exported source without production signing keys
         run: |
-          cd /tmp/tablet-source/TRL-Patrol-Link-v1.1.54
+          cd /tmp/tablet-source/TRL-Patrol-Link-v1.1.55
           gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
       - uses: actions/upload-artifact@v4
-        with: {name: Patrol-v154-device-inputs, path: /tmp/tablet-device/, retention-days: 7}
+        with: {name: Patrol-v155-device-inputs, path: /tmp/tablet-device/, retention-days: 7}
       - uses: actions/upload-artifact@v4
-        with: {name: TRL-Patrol-Link-v1.1.54-delivery, path: /tmp/tablet-release/, retention-days: 30}
+        with: {name: TRL-Patrol-Link-v1.1.55-delivery, path: /tmp/tablet-release/, retention-days: 30}
   device:
     needs: build
     strategy:
@@ -145,7 +146,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: Patrol-v154-device-inputs, path: device/}
+        with: {name: Patrol-v155-device-inputs, path: device/}
       - name: Free space
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk
       - name: Enable KVM
@@ -177,8 +178,8 @@ jobs:
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_FINE_LOCATION
             adb shell pm grant au.com.roningroup.patrollink android.permission.ACCESS_COARSE_LOCATION
             if [ "${{ matrix.api }}" -ge 33 ]; then adb shell pm grant au.com.roningroup.patrollink android.permission.POST_NOTIFICATIONS; fi
-            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest,au.com.roningroup.patrollink.TabletDashboardTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-device-tests.txt
-            python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (14 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.MonitorFilterUiTest,au.com.roningroup.patrollink.TabletDashboardTest,au.com.roningroup.patrollink.SilverTrackCaptureTest,au.com.roningroup.patrollink.BrowserUiTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee tablet-device-tests.txt
+            python3 -c "from pathlib import Path; s=Path('tablet-device-tests.txt').read_text(); assert 'OK (24 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
             adb exec-out run-as au.com.roningroup.patrollink cat files/tablet-landscape-test-fixture.png > tablet-landscape-api-${{ matrix.api }}-TEST-FIXTURE.png
             adb shell wm size 900x1440
             adb shell wm density 240
@@ -208,7 +209,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Patrol-v154-device-results-${{ matrix.api }}
+          name: Patrol-v155-device-results-${{ matrix.api }}
           path: |
             *-tests.txt
             *-TEST-FIXTURE.png
@@ -220,17 +221,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: TRL-Patrol-Link-v1.1.54-delivery, path: release/}
+        with: {name: TRL-Patrol-Link-v1.1.55-delivery, path: release/}
       - uses: actions/download-artifact@v4
         with:
-          pattern: Patrol-v154-device-results-*
+          pattern: Patrol-v155-device-results-*
           path: device-results/
       - name: Collect API-specific results and fixture screenshots
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import shutil,json,re
-          out=Path('release');assert json.loads((out/'JVM-TESTS.json').read_text())['passed']==83
+          out=Path('release');assert json.loads((out/'JVM-TESTS.json').read_text())['passed']==87
           total=0
           for d in Path('device-results').iterdir():
               if not d.is_dir():continue
@@ -241,18 +242,18 @@ jobs:
                       if p.suffix=='.txt':
                           s=p.read_text();assert 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s
                           matches=re.findall(r'OK \((\d+) tests?\)',s);assert matches;total+=int(matches[-1])
-          assert total==36
-          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.54/code166\n\nRelease/debug/instrumentation APKs compiled. 83 JVM checks passed. 36 emulator checks passed across API 30 and API 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
+          assert total==56
+          (out/'CONFIRMED-TEST-RESULTS.md').write_text("# Confirmed verification — 1.1.55/code167\n\nRelease/debug/instrumentation APKs compiled. 87 JVM checks passed. 56 emulator checks passed across API 30 and API 35, including actual signed upgrades from 1.1.52, large/small tablet rendering, real production Phone/Tablet/Auto switching on a 360 dp phone, persistence and patrol-panel bounds. The sanitized full source independently compiled and passed its JVM suite. TRL branding, satellite tile addressing, full-page browser/overview scaling, multiple reported-issue filtering, nested/DIV/JavaScript report links, hidden-login/frame fields, precise source date extraction, read-only URL guards and Publisher pairing feedback were checked. Original certificate/package, encrypted Reader pairing, guard/checkpoint/voice state and UID were verified through upgrade.\n\nGPS positions used for automated map/proximity checks are synthetic fixtures. Actual Ronin Forge mirroring/car-monitor scaling, field GPS accuracy, live fleet reception, physical QR/source capture and background battery behavior need physical verification.\n")
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: TRL-Patrol-Link-v1.1.54-APK-AND-REPORTS
+          name: TRL-Patrol-Link-v1.1.55-APK-AND-REPORTS
           path: release/
           retention-days: 30
       - name: Publish the verified operational APK and complete source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git tag trl-patrol-link-v1.1.54-phone-tablet "$GITHUB_SHA"
-          git push origin refs/tags/trl-patrol-link-v1.1.54-phone-tablet
-          gh release create trl-patrol-link-v1.1.54-phone-tablet --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "TRL Patrol Link 1.1.54 — Phone and selectable Tablet mode" --notes-file .tabletbuild/INSTALL-TABLET.md release/*
+          git tag trl-patrol-link-v1.1.55-trl-satellite "$GITHUB_SHA"
+          git push origin refs/tags/trl-patrol-link-v1.1.55-trl-satellite
+          gh release create trl-patrol-link-v1.1.55-trl-satellite --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "TRL Patrol Link 1.1.55 — TRL branding, satellite and SilverTrack repairs" --notes-file .tabletbuild/INSTALL-TABLET.md release/*

@@ -1,19 +1,15 @@
-# TRL Patrol Link 1.1.54 — Phone and Tablet modes
+# TRL Patrol Link 1.1.55
 
-Install TRL-Patrol-Link-v1.1.54.apk over the existing app. Original package and signing certificate are retained. Do not uninstall or clear app data.
+Install **TRL-Patrol-Link-v1.1.55.apk** over the existing Patrol Link installation. Do not uninstall or clear app data. Allow Android's “Install unknown apps” permission for the browser/file manager used to open the APK.
 
-The same APK supports phones and tablets. Default Auto uses the normal phone dashboard below 600 dp smallest screen width and the landscape dashboard on larger tablets.
+Settings cog → Display mode → Phone, Tablet or Auto. Tablet mode uses landscape for a mirrored car monitor; Auto follows the device display size. Mirror the phone through Ronin Forge as usual, then choose Tablet if required. Actual Forge/monitor scaling needs device verification.
 
-On the phone dashboard, tap **Display mode** near the top, then **Tablet — landscape map dashboard**. The app switches to landscape with three patrol panels and an interactive street map, even on a phone. The choice is saved between launches.
+The map now uses satellite imagery and requires an internet connection for uncached tiles. GPS and fleet data retain their existing relay and role restrictions.
 
-While in Tablet mode: bottom-left cog → **Display mode** → **Phone** to return to the normal phone dashboard, or **Auto** to follow the physical device size.
+On the Master phone, open SilverTrack through the dashboard. One small tools cog provides app actions. Use Reported issues to check several categories, then Apply. For a site single-select, All issues is requested and matching rows are shown on the loaded page. Date, guard and site controls remain available. Use paging to load additional historical rows.
 
-For Ronin Forge: connect and mirror your phone as usual, open Patrol Link, then select Tablet mode on the phone or through the mirrored controls. Use the mirror's fit-to-screen/preserve-aspect-ratio option where available. This changes the app layout; monitor dimensions/resolution and the mirroring software still determine letterboxing or scaling. No new Forge API, login or server is required. Actual car-monitor/Ronin Forge projection needs testing on your equipment.
+Tools cog → Capture parking reports starts reading eligible reports on the currently loaded page. The device must have Publisher pairing, rather than Reader pairing alone. Watch the capture status for missing detail links, missing labelled registration or relay errors. Capture does not silently claim success; retained stable IDs let retries update rather than duplicate reports.
 
-Display mode does not change Master/Patrol roles, credentials, duty status or access permissions. Full three-patrol fleet access still requires the existing Master/Supervisor role. Optional supervisor Reader mode keeps SilverTrack collection on the existing authorised Master phone.
+No new SilverTrack login is needed on Breach devices. Existing local data and cloud relay operation remain intact. Keep the existing vehicle/checkpoint backups.
 
-Use the cog for GPS permissions/status, precise GPS, duty assignments, feed pairing, checkpoint settings, diagnostics and existing voice controls. Enable Android Location and precise location for proximity. Street-map tiles need internet for uncached areas. Small-radius activation requires two fresh accurate fixes; GPS proximity never completes a physical QR scan.
-
-Configured checkpoint radii or a local override of 5/10/15/20/25/50/custom 1–500 m remain available and persisted. Existing SilverTrack filter/capture, central checkpoint sync, Android Auto components, storage formats and pairing are retained. Cloud operation remains independent of the Windows PC.
-
-Screenshots and automated GPS test positions are explicitly labelled test fixtures. Real fleet availability, physical GPS/QR behavior, background battery behavior and car projection are separate physical-device checks.
+The full source ZIP omits production signing keys and personal voice recordings. Debug builds are not compatible in-place updates to the operational signed app.
