@@ -9,10 +9,7 @@ def replace(path,old,new):
 replace(root/'app/build.gradle','versionCode 160','versionCode 161')
 replace(root/'app/build.gradle',"versionName '1.1.50'","versionName '1.1.51'")
 main=j/'MainActivity.java'
-replace(main,'root.addView(attachedWeb,new LinearLayout.LayoutParams(-1,0,1));','root.addView(attachedWeb,new LinearLayout.LayoutParams(-1,0,1));\n        MonitorFilterUi.bind(this,attachedWeb);')
-# Provide an explicit fallback using the same existing website option list.
-replace(main,'buttonRow(toolbar,button("Dashboard",false,()->{ engine.inspectNow(); timer.postDelayed(this::showDashboard, 700); }),button("Refresh now",true,engine::refreshMonitor));',
- 'buttonRow(toolbar,button("Dashboard",false,()->{ engine.inspectNow(); timer.postDelayed(this::showDashboard, 700); }),button("Refresh now",true,engine::refreshMonitor));\n        toolbar.addView(button("Filter reported issue",false,()->MonitorFilterUi.show(this,engine.webView())));')
+replace(main,'root.addView(attachedWeb,new LinearLayout.LayoutParams(-1,0,1));','root.addView(attachedWeb,new LinearLayout.LayoutParams(-1,0,1));\n        MonitorFilterUi.bind(this,attachedWeb);\n        toolbar.addView(button("Filter reported issue",false,()->MonitorFilterUi.show(this,engine.webView())));')
 replace(main,'super.onResume();engine.appVisible=true;engine.browserVisible=browserMode;','super.onResume();engine.appVisible=true;engine.browserVisible=browserMode;if(browserMode)MonitorFilterUi.resume(this);')
 replace(main,'engine.appVisible=false;engine.browserVisible=false;timer.removeCallbacks(tick);super.onPause();','MonitorFilterUi.pause(this);engine.appVisible=false;engine.browserVisible=false;timer.removeCallbacks(tick);super.onPause();')
 replace(main,'engine.remove(this);timer.removeCallbacks(tick);','MonitorFilterUi.unbind(this);engine.remove(this);timer.removeCallbacks(tick);')
