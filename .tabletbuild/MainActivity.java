@@ -180,7 +180,7 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
             case "gps":gpsUi.show();break;
             case "fleet":fleetUi.open();break;
             case "checkpoints":checkpointUi.showManager();break;
-            case "guards":if(fleetUi.master())settings();break;
+            case "guards":if(MasterFeedClient.master(this))settings();break;
             case "silvertrack":if(fleetUi.master())showBrowser();break;
             case "pairing":MasterFeedUi.show(this,engine);break;
             case "diagnostics":diagnostics();break;
@@ -399,7 +399,7 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
                 if(minutes<1||minutes>240)throw new IllegalArgumentException("Use an age threshold between 1 and 240 minutes.");
                 SharedPreferences.Editor edit=engine.prefs.edit();for(int i=0;i<3;i++)edit.putString("guard"+i,chosen.get(i));
                 edit.putString("zone",zoneText).putInt("oldMinutes",minutes).putBoolean("patrolOnly",false).putBoolean("voice",voice.isChecked()).apply();
-                if(FleetRelay.master(this))FleetRelay.publishGuards(this,chosen);
+                if(MasterFeedClient.master(this))FleetRelay.publishGuards(this,chosen);
                 engine.latest.clear();engine.present.clear();engine.lastRead=engine.lastReadElapsed=0;
                 engine.status("CHECKING","Guard selection updated. Refreshing Silvertracker…");engine.refreshMonitor();dialog.dismiss();refresh();
             }catch(Exception ex){toast(ex.getMessage()==null?"Check the settings.":ex.getMessage());}

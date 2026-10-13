@@ -69,12 +69,12 @@ final class TabletDashboard {
    final int index=i;LinearLayout card=column();card.setPadding(dp(12),dp(8),dp(12),dp(8));card.setBackground(background(PANEL,COLOURS[i],12));card.setId(153010+i);
    LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,0,1);cp.bottomMargin=dp(8);left.addView(card,cp);
    guardArea[i]=text("PATROL "+(i+1)+"  /  AREA UNAVAILABLE",12,COLOURS[i],true);guardArea[i].setMaxLines(1);card.addView(guardArea[i]);
-   guardName[i]=text("N/A",22,WHITE,true);guardName[i].setMaxLines(1);guardName[i].setEllipsize(TextUtils.TruncateAt.END);card.addView(guardName[i]);
+   guardName[i]=text("N/A",22,WHITE,true);guardName[i].setMaxLines(1);guardName[i].setAutoSizeTextTypeUniformWithConfiguration(14,22,1,android.util.TypedValue.COMPLEX_UNIT_SP);guardName[i].setEllipsize(TextUtils.TruncateAt.END);card.addView(guardName[i]);
    guardActivity[i]=text("Waiting for activity",18,WHITE,false);guardActivity[i].setMaxLines(2);guardActivity[i].setEllipsize(TextUtils.TruncateAt.END);guardActivity[i].setAutoSizeTextTypeUniformWithConfiguration(13,18,1,android.util.TypedValue.COMPLEX_UNIT_SP);
    card.addView(guardActivity[i],new LinearLayout.LayoutParams(-1,0,1));
-   guardTime[i]=text("Activity time unavailable",12,MUTED,false);guardTime[i].setMaxLines(1);card.addView(guardTime[i]);
-   guardProgress[i]=text("Verified scans: 0",13,MUTED,false);guardProgress[i].setMaxLines(1);card.addView(guardProgress[i]);
-   guardState[i]=text("GPS UNAVAILABLE",12,AMBER,true);guardState[i].setMaxLines(1);card.addView(guardState[i]);
+   guardTime[i]=text("Activity time unavailable",14,MUTED,false);guardTime[i].setMaxLines(1);card.addView(guardTime[i]);
+   guardProgress[i]=text("Recorded hits: 0",14,MUTED,false);guardProgress[i].setMaxLines(1);card.addView(guardProgress[i]);
+   guardState[i]=text("GPS UNAVAILABLE",13,AMBER,true);guardState[i].setMaxLines(1);card.addView(guardState[i]);
    card.setOnClickListener(v->actions.run("guard:"+index));
   }
   LinearLayout bottom=new LinearLayout(a);bottom.setGravity(Gravity.CENTER_VERTICAL);
@@ -155,7 +155,7 @@ final class TabletDashboard {
    guardArea[i].setText("PATROL "+(i+1)+"  /  "+(area.isEmpty()?"AREA UNAVAILABLE":area));
    guardActivity[i].setText(unused?"Unused patrol slot":o==null?"Waiting for activity":o.activity()+" · "+o.locationLine());
    guardTime[i].setText(o==null?"Activity time unavailable":"Activity: "+(o.recordedAt>0?time(o.recordedAt):o.recordedText));
-   guardProgress[i].setText(unused?"Verified scans: N/A":"Verified scans this shift: "+engine.checkpoints.total(g));
+   guardProgress[i].setText(unused?"Recorded hits: N/A":"Recorded checkpoint hits: "+engine.checkpoints.total(g));
    String status=unused?"N/A":p==null?"GPS UNAVAILABLE":!p.onDuty?"OFF DUTY":!p.hasFix?"GPS UNAVAILABLE":!connected()||!receivedSlots.contains(i+1)||p.retained||!TabletPolicy.fresh(p.time,now)?"STALE GPS — "+age(p.time):p.state+" · GPS "+age(p.time);
    guardState[i].setText(status);guardState[i].setTextColor(unused?MUTED:p!=null&&p.onDuty&&p.hasFix&&connected()&&receivedSlots.contains(i+1)&&!p.retained&&TabletPolicy.fresh(p.time,now)?COLOURS[i]:AMBER);
    if(p!=null&&p.hasFix&&TabletPolicy.point(p.lat,p.lon)){
@@ -184,9 +184,10 @@ final class TabletDashboard {
   String state=!LocalGpsService.hasPermission(activity)?"LOCATION PERMISSION REQUIRED":!LocalGpsService.locationEnabled(activity)?"LOCATION SERVICES OFF":!gp.getBoolean("enabled",false)?"GPS STOPPED — USE SETTINGS":!valid?"WAITING FOR GPS":mock?"MOCK LOCATION — PROXIMITY DISABLED":!current?"STALE LOCAL GPS":"THIS DEVICE · ±"+Math.round(accuracy)+"m · "+age+"s ago";
   gpsStatus.setText(state);gpsStatus.setTextColor(current&&!mock?WHITE:AMBER);
   if(!valid)return;
-  if(ownMarker==null){ownMarker=new Marker(map);ownMarker.setAnchor(Marker.ANCHOR_CENTER,Marker.ANCHOR_CENTER);map.getOverlays().add(ownMarker);}
+  if(ownMarker==null){ownMarker=new Marker(map);ownMarker.setAnchor(Marker.ANCHOR_CENTER,Marker.ANCHOR_BOTTOM);map.getOverlays().add(ownMarker);}
   GeoPoint point=new GeoPoint(lat,lon);if(!point.equals(ownMarker.getPosition()))ownMarker.setPosition(point);
   ownMarker.setIcon(icon(mock?"TEST":"ME",current&&!mock?RED:0xff737887,48));ownMarker.setTitle(mock?"MOCK / TEST LOCATION":"This device"+(current?"":" — STALE"));ownMarker.setSnippet("Fix "+time(fix)+" · ±"+Math.round(accuracy)+" m");
+  map.getOverlays().remove(ownMarker);map.getOverlays().add(ownMarker);
   if(current&&!mock&&fix!=localStamp){localStamp=fix;if(!userPanned&&(!positioned||TabletSettings.prefs(activity).getBoolean("follow_local",false))){map.getController().setCenter(point);if(!positioned)map.getController().setZoom(17d);positioned=true;}}
  }
  private void renderCheckpointMarkers(List<CheckpointProximityUi.Checkpoint> list){
@@ -228,7 +229,8 @@ final class TabletDashboard {
  }
  private BitmapDrawable icon(String label,int colour,int size){
   String key=label+":"+colour+":"+size;if(icons.containsKey(key))return icons.get(key);
-  int pixels=dp(size);Bitmap bitmap=Bitmap.createBitmap(pixels,pixels,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(bitmap);Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+  int pixels=dp(size);boolean pin=label.equals("ME")||label.equals("TEST");int height=pin?pixels+dp(36):pixels;Bitmap bitmap=Bitmap.createBitmap(pixels,height,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(bitmap);Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+  if(pin){p.setColor(colour);Path tail=new Path();tail.moveTo(pixels/2f-dp(6),pixels-dp(5));tail.lineTo(pixels/2f,height-1);tail.lineTo(pixels/2f+dp(6),pixels-dp(5));tail.close();canvas.drawPath(tail,p);}
   p.setColor(0xee11131a);canvas.drawCircle(pixels/2f,pixels/2f,pixels/2f,p);p.setColor(colour);canvas.drawCircle(pixels/2f,pixels/2f,pixels/2f-dp(2),p);
   p.setColor(BG);p.setTypeface(Typeface.create("sans-serif-black",Typeface.BOLD));p.setTextAlign(Paint.Align.CENTER);p.setTextSize(dp(label.length()>2?11:13));canvas.drawText(label,pixels/2f,pixels/2f-(p.ascent()+p.descent())/2,p);BitmapDrawable icon=new BitmapDrawable(activity.getResources(),bitmap);icons.put(key,icon);return icon;
  }
@@ -245,7 +247,7 @@ final class TabletDashboard {
  void settings(){
   LinearLayout form=column();form.setPadding(dp(18),dp(10),dp(18),dp(10));
   section(form,"GENERAL");
-  if(FleetRelay.master(activity))item(form,"Guard selection",()->actions.run("guards"));
+  if(MasterFeedClient.master(activity))item(form,"Guard selection",()->actions.run("guards"));
   item(form,"Patrol duty / assignments",()->actions.run("fleet"));
   section(form,"GPS AND TRACKING");
   item(form,"GPS status, permissions and reporting interval",()->actions.run("gps"));
@@ -265,6 +267,8 @@ final class TabletDashboard {
   item(form,"Individual checkpoints, route, QR photos and cloud sync",()->actions.run("checkpoints"));
   section(form,"CONNECTIONS");
   if(FleetRelay.master(activity))item(form,"SilverTrack session and parking report capture",()->actions.run("silvertrack"));
+  CheckBox existingMaster=new CheckBox(activity);existingMaster.setText("Read the existing Master phone's feed on this supervisor tablet");existingMaster.setTextColor(WHITE);existingMaster.setChecked(TabletSettings.prefs(activity).getBoolean("read_existing_master",false));
+  if(FleetRelay.master(activity)){form.addView(existingMaster);form.addView(text("Reader mode uses the saved Reader key and keeps SilverTrack collection on the existing Master. Saved local credentials and session are retained. Save this setting, then use Master feed pairing.",12,MUTED,false));}
   item(form,"Master feed pairing",()->actions.run("pairing"));
   section(form,"DIAGNOSTICS");
   item(form,"Connection diagnostics",()->actions.run("diagnostics"));
@@ -276,6 +280,7 @@ final class TabletDashboard {
    int idx=radius.getSelectedItemPosition();float r=idx==0?value:idx==1?5:idx==2?10:idx==3?15:idx==4?20:idx==5?25:idx==6?50:Float.parseFloat(custom.getText().toString());
    TabletSettings.saveRadius(activity,idx!=0,r);
    TabletSettings.prefs(activity).edit().putInt("fleet_seconds",refresh.getSelectedItemPosition()==1?30:refresh.getSelectedItemPosition()==2?60:15).putBoolean("follow_local",follow.isChecked()).putBoolean("proximity_alert",alert.isChecked()).apply();
+   if(FleetRelay.master(activity)){boolean reader=existingMaster.isChecked(),before=TabletSettings.prefs(activity).getBoolean("read_existing_master",false);TabletSettings.prefs(activity).edit().putBoolean("read_existing_master",reader).apply();if(reader!=before)engine.changeFeedMode();}
    nextFleet=0;dialog.dismiss();refresh();
   }catch(Exception e){Toast.makeText(activity,"Enter a valid distance from 1 to 500 metres.",Toast.LENGTH_LONG).show();}}));settingsDialog=dialog;dialog.setOnDismissListener(x->settingsDialog=null);dialog.show();
  }

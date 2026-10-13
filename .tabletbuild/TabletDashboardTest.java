@@ -46,4 +46,20 @@ public final class TabletDashboardTest {
   out.clear();parser.invoke(null,"{\"patrols\":[{\"patrol\":1,\"lat\":-27.47,\"lon\":153.025,\"time\":"+now+"}]}",out);assertTrue(out.get(1).hasFix);
   out.clear();parser.invoke(null,"{\"patrols\":[{\"patrol\":1,\"lat\":-27.47,\"lon\":153.025,\"time\":"+now+",\"mock\":true}]}",out);assertFalse(out.get(1).hasFix);
  }
+
+ @Test public void LocalMarkerPinKeepsTruePositionAndRemainsIdentifiable()throws Exception{
+  Marker own=(Marker)field("ownMarker");assertNotNull(own);
+  assertEquals(activity.localLatitude,own.getPosition().getLatitude(),0);
+  assertTrue(own.getIcon().getIntrinsicHeight()>own.getIcon().getIntrinsicWidth());
+  assertEquals(own,activity.dashboard.map.getOverlays().get(activity.dashboard.map.getOverlays().size()-1));
+ }
+ @Test public void SupervisorReaderModeKeepsFleetRoleAndLocalSession()throws Exception{
+  main(()->{
+   android.webkit.CookieManager.getInstance().setCookie("https://trlsecurity.silvertracker.net","observer_fixture=kept");
+   TabletSettings.prefs(activity).edit().putBoolean("read_existing_master",true).commit();
+   assertTrue(FleetRelay.master(activity));assertFalse(MasterFeedClient.master(activity));assertTrue(MasterFeedClient.subscriber(activity));assertTrue(CheckpointSyncClient.subscriber(activity));
+   activity.engine.changeFeedMode();
+   assertTrue(android.webkit.CookieManager.getInstance().getCookie("https://trlsecurity.silvertracker.net").contains("observer_fixture=kept"));
+  });
+ }
 }

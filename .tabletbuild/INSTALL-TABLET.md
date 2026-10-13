@@ -4,7 +4,7 @@ Install TRL-Patrol-Link-v1.1.53-TABLET.apk over the existing app. It retains pac
 
 The tablet dashboard activates at 600 dp smallest screen width and opens in landscape. Smaller phones retain their interface. Android system orientation behavior can vary on newer tablets.
 
-For all three fleet markers, configure this tablet as Master / Supervisor using the existing PIN-protected device-role setup. Keep its authorised Master feed pairing. Patrol roles do not gain supervisor access through the map.
+For all three fleet markers, configure this tablet as Master / Supervisor using the existing PIN-protected device-role setup. For a second supervisor tablet, enable Connections → Read the existing Master phone's feed, save, then pair with the existing Reader key. This keeps collection on the Master phone and requires no SilverTrack sign-in on the viewing tablet. Leave reader mode off if this tablet is the authorised collector and preserve its Publisher/Reader pairing. Patrol roles do not gain supervisor access through the map.
 
 Open the bottom-left cog → GPS status, permissions and reporting interval → Start / resume GPS. Allow precise location and enable Android Location. The Master's red ME marker stays local; it does not publish as Patrol 1/2/3. Existing on-duty patrol phones publish to the fleet relay. Background permission/battery settings may be required for screen-off shifts.
 

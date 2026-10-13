@@ -7,6 +7,9 @@
 - Physical QR scanning remains separate from GPS. Approaching never records completion. Authoritative matching source scans after arrival can suppress the prompt.
 - Existing checkpoint manager's 20 m editing clamp removed with finite numeric validation.
 - One settings cog on the tablet dashboard; existing guard, assignment, GPS, checkpoint, feed, voice, sign-out and diagnostic controls retained through it.
-- Existing package, signing identity, preferences, Keystore format and fleet/Master contracts retained. Version code 163.
+- Existing package, signing identity, preferences, Keystore format and fleet/Master contracts retained. Version code 164 (final build).
 - GPS upload throttling respects the existing 15/30-second reporting setting while retaining fresh local fixes for small-radius prompts. Mock fixes are not published as patrol GPS.
 - New runtime library: osmdroid 6.1.20. OpenStreetMap HTTPS street tiles are cached in app storage and visibly attributed.
+
+- Local-device pin is visually separate from nearby patrol badges without moving its actual coordinates.
+- Optional supervisor reader mode uses the existing Master phone's feed and Reader key, retaining the tablet's local session and keeping collection on the authorised Master.
