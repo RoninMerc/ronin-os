@@ -1,0 +1,17 @@
+{
+  "modules": [
+    "CheckpointProximityUi.java",
+    "CheckpointTracker.java",
+    "LocalGpsService.java",
+    "CheckpointSyncClient.java",
+    "GpsFixPolicy.java",
+    "Observation.java",
+    "HistoryScanGate.java",
+    "LocalGpsUi.java",
+    "MainActivity.java",
+    "PatrolApp.java"
+  ],
+  "sourceCommit": "447f184bfc98222ac1a6832f3217999a819f47bc",
+  "androidManifest": "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n    <uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\" />\n    <uses-permission android:name=\"android.permission.WAKE_LOCK\" />\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_DATA_SYNC\" />\n    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n    <uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\" />\n    \n    <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />\n    <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" />\n    <uses-permission android:name=\"android.permission.ACCESS_BACKGROUND_LOCATION\" />\n    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_LOCATION\" />\n    <application android:name=\".PatrolApp\" android:label=\"TRL Patrol Link\"\n        android:icon=\"@drawable/trl_patrol_icon\" android:roundIcon=\"@drawable/trl_patrol_icon\"\n        android:theme=\"@style/AppTheme\" android:allowBackup=\"false\"\n        android:fullBackupContent=\"false\" android:dataExtractionRules=\"@xml/data_extraction_rules\"\n        android:usesCleartextTraffic=\"false\" android:supportsRtl=\"true\">\n        <activity android:name=\".MainActivity\" android:exported=\"true\"\n            android:windowSoftInputMode=\"adjustResize\">\n            <intent-filter><action android:name=\"android.intent.action.MAIN\" />\n                <category android:name=\"android.intent.category.LAUNCHER\" /></intent-filter>\n        </activity>\n        <service android:name=\".LocalGpsService\" android:exported=\"false\" android:stopWithTask=\"false\" android:foregroundServiceType=\"location\" />\n        <service android:name=\".MonitorService\" android:exported=\"false\" android:stopWithTask=\"false\" android:foregroundServiceType=\"dataSync\" />\n        <service android:name=\".PatrolCarService\" android:exported=\"true\">\n            <intent-filter>\n                <action android:name=\"androidx.car.app.CarAppService\" />\n                <category android:name=\"androidx.car.app.category.POI\" />\n            </intent-filter>\n        </service>\n        <meta-data android:name=\"com.google.android.gms.car.application\" android:resource=\"@xml/automotive_app_desc\" />\n        <meta-data android:name=\"androidx.car.app.minCarApiLevel\" android:value=\"1\" />\n    </application>\n</manifest>\n",
+  "appGradleDependencies": "\n    implementation 'androidx.car.app:app:1.7.0'\n    implementation 'androidx.car.app:app-projected:1.7.0'\n    testImplementation 'junit:junit:4.13.2'\n    androidTestImplementation 'androidx.test:runner:1.6.2'\n    androidTestImplementation 'androidx.test:rules:1.6.1'\n    androidTestImplementation 'androidx.test.ext:junit:1.2.1'\n}\n"
+}
