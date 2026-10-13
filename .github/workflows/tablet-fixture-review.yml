@@ -1,29 +1,35 @@
-name: Review labelled tablet fixture screenshots
+name: Inspect numeric phone layout dimensions
 on:
   push:
     branches: [trl-tablet-v1.1.53]
     paths: ['.github/workflows/tablet-fixture-review.yml']
 permissions:
-  contents: write
+  contents: read
   actions: read
 jobs:
-  review:
+  geometry:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: Tablet-v153-device-results-30
-          run-id: 38385262571
+          name: Patrol-v154-device-results-30
+          run-id: 38398130226
           github-token: ${{ github.token }}
           path: qa/
-      - name: Preserve labelled synthetic fixture images for review
+      - name: Report numeric geometry only, with all UI text and other state omitted
         run: |
-          mkdir -p docs/trl-tablet-v153/fixture-preview
-          cp qa/*-TEST-FIXTURE.png docs/trl-tablet-v153/fixture-preview/
-          git config user.name "Ronin tablet build"
-          git config user.email "actions@users.noreply.github.com"
-          git add docs/trl-tablet-v153/fixture-preview
-          git commit -m "Add labelled synthetic tablet screenshots for visual review"
-          git push origin HEAD:trl-tablet-v1.1.53
+          python3 - <<'PY'
+          import re,json,xml.etree.ElementTree as E
+          from pathlib import Path
+          root=E.parse(Path('qa/phone-diagnostic-window.xml')).getroot()
+          classes={'android.widget.TextView','android.widget.Button','android.widget.LinearLayout','android.widget.FrameLayout'}
+          bounds=[]
+          for node in root.iter('node'):
+              cls=node.get('class','')
+              if cls not in classes:continue
+              nums=re.findall(r'-?\d+',node.get('bounds',''))
+              if len(nums)!=4:continue
+              bounds.append({'widget':cls.split('.')[-1],'rectangle':[int(x) for x in nums]})
+          print(json.dumps({'numericWidgetGeometry':bounds}))
+          PY
