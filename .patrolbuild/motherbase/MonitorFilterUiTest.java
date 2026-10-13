@@ -41,10 +41,13 @@ public final class MonitorFilterUiTest {
   assertEquals(PatrolEngine.MONITOR,url.get());assertTrue("Trusted monitor fixture must enable the picker: "+url.get(),ready.get());
  }
  private AccessibilityNodeInfo find(String label)throws Exception{
-  for(int i=0;i<60;i++){AccessibilityNodeInfo root=ins.getUiAutomation().getRootInActiveWindow();if(root!=null){java.util.List<AccessibilityNodeInfo> found=root.findAccessibilityNodeInfosByText(label);for(AccessibilityNodeInfo node:found)if(label.contentEquals(node.getText()==null?"":node.getText()))return node;}Thread.sleep(100);}throw new AssertionError("Native choice not visible: "+label+"; filter events="+js("String(window.__trlFilterClicks||0)")+"; bridge="+js("typeof TRLMonitorFilters.open"));
+  for(int i=0;i<60;i++){AccessibilityNodeInfo root=ins.getUiAutomation().getRootInActiveWindow();if(root!=null){java.util.List<AccessibilityNodeInfo> found=root.findAccessibilityNodeInfosByText(label);for(AccessibilityNodeInfo node:found)if(node.isVisibleToUser()&&label.contentEquals(node.getText()==null?"":node.getText()))return node;}Thread.sleep(100);}throw new AssertionError("Native choice not visible: "+label+"; filter events="+js("String(window.__trlFilterClicks||0)")+"; bridge="+js("typeof TRLMonitorFilters.open"));
  }
  private void choose(String label)throws Exception{
-  AccessibilityNodeInfo node=find(label);while(node!=null&&!node.isClickable())node=node.getParent();assertNotNull("Clickable native choice",node);assertTrue(node.performAction(AccessibilityNodeInfo.ACTION_CLICK));ins.waitForIdleSync();Thread.sleep(250);
+  ins.waitForIdleSync();Thread.sleep(200);AccessibilityNodeInfo node=find(label);
+  Rect bounds=new Rect();node.getBoundsInScreen(bounds);assertFalse("Native option has screen bounds",bounds.isEmpty());
+  long now=SystemClock.uptimeMillis();ins.sendPointerSync(MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,bounds.exactCenterX(),bounds.exactCenterY(),0));ins.sendPointerSync(MotionEvent.obtain(now,now+50,MotionEvent.ACTION_UP,bounds.exactCenterX(),bounds.exactCenterY(),0));
+  ins.waitForIdleSync();Thread.sleep(300);
  }
  @Test public void actualHtmlDropdownTapOpensNativePickerAndKeepsOtherFilters()throws Exception{
   trustedLoaded();assertEquals("function",js("typeof TRLMonitorFilters.open"));assertEquals("true",js("String(!!window.__trlFiltersInstalled)"));ins.waitForIdleSync();Thread.sleep(250);JSONObject pos=new JSONObject(js("JSON.stringify((function(){var r=document.getElementById('reportedIssue').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})())"));
