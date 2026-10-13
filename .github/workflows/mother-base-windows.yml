@@ -4,7 +4,7 @@ on:
     branches: [trl-mother-base-v1]
     paths: ['mother-base/*.cs', 'mother-base/*.csproj', 'mother-base/setup.iss', '.github/workflows/mother-base-windows.yml']
 permissions:
-  contents: read
+  contents: write
 jobs:
   windows:
     runs-on: windows-latest
@@ -37,8 +37,31 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Installer failed" }
           $process = Start-Process "$target/TRL-Mother-Base.exe" -ArgumentList '--smoke-test' -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw "Installed startup failed" }
+      - name: Verify readable UI and capture actual Windows screens
+        shell: pwsh
+        run: |
+          python mother-base/capture-screenshots.py
+          dotnet publish mother-base/TRL.MotherBase.csproj -c Release -r win-x64 --self-contained true -o mother-base/capture-publish
+          if ($LASTEXITCODE -ne 0) { throw "Screenshot harness build failed" }
+          $process = Start-Process mother-base/capture-publish/TRL-Mother-Base.exe -ArgumentList '--screenshots' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "UI navigation/search/render checks failed" }
+          if ((Get-ChildItem mother-base/screenshots-v03/*.png).Count -ne 7) { throw "Screenshots missing" }
+          git restore mother-base/Program.cs
+      - name: Publish Windows desktop refresh
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @((Get-ChildItem mother-base/installer/*).FullName) + @((Get-ChildItem mother-base/screenshots-v03/*.png).FullName) + @("mother-base/DESKTOP-0.3.md")
+          gh release create trl-mother-base-preview-0.3.0 --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title "TRL Mother Base 0.3.0 — desktop refresh" --notes-file mother-base/DESKTOP-0.3.md @assets
+          if ($LASTEXITCODE -ne 0) { throw "Release publication failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: TRL-Mother-Base-Windows-Setup
           path: mother-base/installer/
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRL-Mother-Base-Screenshots-0.3
+          path: mother-base/screenshots-v03/*.png
           retention-days: 30

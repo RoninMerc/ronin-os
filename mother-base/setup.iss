@@ -1,12 +1,12 @@
 [Setup]
 AppId={{905F92DE-69E0-4B1B-B9F6-C29C4D946CC3}
 AppName=TRL Mother Base
-AppVersion=0.2.0
+AppVersion=0.3.0
 DefaultDirName={localappdata}\Programs\TRL Mother Base
 DefaultGroupName=TRL Mother Base
 PrivilegesRequired=lowest
 OutputDir=installer
-OutputBaseFilename=TRL-Mother-Base-Setup-0.2.0
+OutputBaseFilename=TRL-Mother-Base-Setup-0.3.0
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
