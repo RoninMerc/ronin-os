@@ -1,0 +1,42 @@
+--- a/app/src/main/java/com/ronin/vanta/AndroidBuildFoundation.java
++++ b/app/src/main/java/com/ronin/vanta/AndroidBuildFoundation.java
+@@ -224,6 +224,39 @@
+         }
+       }
+     }
++    // Deterministic corrections for common generated-project failures, before paid repair.
++    // Only touch an exact conflicting repository block under FAIL_ON_PROJECT_REPOS.
++    JSONObject settingsFile = files.get("settings.gradle");
++    JSONObject rootFile = files.get("build.gradle");
++    if (settingsFile != null && rootFile != null
++        && settingsFile.optString("content").contains("RepositoriesMode.FAIL_ON_PROJECT_REPOS")) {
++      String root = rootFile.optString("content");
++      String fixed = root.replaceFirst(
++          "(?s)\\nallprojects \\{\\s*repositories \\{\\s*google\\(\\)\\s*mavenCentral\\(\\)\\s*\\}\\s*\\}", "");
++      if (!fixed.equals(root)) {
++        put(files, "build.gradle", fixed);
++        changes.put("Removed conflicting project repositories already owned by settings.gradle.");
++      }
++    }
++    JSONObject manifest = files.get("app/src/main/AndroidManifest.xml");
++    if (manifest != null) {
++      String xml = manifest.optString("content");
++      boolean missing = (xml.contains("@mipmap/ic_launcher") && !files.containsKey("app/src/main/res/mipmap/ic_launcher.png")
++          && !files.containsKey("app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"))
++          || (xml.contains("@mipmap/ic_launcher_round") && !files.containsKey("app/src/main/res/mipmap/ic_launcher_round.png")
++          && !files.containsKey("app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml"));
++      if (missing) {
++        put(files, "app/src/main/res/drawable/vanta_fallback_launcher.xml",
++            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
++            + "<vector xmlns:android=\"http://schemas.android.com/apk/res/android\" android:width=\"48dp\" android:height=\"48dp\" android:viewportWidth=\"48\" android:viewportHeight=\"48\">\n"
++            + "<path android:fillColor=\"#283593\" android:pathData=\"M0,0h48v48h-48z\"/>\n"
++            + "<path android:fillColor=\"#FFFFFF\" android:pathData=\"M12,12h24v5H12zM12,22h24v5H12zM12,32h24v5H12z\"/>\n</vector>\n");
++        xml = xml.replace("@mipmap/ic_launcher_round", "@drawable/vanta_fallback_launcher")
++            .replace("@mipmap/ic_launcher", "@drawable/vanta_fallback_launcher");
++        put(files, "app/src/main/AndroidManifest.xml", xml);
++        changes.put("Provided launcher resource absent from generated project.");
++      }
++    }
+     JSONArray a = new JSONArray();
+     for (JSONObject f : files.values()) a.put(f);
+     JSONObject result = new JSONObject(source.toString()).put("files", a);
