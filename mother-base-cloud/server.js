@@ -12,6 +12,16 @@ function createApp(pool,opts={}){
   const path=new URL(req.url,'http://local').pathname;
   const known=['/health','/v1/activity','/v1/vehicle-reports','/v1/admin/activity','/v1/checkpoints','/v1/admin/checkpoints','/v1/checkpoints/recover'];
   if(!known.includes(path))return fleetServer.emit('request',req,res);
+  // Fixed route labels and bounded counts only: never log report text, plates, keys or cookies.
+  let ingest=null;
+  if(req.method==='POST'&&(path==='/v1/activity'||path==='/v1/vehicle-reports')){
+   ingest={};
+   res.once('finish',()=>{
+    const event={event:path==='/v1/activity'?'silvertrack_activity':'silvertrack_vehicle_reports',status:res.statusCode};
+    if(res.statusCode===200)Object.assign(event,ingest);
+    try{(opts.ingestLog||console.info)(JSON.stringify(event));}catch{}
+   });
+  }
   (async()=>{
    if(path==='/health'&&req.method==='GET'){await pool.query('SELECT 1');const a=await db.snapshot(pool,'activity');return send(res,200,{ok:true,persistent:true,service:'trl-mother-base-cloud',masterOnline:Date.now()-a.receivedAt<90000});}
    const admin=eq(req.headers['x-ronin-master-key'],master),isReader=eq(req.headers['x-ronin-reader-key'],reader);
@@ -34,6 +44,7 @@ function createApp(pool,opts={}){
      for(const row of b.rows)imports[await db.importRow(c,row)]++;
      return imports;
     });
+    Object.assign(ingest,{rows:b.rows.length,imports:result});
     return send(res,200,{ok:true,imports:result});
    }
    if(req.method==='POST'&&path==='/v1/activity'){
@@ -41,7 +52,9 @@ function createApp(pool,opts={}){
     const b=await body(req,2500000);
     if(!Array.isArray(b.rows)||b.rows.length>180)return send(res,400,{ok:false,error:'up to 180 rows required'});
     const rows=b.rows.filter(x=>x&&typeof x==='object'&&!Array.isArray(x)&&clean(x.id,130)&&clean(x.guard,90)&&clean(x.issue,1800));
-    return send(res,200,await db.publishActivity(pool,rows));
+    const result=await db.publishActivity(pool,rows);
+    Object.assign(ingest,{rows:rows.length,parkingRows:rows.filter(x=>/\b(?:parking breach|vehicle breach|parking violation)\b/i.test(x.issue)).length,imports:result.imports});
+    return send(res,200,result);
    }
    if(path==='/v1/checkpoints/recover')return send(res,403,{ok:false,error:'Checkpoint recovery requires the administrator; use Mother Base import'});
    const central=path==='/v1/admin/checkpoints'&&req.method==='PUT';

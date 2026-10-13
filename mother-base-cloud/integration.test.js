@@ -3,7 +3,8 @@ const {createApp,migrate}=require('./server');
 if(!process.env.TEST_DATABASE_URL)throw Error('TEST_DATABASE_URL is required for integration verification');
 test('real PostgreSQL: authenticated feed → vehicles/history → paired device, retries, corrections, checkpoint CAS and restart',async()=>{
  const pool=new Pool({connectionString:process.env.TEST_DATABASE_URL,max:6});
- const opts={masterKey:crypto.randomBytes(32).toString('hex'),readerKey:crypto.randomBytes(32).toString('hex'),fleetKey:crypto.randomBytes(32).toString('hex'),encryptionKey:crypto.randomBytes(32).toString('hex')};
+ const ingestLogs=[];
+ const opts={ingestLog:line=>ingestLogs.push(line),masterKey:crypto.randomBytes(32).toString('hex'),readerKey:crypto.randomBytes(32).toString('hex'),fleetKey:crypto.randomBytes(32).toString('hex'),encryptionKey:crypto.randomBytes(32).toString('hex')};
  let app;
  const listen=async()=>{app=createApp(pool,opts);await new Promise(r=>app.listen(0,'127.0.0.1',r));return 'http://127.0.0.1:'+app.address().port;};
  let root;
@@ -21,6 +22,10 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
   assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM vehicles')).rows[0].n),1);
   assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM trl_breaches')).rows[0].n),1);
   assert.equal(JSON.stringify((await request('/v1/activity','reader')).data).includes('should not leave collector'),false);
+  const activityLog=ingestLogs.map(JSON.parse).find(x=>x.event==='silvertrack_activity'&&x.status===200&&x.imports.created===1);
+  assert.equal(activityLog.rows,1);assert.equal(activityLog.parkingRows,1);
+  assert.ok(ingestLogs.map(JSON.parse).some(x=>x.event==='silvertrack_activity'&&x.status===401));
+  assert.equal(ingestLogs.some(x=>[base.cookie,base.vehicle.plate,opts.masterKey,base.guard,base.property].some(secret=>x.includes(secret))),false);
   const changed={...base,issue:'Parking Breach - 2nd Warning',vehicle:{...base.vehicle,model:'Camry'}};
   a=await request('/v1/activity','master','POST',{rows:[changed]});assert.equal(a.data.imports.updated,1);
   assert.equal((await pool.query('SELECT revision FROM trl_breaches')).rows[0].revision,'2');
@@ -51,7 +56,8 @@ test('real PostgreSQL: authenticated feed → vehicles/history → paired device
 
 test('native Breach sync: uploads, projections, revision conflicts, manual corrections and tombstones',async()=>{
  const pool=new Pool({connectionString:process.env.TEST_DATABASE_URL,max:6});
- const opts={masterKey:crypto.randomBytes(32).toString('hex'),readerKey:crypto.randomBytes(32).toString('hex'),fleetKey:crypto.randomBytes(32).toString('hex'),encryptionKey:crypto.randomBytes(32).toString('hex')};
+ const ingestLogs=[];
+ const opts={ingestLog:line=>ingestLogs.push(line),masterKey:crypto.randomBytes(32).toString('hex'),readerKey:crypto.randomBytes(32).toString('hex'),fleetKey:crypto.randomBytes(32).toString('hex'),encryptionKey:crypto.randomBytes(32).toString('hex')};
  const app=createApp(pool,opts);let root;
  const req=async(path,key='fleet',method='GET',data)=>{
   const h={'content-type':'application/json'};if(key==='fleet')h['x-trl-master-key']=opts.fleetKey;else if(key==='master')h['x-ronin-master-key']=opts.masterKey;else if(key.startsWith('device:'))h['x-trl-device-token']=key.slice(7);
@@ -77,6 +83,11 @@ test('native Breach sync: uploads, projections, revision conflicts, manual corre
   const before=(await pool.query("SELECT generation FROM trl_snapshots WHERE kind='activity'")).rows[0].generation;
   assert.equal((await req('/v1/vehicle-reports','master','POST',{rows:[source]})).status,200);
   const replay=await req('/v1/vehicle-reports','master','POST',{rows:[source]});assert.equal(replay.data.imports.duplicate,1);
+  const vehicleLogs=ingestLogs.map(JSON.parse).filter(x=>x.event==='silvertrack_vehicle_reports');
+  assert.ok(vehicleLogs.some(x=>x.status===401));assert.ok(vehicleLogs.some(x=>x.status===400));
+  assert.ok(vehicleLogs.some(x=>x.status===200&&x.rows===1&&x.imports.created===1));
+  assert.ok(vehicleLogs.some(x=>x.status===200&&x.imports.duplicate===1));
+  assert.equal(ingestLogs.some(x=>[source.vehicle.plate,source.vehicle.address,opts.masterKey,pair.data.token].some(secret=>x.includes(secret))),false);
   assert.equal((await pool.query("SELECT generation FROM trl_snapshots WHERE kind='activity'")).rows[0].generation,before);
   r=await req('/v1/breach-sync',device);received=r.data.vehicles.find(x=>x.plate==='SRC617');assert.equal(received.breach_level,3);assert.equal(received.last_breach_at,now);
   assert.ok(r.data.breaches.some(x=>x.source_id==='native-source-event'));
