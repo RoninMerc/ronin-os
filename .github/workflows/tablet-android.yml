@@ -213,14 +213,23 @@ jobs:
             adb shell am instrument -w -r -e class au.com.roningroup.patrollink.TabletUpgradeTest#verifyUpgradeAndLaunchTablet au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee upgrade-release-tests.txt
             python3 -c "from pathlib import Path; s=Path('upgrade-release-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s, s"
             adb shell am force-stop au.com.roningroup.patrollink
-            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-1-tests.txt
-            python3 -c "from pathlib import Path; s=Path('release-cold-start-1-tests.txt').read_text(); assert 'OK (2 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest#ColdReleaseLaunchShowsThreePatrolPanelsAndKeepsPairing au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-1-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-cold-start-1-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
             adb shell am force-stop au.com.roningroup.patrollink
-            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-2-tests.txt
-            python3 -c "from pathlib import Path; s=Path('release-cold-start-2-tests.txt').read_text(); assert 'OK (2 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest#ColdMasterPhoneLaunchLoadsNativeDashboardAndBrowser au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-master-cold-start-1-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-master-cold-start-1-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
             adb shell am force-stop au.com.roningroup.patrollink
-            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-3-tests.txt
-            python3 -c "from pathlib import Path; s=Path('release-cold-start-3-tests.txt').read_text(); assert 'OK (2 tests)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest#ColdReleaseLaunchShowsThreePatrolPanelsAndKeepsPairing au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-2-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-cold-start-2-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am force-stop au.com.roningroup.patrollink
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest#ColdMasterPhoneLaunchLoadsNativeDashboardAndBrowser au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-master-cold-start-2-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-master-cold-start-2-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am force-stop au.com.roningroup.patrollink
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest#ColdReleaseLaunchShowsThreePatrolPanelsAndKeepsPairing au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-cold-start-3-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-cold-start-3-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
+            adb shell am force-stop au.com.roningroup.patrollink
+            adb shell am instrument -w -r -e class au.com.roningroup.patrollink.ReleaseColdStartTest#ColdMasterPhoneLaunchLoadsNativeDashboardAndBrowser au.com.roningroup.patrollink.test/androidx.test.runner.AndroidJUnitRunner | tee release-master-cold-start-3-tests.txt
+            python3 -c "from pathlib import Path; s=Path('release-master-cold-start-3-tests.txt').read_text(); assert 'OK (1 test)' in s and 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s, s"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
