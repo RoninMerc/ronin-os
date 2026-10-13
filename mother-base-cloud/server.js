@@ -10,8 +10,9 @@ function createApp(pool,opts={}){
  const fleetServer=fleet.createApp(pool,{masterKey:opts.fleetKey||process.env.TRL_MASTER_KEY,encryptionKey:opts.encryptionKey||process.env.TRL_EVIDENCE_KEY});
  const server=http.createServer((req,res)=>{
   const path=new URL(req.url,'http://local').pathname;
-  const known=['/health','/v1/activity','/v1/vehicle-reports','/v1/admin/activity','/v1/checkpoints','/v1/admin/checkpoints','/v1/checkpoints/recover'];
-  if(!known.includes(path))return fleetServer.emit('request',req,res);
+  const known=['/health','/v1/activity','/v1/vehicle-reports','/v1/admin/activity','/v1/checkpoints','/v1/admin/checkpoints','/v1/checkpoints/recover','/v1/report-evidence','/v1/training-evidence'];
+  const trainingImage=/^\/v1\/training-evidence\/[0-9a-f-]{36}\.jpg$/i.test(path);
+  if(!known.includes(path)&&!trainingImage)return fleetServer.emit('request',req,res);
   // Fixed route labels and bounded counts only: never log report text, plates, keys or cookies.
   let ingest=null;
   if(req.method==='POST'&&(path==='/v1/activity'||path==='/v1/vehicle-reports')){
@@ -26,6 +27,22 @@ function createApp(pool,opts={}){
    if(path==='/health'&&req.method==='GET'){await pool.query('SELECT 1');const a=await db.snapshot(pool,'activity');return send(res,200,{ok:true,persistent:true,service:'trl-mother-base-cloud',masterOnline:Date.now()-a.receivedAt<90000});}
    const admin=eq(req.headers['x-ronin-master-key'],master),isReader=eq(req.headers['x-ronin-reader-key'],reader);
    if(path.startsWith('/v1/admin/')&&!admin)return send(res,401,{ok:false});
+   if(path==='/v1/report-evidence'&&req.method==='POST'){
+    res.once('finish',()=>{try{(opts.ingestLog||console.info)(JSON.stringify({event:'silvertrack_report_photo',status:res.statusCode}));}catch{}});
+    if(!admin)return send(res,401,{ok:false});
+    const b=await body(req,2900000);
+    try{return send(res,200,await require('./report-evidence').store(pool,Buffer.from(opts.encryptionKey||process.env.TRL_EVIDENCE_KEY,'hex'),b));}
+    catch(e){return send(res,e.status||400,{ok:false,error:e.status?e.message:'invalid report image'});}
+   }
+   if(path==='/v1/training-evidence'||trainingImage){
+    if(!eq(req.headers['x-trl-master-key'],opts.fleetKey||process.env.TRL_MASTER_KEY))return send(res,403,{ok:false});
+    if(req.method!=='GET')return send(res,405,{ok:false});
+    const evidence=require('./report-evidence');
+    if(!trainingImage)return send(res,200,await evidence.manifest(pool,new URL(req.url,'http://local').searchParams.get('after')||''));
+    const image=await evidence.image(pool,Buffer.from(opts.encryptionKey||process.env.TRL_EVIDENCE_KEY,'hex'),path.slice('/v1/training-evidence/'.length,-4));
+    if(!image)return send(res,404,{ok:false});
+    res.writeHead(200,{'content-type':'image/jpeg','cache-control':'no-store','x-content-type-options':'nosniff'});return res.end(image);
+   }
    if(req.method==='GET'){
     if(!admin&&!isReader)return send(res,401,{ok:false});
     if(path.endsWith('/activity')){

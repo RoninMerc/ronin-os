@@ -93,3 +93,27 @@ test('native Breach sync: uploads, projections, revision conflicts, manual corre
   assert.ok(r.data.breaches.some(x=>x.source_id==='native-source-event'));
  }finally{if(app.listening)await new Promise(r=>app.close(r));await pool.end();}
 });
+
+test('SilverTrack photos: actual import, encrypted storage, idempotent retry, protected training manifest and image retrieval',async()=>{
+ const pool=new Pool({connectionString:process.env.TEST_DATABASE_URL,max:5}),opts={masterKey:'m'.repeat(32),readerKey:'r'.repeat(32),fleetKey:'f'.repeat(32),encryptionKey:'a'.repeat(64),ingestLog:()=>{}};
+ const app=createApp(pool,opts);await migrate(pool);await new Promise(r=>app.listen(0,'127.0.0.1',r));
+ const root='http://127.0.0.1:'+app.address().port;
+ const req=async(path,headers={},data)=>fetch(root+path,{method:data?'POST':'GET',headers:{'content-type':'application/json',...headers},body:data?JSON.stringify(data):undefined});
+ try{
+  const sourceReportId='photo-synthetic-report',plate='PHO156';
+  let r=await req('/v1/vehicle-reports',{'x-ronin-master-key':opts.masterKey},{rows:[{id:'2000001',sourceReportId,guard:'Synthetic',property:'Synthetic',issue:'Parking Breach - 1st Warning',occurredAt:'2026-07-14T06:00:00+10:00',vehicle:{plate,vehicle:'Toyota Corolla',address:'Synthetic Street',relation:'at',parking:'visitor'}}]});
+  assert.equal(r.status,200);
+  const jpg=Buffer.concat([Buffer.from([255,216,255]),Buffer.alloc(60,12),Buffer.from([255,217])]);
+  const b={sourceReportId,plate,trainingRequested:true,filename:'synthetic.jpg',jpegBase64:jpg.toString('base64')};
+  assert.equal((await req('/v1/report-evidence',{},b)).status,401);
+  assert.equal((await req('/v1/report-evidence',{'x-ronin-master-key':opts.masterKey},{...b,sourceReportId:'missing'})).status,409);
+  r=await req('/v1/report-evidence',{'x-ronin-master-key':opts.masterKey},b);const first=await r.json();assert.equal(r.status,200);assert.equal(first.duplicate,false);
+  const retry=await (await req('/v1/report-evidence',{'x-ronin-master-key':opts.masterKey},b)).json();assert.equal(retry.id,first.id);assert.equal(retry.duplicate,true);
+  const stored=(await pool.query('SELECT iv,ciphertext,tag FROM evidence WHERE id=$1',[first.id])).rows[0];assert.notDeepEqual(stored.ciphertext,jpg);
+  assert.equal((await req('/v1/training-evidence',{'x-ronin-reader-key':opts.readerKey})).status,403);
+  const manifest=await (await req('/v1/training-evidence',{'x-trl-master-key':opts.fleetKey})).json();
+  const photo=manifest.photos.find(x=>x.id===first.id);assert.equal(photo.meta.sourceReportId,sourceReportId);
+  assert.equal((await req(photo.downloadPath)).status,403);
+  const fetched=await req(photo.downloadPath,{'x-trl-master-key':opts.fleetKey});assert.equal(fetched.status,200);assert.deepEqual(Buffer.from(await fetched.arrayBuffer()),jpg);
+ }finally{await new Promise(r=>app.close(r));await pool.end();}
+});
