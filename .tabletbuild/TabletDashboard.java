@@ -56,7 +56,7 @@ final class TabletDashboard {
  TabletDashboard(Activity a,PatrolEngine e,CheckpointProximityUi c,Actions x){this(a,e,c,x,cb->FleetRelay.load(a,cb));}
  TabletDashboard(Activity a,PatrolEngine e,CheckpointProximityUi c,Actions x,FleetLoader l){
   activity=a;engine=e;checkpoints=c;actions=x;loader=l;
-  android.content.res.Configuration screen=a.getResources().getConfiguration();compact=Math.min(screen.screenWidthDp,screen.screenHeightDp)<520;
+  android.content.res.Configuration screen=a.getResources().getConfiguration();compact=screen.smallestScreenWidthDp<600||Math.min(screen.screenWidthDp,screen.screenHeightDp)<520;
   org.osmdroid.config.IConfigurationProvider config=Configuration.getInstance();
   config.setUserAgentValue(a.getPackageName()+"/"+BuildConfig.VERSION_NAME+" (TRL patrol map)");
   config.setOsmdroidBasePath(new File(a.getFilesDir(),"street-maps"));
@@ -76,7 +76,7 @@ final class TabletDashboard {
    }else card.addView(guardName[i]);
    guardActivity[i]=text("Waiting for activity",18,WHITE,false);guardActivity[i].setMaxLines(2);guardActivity[i].setEllipsize(TextUtils.TruncateAt.END);guardActivity[i].setAutoSizeTextTypeUniformWithConfiguration(13,18,1,android.util.TypedValue.COMPLEX_UNIT_SP);
    if(compact){guardActivity[i].setMaxLines(1);guardActivity[i].setAutoSizeTextTypeUniformWithConfiguration(11,13,1,android.util.TypedValue.COMPLEX_UNIT_SP);}
-   card.addView(guardActivity[i],new LinearLayout.LayoutParams(-1,0,1));
+   card.addView(guardActivity[i],compact?new LinearLayout.LayoutParams(-1,dp(18)):new LinearLayout.LayoutParams(-1,0,1));
    guardTime[i]=text("Activity time unavailable",14,MUTED,false);guardTime[i].setMaxLines(1);card.addView(guardTime[i]);
    guardProgress[i]=text("Recorded hits: 0",14,MUTED,false);guardProgress[i].setMaxLines(1);card.addView(guardProgress[i]);
    guardState[i]=text("GPS UNAVAILABLE",13,AMBER,true);guardState[i].setMaxLines(1);card.addView(guardState[i]);

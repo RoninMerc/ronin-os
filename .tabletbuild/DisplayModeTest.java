@@ -49,8 +49,8 @@ public final class DisplayModeTest {
  private static void checkText(ViewGroup root,ViewGroup group){
   for(int n=0;n<group.getChildCount();n++){View child=group.getChildAt(n);if(child.getVisibility()!=View.VISIBLE)continue;if(child instanceof ViewGroup)checkText(root,(ViewGroup)child);else if(child instanceof TextView){
    android.graphics.Rect r=new android.graphics.Rect();child.getDrawingRect(r);root.offsetDescendantRectToMyCoords(child,r);
-   assertTrue("Visible patrol label has height: "+((TextView)child).getText(),child.getHeight()>0);
-   assertTrue("Patrol label fits its panel: "+((TextView)child).getText(),r.top>=0&&r.bottom<=root.getHeight()+1);
+   assertTrue("Patrol geometry: card="+root.getWidth()+"x"+root.getHeight()+", label="+child.getWidth()+"x"+child.getHeight()+", font="+((TextView)child).getTextSize()+", density="+root.getResources().getDisplayMetrics().density+", sw="+root.getResources().getConfiguration().smallestScreenWidthDp+", w="+root.getResources().getConfiguration().screenWidthDp+", h="+root.getResources().getConfiguration().screenHeightDp,child.getHeight()>0);
+   assertTrue("Patrol geometry overflow: cardHeight="+root.getHeight()+", labelTop="+r.top+", labelBottom="+r.bottom,r.top>=0&&r.bottom<=root.getHeight()+1);
   }}
  }
 }
