@@ -57,11 +57,21 @@ function createApp(pool,opts={}){
  server.headersTimeout=15000;server.requestTimeout=30000;return server;
 }
 async function migrate(pool){for(const stmt of [...fleet.statements,...db.schema])await pool.query(stmt);}
+let startupStage='configuration';
 async function start(){
- if(!process.env.DATABASE_URL)throw Error('DATABASE_URL required; no memory fallback');
+ const missing=[];
+ if(!process.env.DATABASE_URL)missing.push('DATABASE_URL');
+ if((process.env.MASTER_FEED_KEY||'').length<32)missing.push('MASTER_FEED_KEY (at least 32 characters)');
+ if((process.env.READER_FEED_KEY||'').length<32)missing.push('READER_FEED_KEY (at least 32 characters)');
+ if(process.env.MASTER_FEED_KEY===process.env.READER_FEED_KEY)missing.push('feed keys must differ');
+ if((process.env.TRL_MASTER_KEY||'').length<32)missing.push('TRL_MASTER_KEY (at least 32 characters)');
+ if(!/^[0-9a-fA-F]{64}$/.test(process.env.TRL_EVIDENCE_KEY||''))missing.push('TRL_EVIDENCE_KEY (64 hexadecimal characters)');
+ if(missing.length){console.error('Invalid or missing environment settings: '+missing.join(', '));throw Error('configuration');}
+ startupStage='database connection/migration';
  const pool=new Pool({connectionString:process.env.DATABASE_URL,max:5,connectionTimeoutMillis:8000});
  await migrate(pool);
+ startupStage='relay setup';
  createApp(pool).listen(process.env.PORT||10000,'0.0.0.0',()=>console.log('TRL Mother Base persistent cloud ready'));
 }
-if(require.main===module)start().catch(()=>{console.error('Database or relay configuration unavailable; refusing insecure start');process.exit(1);});
+if(require.main===module)start().catch(e=>{const code=String(e.code||'');console.error('Startup failed at '+startupStage+(/^[A-Z0-9_]{2,24}$/.test(code)?' (code '+code+')':'')+'; no credentials logged');process.exit(1);});
 module.exports={createApp,migrate};
