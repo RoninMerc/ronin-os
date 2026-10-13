@@ -1,0 +1,841 @@
+--- /dev/null
++++ b/PATCH-APPLIED.md
+@@ -0,0 +1,33 @@
++# Vanta Forge patch integration report
++
++Base: `Ronin-Vanta-Android-0.18.1-RC1-source.zip`.
++Patch: `Vanta-Forge-Fix.zip`.
++
++**Edits applied to:**
++- `app/src/main/java/com/ronin/vanta/ForgeCodeDiagnostics.java`
++- `app/src/main/java/com/ronin/vanta/ForgeAuthor.java`
++- `app/src/main/java/com/ronin/vanta/AgenticRepair.java`
++- `app/src/main/java/com/ronin/vanta/AndroidProjectCheck.java`
++- `app/build.gradle` (`versionCode 182`, `versionName 0.18.1-rc2`)
++
++**Added:**
++- `app/src/main/java/com/ronin/vanta/ForgeSourceGuard.java`
++- `app/src/main/java/com/ronin/vanta/ForgeDiagnosticPatterns.java`
++- `app/src/test/java/com/ronin/vanta/ForgeSourceGuardTest.java`
++- `app/src/test/java/com/ronin/vanta/ForgeDiagnosticPatternsTest.java`
++
++Existing JUnit 4 Gradle test dependency was already present.
++A false-positive regression was also corrected: Java expressions like `j.json`
++are legitimate field accesses, not pasted source-file headers.
++
++## Build
++
++In Android Studio, open this directory; sync Gradle; run `testDebugUnitTest` and
++`assembleRelease` (compile SDK 36 and JDK 17 are required).
++Sign the resulting release APK with **the same original Vanta signing key**
++through Android Studio's Generate Signed App Bundle / APK workflow or an
++existing trusted signing process. Without that key, you cannot install this
++as an update over the existing app. `applicationId` is unchanged.
++
++Build completion, unit tests and app-update compatibility must be verified on a
++machine with Android SDK 36, Gradle deps and the matching signing identity.
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -8,8 +8,8 @@
+         applicationId (project.findProperty('vantaApplicationId') ?: 'com.ronin.vanta.fixed')
+         minSdk 29
+         targetSdk 36
+-        versionCode 180
+-        versionName '0.18.0'
++        versionCode 182
++        versionName '0.18.1-rc2'
+         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+     }
+ 
+--- a/app/src/main/java/com/ronin/vanta/AgenticRepair.java
++++ b/app/src/main/java/com/ronin/vanta/AgenticRepair.java
+@@ -116,6 +116,7 @@
+ 
+         String contents =
+             ForgeAuthor.writeFile(record, system, framing + sourceContext, writer, documents);
++        ForgeSourceGuard.requireClean(path, contents, record);
+         file = new JSONObject().put("path", path).put("content", contents);
+         ProjectArchive.path(path);
+         ProjectArchive.contents(file);
+--- a/app/src/main/java/com/ronin/vanta/AndroidProjectCheck.java
++++ b/app/src/main/java/com/ronin/vanta/AndroidProjectCheck.java
+@@ -58,7 +58,12 @@
+         try {
+           xml.put(path, parse(f.getString("content")));
+         } catch (Exception failure) {
+-          errors.put(path + ": invalid XML — " + clean(failure.getMessage()));
++          errors.put(ForgeSourceGuard.xmlFailure(path, failure, clean(failure.getMessage())));
++        }
++      }
++      if (!"base64".equals(f.optString("encoding"))) {
++        for (String finding : ForgeSourceGuard.findings(path, f.optString("content"), false)) {
++          errors.put(finding);
+         }
+       }
+       if (ProjectArchive.contents(f).length == 0
+--- a/app/src/main/java/com/ronin/vanta/ForgeAuthor.java
++++ b/app/src/main/java/com/ronin/vanta/ForgeAuthor.java
+@@ -196,6 +196,7 @@
+                 + " stubs. Implement the stated interfaces consistently with the referenced files. "
+                 + contract;
+         String contents = writeFile(record, system, user, writer, documents);
++        ForgeSourceGuard.requireClean(path, contents, record);
+         file = new JSONObject().put("path", path).put("content", contents);
+         ProjectArchive.path(path);
+         ProjectArchive.contents(file);
+--- a/app/src/main/java/com/ronin/vanta/ForgeCodeDiagnostics.java
++++ b/app/src/main/java/com/ronin/vanta/ForgeCodeDiagnostics.java
+@@ -13,22 +13,9 @@
+   private static final Pattern PACKAGE = Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_][\\w.]*)");
+   private static final Pattern TYPE = Pattern.compile("(?m)^(?:(?:public|private|protected|internal|open|abstract|sealed|data|enum|annotation|value|inline|final|static|expect|actual)\\s+)*(?:class|interface|object|record)\\s+([A-Za-z_][\\w]*)");
+ 
+-  static LinkedHashMap<String,List<String>> errors(String log) {
+-    LinkedHashMap<String,List<String>> out = new LinkedHashMap<>();
+-    if (log == null) return out;
+-    String clean = log.replaceAll("\\x1B\\[[0-9;]*[a-zA-Z]", "");
+-    Matcher m = FILE_ERROR.matcher(clean);
+-    while (m.find()) {
+-      String path = m.group(1), line = m.group(2) == null ? m.group(4) : m.group(2);
+-      String col = m.group(3) == null ? m.group(5) : m.group(3);
+-      String detail = Errors.redact(m.group(6).trim());
+-      String value = path + ":" + line + (col == null ? "" : ":" + col) + ": " + detail;
+-      List<String> group = out.computeIfAbsent(path, k -> new ArrayList<>());
+-      if (!group.contains(value) && group.size() < 250) group.add(value);
+-      if (out.size() > 150) break;
+-    }
+-    return out;
+-  }
++static LinkedHashMap<String,List<String>> errors(String log) {
++  return ForgeDiagnosticPatterns.errors(log);
++}
+   static boolean opaqueKapt(String log) {
+     return log != null && log.contains("Could not load module <Error module>")
+         && log.matches("(?s).*kaptGenerateStubs(?:Debug|Release)Kotlin.*")
+--- /dev/null
++++ b/app/src/main/java/com/ronin/vanta/ForgeDiagnosticPatterns.java
+@@ -0,0 +1,125 @@
++package com.ronin.vanta;
++
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++/**
++ * Extracts "which file, which line" facts from build output.
++ *
++ * Replacement body for ForgeCodeDiagnostics.errors(String). The original only
++ * recognised compiler lines of the form  app/...:LINE: message, so three kinds
++ * of failure produced an empty map and AgenticRepair threw
++ * AGENTIC_REPAIR_NO_TARGET even though the bad file was named in the log:
++ *
++ *  1. Vanta's own source preflight ("path: invalid XML — ...", no line number).
++ *     JobOperations passes that report straight into AgenticRepair.author as
++ *     the diagnostics, so EVERY preflight-triggered repair hit NO_TARGET.
++ *  2. Root build files (settings.gradle, build.gradle, gradle.properties) —
++ *     the old pattern required an app/ or src/ prefix.
++ *  3. Gradle script failures, which Gradle reports as
++ *     "Build file '/…/app/build.gradle' line: 12" or Groovy's
++ *     "settings file '/…/settings.gradle': 1: unexpected token …".
++ */
++final class ForgeDiagnosticPatterns {
++
++    private ForgeDiagnosticPatterns() {
++    }
++
++    static final String PREFLIGHT_MARKER = "VANTA SOURCE PREFLIGHT";
++
++    private static final String PROJECT_PATH =
++            "(?:(?:app|src)/[^\\r\\n:'\"]+\\.(?:kt|java|xml|gradle(?:\\.kts)?|properties|pro)"
++                    + "|(?:settings|build)\\.gradle(?:\\.kts)?|gradle\\.properties)";
++
++    /** Original FILE_ERROR, widened to root build files, .properties and proguard rules. */
++    static final Pattern FILE_ERROR = Pattern.compile(
++            "(?m)^(?:e:\\s*)?(?:(?:file://)?[^\\r\\n]*?/project/)?(" + PROJECT_PATH + "):"
++                    + "\\s*(?:\\((\\d+),\\s*(\\d+)\\)|(?:\\s*(\\d+)(?::(\\d+))?)):?\\s*([^\\r\\n]+)$");
++
++    /** Vanta preflight lines: "path: message" or "path:line[:col]: message". Only applied to preflight reports. */
++    static final Pattern PREFLIGHT_ERROR = Pattern.compile(
++            "(?m)^(" + PROJECT_PATH + ")(?::(\\d+)(?::(\\d+))?)?:\\s+([^\\r\\n]+)$");
++
++    /** Gradle "* Where:" block and Groovy script compile errors. */
++    static final Pattern GRADLE_SCRIPT = Pattern.compile(
++            "(?mi)^\\s*(?:build|settings|script) file '([^'\\r\\n]+?\\.gradle(?:\\.kts)?)'"
++                    + "(?:\\s+line:\\s*(\\d+)|:\\s*(\\d+):\\s*([^\\r\\n]+))");
++
++    private static final Pattern PARSER_POSITION = Pattern.compile("@(\\d+):(\\d+)\\s+in\\s+java\\.io\\.StringReader");
++    private static final Pattern WHAT_WENT_WRONG = Pattern.compile("\\* What went wrong:\\s*\\r?\\n\\s*([^\\r\\n]+)");
++    private static final Pattern ROOT_RELATIVE = Pattern.compile(
++            "(?:^|/)((?:app|src)/.+|(?:settings|build)\\.gradle(?:\\.kts)?|gradle\\.properties)$");
++
++    static LinkedHashMap<String, List<String>> errors(String log) {
++        LinkedHashMap<String, List<String>> out = new LinkedHashMap<>();
++        if (log == null) {
++            return out;
++        }
++        String clean = log.replaceAll("\\x1B\\[[0-9;]*[a-zA-Z]", "");
++
++        Matcher m = FILE_ERROR.matcher(clean);
++        while (m.find() && out.size() <= 150) {
++            String line = m.group(2) == null ? m.group(4) : m.group(2);
++            String col = m.group(3) == null ? m.group(5) : m.group(3);
++            add(out, m.group(1), line, col, m.group(6));
++        }
++
++        if (clean.contains(PREFLIGHT_MARKER)) {
++            Matcher p = PREFLIGHT_ERROR.matcher(clean);
++            while (p.find() && out.size() <= 150) {
++                String line = p.group(2);
++                String col = p.group(3);
++                if (line == null) {
++                    // Android's XmlPullParser reports "(position:… @27:1 in java.io.StringReader@…)".
++                    Matcher at = PARSER_POSITION.matcher(p.group(4));
++                    if (at.find()) {
++                        line = at.group(1);
++                        col = at.group(2);
++                    }
++                }
++                add(out, p.group(1), line == null ? "1" : line, col, p.group(4));
++            }
++        }
++
++        Matcher g = GRADLE_SCRIPT.matcher(clean);
++        Matcher why = WHAT_WENT_WRONG.matcher(clean);
++        String reason = why.find() ? why.group(1).trim() : "Gradle could not evaluate this build script (see full log)";
++        while (g.find() && out.size() <= 150) {
++            String path = relative(g.group(1));
++            if (path == null) {
++                continue;
++            }
++            String line = g.group(2) != null ? g.group(2) : g.group(3);
++            String detail = g.group(4) != null ? g.group(4) : reason;
++            add(out, path, line, null, detail);
++        }
++        return out;
++    }
++
++    /** "/home/runner/work/x/x/project/app/build.gradle" → "app/build.gradle"; null when not a project file. */
++    static String relative(String absolute) {
++        String p = absolute.replace('\\', '/');
++        int project = p.lastIndexOf("/project/");
++        if (project >= 0) {
++            p = p.substring(project + "/project/".length());
++        }
++        Matcher m = ROOT_RELATIVE.matcher(p);
++        if (!m.find()) {
++            return null;
++        }
++        String rel = m.group(1);
++        int app = rel.indexOf("app/");
++        return app > 0 && rel.substring(0, app).endsWith("/") ? rel.substring(app) : rel;
++    }
++
++    private static void add(LinkedHashMap<String, List<String>> out, String path, String line, String col, String detail) {
++        String value = path + ":" + (line == null ? "1" : line) + (col == null ? "" : ":" + col) + ": " + Errors.redact(detail.trim());
++        List<String> group = out.computeIfAbsent(path, k -> new ArrayList<>());
++        if (!group.contains(value) && group.size() < 250) {
++            group.add(value);
++        }
++    }
++}
+--- /dev/null
++++ b/app/src/main/java/com/ronin/vanta/ForgeSourceGuard.java
+@@ -0,0 +1,330 @@
++package com.ronin.vanta;
++
++import java.io.StringReader;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.Locale;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import javax.xml.parsers.DocumentBuilder;
++import javax.xml.parsers.DocumentBuilderFactory;
++import org.xml.sax.InputSource;
++import org.xml.sax.SAXException;
++import org.xml.sax.SAXParseException;
++import org.xml.sax.helpers.DefaultHandler;
++
++/**
++ * Checks that AI-written file contents actually belong at their target path.
++ *
++ * Small models given a multi-file context often answer with several files
++ * glued together: markdown fences, "// app/build.gradle" style path headers,
++ * Vanta's own "--- path ---" context separators, or simply the wrong file
++ * (Gradle text in App.java, a dimens.xml in settings.gradle). Nothing between
++ * ForgeAuthor.writeFile and the compiler checked for that, so garbage reached
++ * the build and the repair agent had no file/line to work from.
++ *
++ * Every finding carries a line number so the result can be fed back through
++ * ForgeCodeDiagnostics / AgenticRepair.targets as a normal "path:line: msg".
++ */
++final class ForgeSourceGuard {
++
++    private ForgeSourceGuard() {
++    }
++
++    static final class Finding {
++        final int line;
++        final String message;
++
++        Finding(int line, String message) {
++            this.line = Math.max(1, line);
++            this.message = message;
++        }
++    }
++
++    private static final String CODE_EXT = "(?:java|kt|kts|xml|gradle|properties|pro|json)";
++
++    /** A line consisting only of a file path, optionally behind a comment marker or a label. */
++    private static final Pattern PATH_LINE = Pattern.compile(
++            "^\\s*(//+|#|<!--|/\\*+)?\\s*((?:SOURCE FILE|WRITE EXACTLY THIS FILE|FILE)\\s*:?\\s*)?"
++                    + "((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\." + CODE_EXT + ")"
++                    + "\\s*(?:-->|\\*/)?\\s*$");
++
++    /** Vanta's own context separator from ForgeAuthor.context(), echoed back by the model. */
++    private static final Pattern CONTEXT_HEADER = Pattern.compile(
++            "^\\s*---\\s+(?:DEPENDENCY EXCERPT[^:]*:\\s*)?(\\S+)\\s+---\\s*$");
++
++    private static final Pattern FENCE = Pattern.compile("^\\s*```");
++    private static final Pattern JAVA_PACKAGE = Pattern.compile("^\\s*package\\s+([A-Za-z_][\\w.]*)\\s*;");
++    private static final Pattern JAVA_PACKAGE_LINE = Pattern.compile("(?m)^\\s*package\\s+[A-Za-z_][\\w.]*\\s*;\\s*$");
++    private static final Pattern XML_IN_SCRIPT = Pattern.compile("(?m)^\\s*<(?:\\?xml|resources\\b|manifest\\b|vector\\b|adaptive-icon\\b|[A-Z][\\w.]*Layout\\b)");
++    /** Top-level (unindented) public type; Java requires its name to equal the file name. */
++    private static final Pattern PUBLIC_TYPE = Pattern.compile(
++            "(?m)^public\\s+(?:(?:final|abstract|sealed|non-sealed|strictfp)\\s+)*(?:class|interface|enum|record|@interface)\\s+([A-Za-z_]\\w*)");
++    private static final Pattern INCLUDES_APP = Pattern.compile("include\\s*\\(?\\s*(?:['\"][^'\"\\n]*['\"]\\s*,\\s*)*['\"]:app['\"]");
++
++    /** File types this guard knows how to check. Anything else (README.md, images) is left alone. */
++    static boolean checked(String path) {
++        String p = path == null ? "" : path.toLowerCase(Locale.ROOT);
++        return p.endsWith(".java") || p.endsWith(".kt") || p.endsWith(".xml") || p.endsWith(".gradle")
++                || p.endsWith(".gradle.kts") || p.endsWith(".properties") || p.endsWith(".pro");
++    }
++
++    /** All findings for one file, including a full XML parse for .xml files. */
++    static List<Finding> inspect(String path, String content) {
++        return inspect(path, content, true);
++    }
++
++    /**
++     * @param parseXml false when the caller (AndroidProjectCheck) already parses XML itself,
++     *                 so the same XML error is not reported twice.
++     */
++    static List<Finding> inspect(String path, String content, boolean parseXml) {
++        if (!checked(path) || content == null) {
++            return Collections.emptyList();
++        }
++        List<Finding> out = new ArrayList<>();
++        String text = content.startsWith("\ufeff") ? content.substring(1) : content;
++        String lower = path.toLowerCase(Locale.ROOT);
++        String[] lines = text.split("\r?\n", -1);
++
++        for (int i = 0; i < lines.length && out.size() < 20; i++) {
++            String line = lines[i];
++            int n = i + 1;
++            if (FENCE.matcher(line).find()) {
++                out.add(new Finding(n, "markdown code fence (```) in source — the model wrapped or concatenated files"));
++                continue;
++            }
++            Matcher header = CONTEXT_HEADER.matcher(line);
++            if (header.matches()) {
++                out.add(new Finding(n, "Vanta context separator for " + header.group(1) + " copied into this file"));
++                continue;
++            }
++            Matcher m = PATH_LINE.matcher(line);
++            if (m.matches()) {
++                boolean comment = m.group(1) != null;
++                boolean labelled = m.group(2) != null;
++                String named = m.group(3);
++                boolean self = sameFile(path, named);
++                // `j.json` or `job.json` at the start of a Java/Kotlin line can be
++                // ordinary field access, not a pasted filename. Only flag
++                // unambiguous paths or explicit file labels here.
++                if (!comment && (labelled || named.contains("/") || buildFile(named))) {
++                    out.add(new Finding(n, "bare file path '" + named + "' as a line of source"
++                            + (self ? "" : " — content for another file was merged in here")));
++                } else if (!self && comment && (labelled || named.contains("/") || buildFile(named))) {
++                    out.add(new Finding(n, "header for another file (" + named + ") — content for another file was merged in here"));
++                } else if (self && labelled) {
++                    out.add(new Finding(n, "model instruction label copied into source"));
++                }
++            }
++        }
++
++        if (lower.endsWith(".xml") && parseXml) {
++            Finding xmlError = xmlCheck(text);
++            if (xmlError != null) {
++                out.add(xmlError);
++            }
++        }
++
++        if (lower.endsWith(".java")) {
++            javaChecks(path, text, out);
++        }
++
++        if (lower.endsWith(".gradle") || lower.endsWith(".gradle.kts")) {
++            Matcher xml = XML_IN_SCRIPT.matcher(text);
++            if (xml.find()) {
++                out.add(new Finding(lineOf(text, xml.start()), "XML found in a Gradle script — this is resource/manifest content, not build configuration"));
++            }
++            Matcher pkg = JAVA_PACKAGE_LINE.matcher(text);
++            if (pkg.find()) {
++                out.add(new Finding(lineOf(text, pkg.start()), "Java source found in a Gradle script"));
++            }
++            String name = lower.contains("/") ? lower.substring(lower.lastIndexOf('/') + 1) : lower;
++            if ((name.equals("settings.gradle") || name.equals("settings.gradle.kts")) && !lower.contains("/")
++                    && !INCLUDES_APP.matcher(stripComments(text)).find()) {
++                out.add(new Finding(1, "settings script does not include the ':app' module"));
++            }
++        }
++        return out;
++    }
++
++    /** "path:line: message" strings, the format ForgeCodeDiagnostics turns into repair targets. */
++    static List<String> findings(String path, String content, boolean parseXml) {
++        List<String> out = new ArrayList<>();
++        for (Finding f : inspect(path, content, parseXml)) {
++            out.add(path + ":" + f.line + ": " + f.message);
++        }
++        return out;
++    }
++
++    /**
++     * Call immediately after ForgeAuthor.writeFile and BEFORE documents.put(record, file).
++     * A rejected file is not saved; its chunks are listed for discard and the
++     * existing INVALID_OUTPUT recovery hands the file to another model.
++     */
++    static void requireClean(String path, String content, String record) throws ForgeRecovery.InvalidOutput {
++        List<Finding> found = inspect(path, content, true);
++        if (found.isEmpty()) {
++            return;
++        }
++        StringBuilder why = new StringBuilder();
++        for (int i = 0; i < found.size() && i < 3; i++) {
++            why.append(i == 0 ? "" : "; ").append("line ").append(found.get(i).line).append(": ").append(found.get(i).message);
++        }
++        if (found.size() > 3) {
++            why.append("; +").append(found.size() - 3).append(" more");
++        }
++        throw new ForgeRecovery.InvalidOutput(
++                "AUTHORED_FILE_REJECTED: the model's output for " + path + " is not a valid " + kind(path)
++                        + " file (" + why + "). It was not saved; completed files are kept and this file will be rewritten by another model.",
++                records(record), null);
++    }
++
++    /** Every saved document belonging to one authored file, mirroring ForgeOutputRecovery.invalidRepairRecords. */
++    static List<String> records(String record) {
++        List<String> keys = new ArrayList<>();
++        keys.add(record);
++        for (int part = 0; part < 4; part++) {
++            keys.add(record + "_chunk_" + part);
++            String phase = record + "_part_" + part;
++            keys.add(phase);
++            keys.add(phase + "_output_limit");
++            keys.add(phase + "_expanded_1");
++            keys.add(phase + "_expanded_1_output_limit");
++        }
++        return keys;
++    }
++
++    /** Preflight wording for an XML parse failure, with the parser's line/column so repair can target it. */
++    static String xmlFailure(String path, Exception failure, String cleanedMessage) {
++        if (failure instanceof SAXParseException) {
++            SAXParseException sax = (SAXParseException) failure;
++            int line = Math.max(1, sax.getLineNumber());
++            int col = Math.max(1, sax.getColumnNumber());
++            return path + ":" + line + ":" + col + ": invalid XML — " + cleanedMessage;
++        }
++        return path + ":1: invalid XML — " + cleanedMessage;
++    }
++
++    // ---------------------------------------------------------------- helpers
++
++    private static void javaChecks(String path, String text, List<Finding> out) {
++        String body = stripComments(text);
++        Matcher pkg = JAVA_PACKAGE.matcher(body.replaceFirst("\\A\\s+", ""));
++        String expected = expectedPackage(path);
++        if (!pkg.find()) {
++            if (expected != null) {
++                out.add(new Finding(1, "not Java source — no 'package " + expected + ";' declaration at the top"));
++            }
++            return;
++        }
++        if (expected != null && !expected.equals(pkg.group(1))) {
++            out.add(new Finding(lineOf(text, Math.max(0, text.indexOf("package"))),
++                    "declares package " + pkg.group(1) + " but the file lives in " + expected));
++        }
++        Matcher xml = XML_IN_SCRIPT.matcher(text);
++        if (xml.find()) {
++            out.add(new Finding(lineOf(text, xml.start()), "XML found in a Java source file"));
++        }
++        String stem = path.substring(path.lastIndexOf('/') + 1).replaceFirst("\\.java$", "");
++        Matcher type = PUBLIC_TYPE.matcher(body);
++        while (type.find()) {
++            if (!type.group(1).equals(stem)) {
++                out.add(new Finding(lineOf(body, type.start()), "public type " + type.group(1)
++                        + " cannot live in " + stem + ".java — this is another file's content"));
++                break;
++            }
++        }
++        Matcher second = JAVA_PACKAGE_LINE.matcher(text);
++        if (second.find() && second.find()) {
++            out.add(new Finding(lineOf(text, second.start()), "second package declaration — another Java file was merged in here"));
++        }
++    }
++
++    /** com.example.foo for app/src/main/java/com/example/foo/Bar.java; null when not under a java/ source root. */
++    static String expectedPackage(String path) {
++        Matcher m = Pattern.compile("(?:^|/)src/[^/]+/java/(.+)/[^/]+\\.java$").matcher(path);
++        return m.find() ? m.group(1).replace('/', '.') : null;
++    }
++
++    private static boolean sameFile(String target, String named) {
++        String t = target.replace('\\', '/');
++        String n = named.replace('\\', '/');
++        return t.equals(n) || t.endsWith("/" + n) || n.endsWith("/" + t);
++    }
++
++    private static boolean buildFile(String name) {
++        String n = name.toLowerCase(Locale.ROOT);
++        return n.equals("settings.gradle") || n.equals("settings.gradle.kts") || n.equals("build.gradle")
++                || n.equals("build.gradle.kts") || n.equals("gradle.properties") || n.equals("androidmanifest.xml")
++                || n.equals("proguard-rules.pro");
++    }
++
++    private static String kind(String path) {
++        String p = path.toLowerCase(Locale.ROOT);
++        if (p.endsWith(".gradle") || p.endsWith(".gradle.kts")) return "Gradle";
++        if (p.endsWith(".xml")) return "XML";
++        if (p.endsWith(".java")) return "Java";
++        if (p.endsWith(".kt")) return "Kotlin";
++        return "source";
++    }
++
++    private static String stripComments(String text) {
++        StringBuilder out = new StringBuilder(text.length());
++        Matcher m = Pattern.compile("(?s)/\\*.*?\\*/").matcher(text);
++        int last = 0;
++        while (m.find()) {
++            out.append(text, last, m.start());
++            String block = m.group();
++            for (int i = 0; i < block.length(); i++) {
++                if (block.charAt(i) == '\n') out.append('\n');
++            }
++            last = m.end();
++        }
++        out.append(text.substring(last));
++        return out.toString().replaceAll("(?m)^\\s*//.*$", "");
++    }
++
++    private static int lineOf(String text, int offset) {
++        int line = 1;
++        for (int i = 0; i < offset && i < text.length(); i++) {
++            if (text.charAt(i) == '\n') line++;
++        }
++        return line;
++    }
++
++    /** Same parser settings as AndroidProjectCheck.parse; null when the XML is well-formed. */
++    private static Finding xmlCheck(String text) {
++        try {
++            Matcher doctype = Pattern.compile("<!\\s*(DOCTYPE|ENTITY)", Pattern.CASE_INSENSITIVE).matcher(text);
++            if (doctype.find()) {
++                return new Finding(lineOf(text, doctype.start()), "document type/entity declarations are not permitted in Android resource XML");
++            }
++            DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
++            f.setNamespaceAware(true);
++            f.setExpandEntityReferences(false);
++            DocumentBuilder b = f.newDocumentBuilder();
++            b.setEntityResolver((publicId, systemId) -> {
++                throw new SAXException("External XML references are disabled");
++            });
++            b.setErrorHandler(new DefaultHandler() {
++                @Override
++                public void error(SAXParseException e) throws SAXException {
++                    throw e;
++                }
++
++                @Override
++                public void fatalError(SAXParseException e) throws SAXException {
++                    throw e;
++                }
++            });
++            b.parse(new InputSource(new StringReader(text)));
++            return null;
++        } catch (SAXParseException e) {
++            return new Finding(e.getLineNumber(), "invalid XML — " + String.valueOf(e.getMessage()).replace('\n', ' '));
++        } catch (Exception e) {
++            return new Finding(1, "invalid XML — " + String.valueOf(e.getMessage()).replace('\n', ' '));
++        }
++    }
++}
+--- /dev/null
++++ b/app/src/test/java/com/ronin/vanta/ForgeDiagnosticPatternsTest.java
+@@ -0,0 +1,62 @@
++package com.ronin.vanta;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertTrue;
++
++import java.util.LinkedHashMap;
++import java.util.List;
++import org.junit.Test;
++
++public class ForgeDiagnosticPatternsTest {
++
++    /** Verbatim preflight report from Vanta 0.18.1-rc1 that ended in AGENTIC_REPAIR_NO_TARGET. */
++    private static final String REAL_PREFLIGHT = "VANTA SOURCE PREFLIGHT (not a compiler result):\n"
++            + "app/src/main/AndroidManifest.xml: invalid XML — Unexpected token (position:TEXT  ```  ```xml @27:1 in java.io.StringReader@e0dc146) \n"
++            + "app/src/main/res/layout/activity_master.xml: invalid XML — processing instructions must not start with xml (position:unknown  @2:1 in java.io.StringReader@ee2cf07) \n"
++            + "Preserve every unaffected file. Fix these source-validation findings before submitting to the compiler.";
++
++    @Test
++    public void preflightReportNamesBothFilesWithParserLines() {
++        LinkedHashMap<String, List<String>> e = ForgeDiagnosticPatterns.errors(REAL_PREFLIGHT);
++        assertEquals(2, e.size());
++        assertTrue(e.get("app/src/main/AndroidManifest.xml").get(0).startsWith("app/src/main/AndroidManifest.xml:27:1: "));
++        assertTrue(e.get("app/src/main/res/layout/activity_master.xml").get(0).startsWith("app/src/main/res/layout/activity_master.xml:2:1: "));
++    }
++
++    @Test
++    public void looseLinesOutsidePreflightAreNotTargets() {
++        assertTrue(ForgeDiagnosticPatterns.errors("app/src/main/Foo.java: mentioned in passing\n").isEmpty());
++    }
++
++    @Test
++    public void groovySettingsFailureTargetsSettingsGradle() {
++        String log = "* Where:\nSettings file '/home/runner/work/w/w/project/settings.gradle' line: 1\n\n"
++                + "* What went wrong:\nCould not compile settings file '/home/runner/work/w/w/project/settings.gradle'.\n"
++                + "> startup failed:\n  settings file '/home/runner/work/w/w/project/settings.gradle': 1: Unexpected input: 'app/src' @ line 1, column 4.\n";
++        assertTrue(ForgeDiagnosticPatterns.errors(log).containsKey("settings.gradle"));
++    }
++
++    @Test
++    public void buildFileWhereBlockTargetsAppBuildGradle() {
++        String log = "* Where:\nBuild file '/home/runner/work/w/w/app/build.gradle' line: 31\n\n"
++                + "* What went wrong:\nA problem occurred evaluating project ':app'.\n";
++        List<String> facts = ForgeDiagnosticPatterns.errors(log).get("app/build.gradle");
++        assertEquals("app/build.gradle:31: A problem occurred evaluating project ':app'.", facts.get(0));
++    }
++
++    @Test
++    public void existingCompilerFormatsStillWork() {
++        String log = "/home/runner/work/w/w/project/app/src/main/java/com/x/MainActivity.java:40: error: cannot find symbol\n"
++                + "e: file:///home/runner/work/w/w/project/app/build.gradle.kts:31:13: Unresolved reference: shrinking\n";
++        LinkedHashMap<String, List<String>> e = ForgeDiagnosticPatterns.errors(log);
++        assertTrue(e.containsKey("app/src/main/java/com/x/MainActivity.java"));
++        assertTrue(e.containsKey("app/build.gradle.kts"));
++    }
++
++    @Test
++    public void relativeHandlesWorkerPaths() {
++        assertEquals("app/build.gradle", ForgeDiagnosticPatterns.relative("/home/runner/work/w/w/project/app/build.gradle"));
++        assertEquals("settings.gradle", ForgeDiagnosticPatterns.relative("/home/runner/work/w/w/settings.gradle"));
++        assertEquals("app/build.gradle", ForgeDiagnosticPatterns.relative("/home/src/work/app/build.gradle"));
++    }
++}
+--- /dev/null
++++ b/app/src/test/java/com/ronin/vanta/ForgeSourceGuardTest.java
+@@ -0,0 +1,145 @@
++package com.ronin.vanta;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertTrue;
++import static org.junit.Assert.fail;
++
++import java.util.List;
++import org.junit.Test;
++
++/** Fixtures are trimmed from real Forge output (Vanta 0.18.1-rc1, tasks ca5d8ab3 and 4a564958). */
++public class ForgeSourceGuardTest {
++
++    private static final String PKG = "app/src/main/java/com/ronin/generated/pa4dce5f62877/";
++
++    private static final String GOOD_MANIFEST = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
++            + "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n"
++            + "    <application android:label=\"@string/app_name\">\n"
++            + "        <activity android:name=\".MainActivity\" android:exported=\"true\"/>\n"
++            + "    </application>\n"
++            + "</manifest>\n";
++
++    private static final String GOOD_ACTIVITY = "// " + PKG + "MainActivity.java\n"
++            + "package com.ronin.generated.pa4dce5f62877;\n\n"
++            + "import androidx.appcompat.app.AppCompatActivity;\n\n"
++            + "public class MainActivity extends AppCompatActivity {\n}\n";
++
++    private static final String GOOD_SETTINGS = "pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\n"
++            + "rootProject.name = 'ForgeAndroid'\n"
++            + "include ':app'\n";
++
++    private static boolean rejected(String path, String content) {
++        return !ForgeSourceGuard.inspect(path, content).isEmpty();
++    }
++
++    @Test
++    public void cleanFilesPass() {
++        assertFalse(rejected("app/src/main/AndroidManifest.xml", GOOD_MANIFEST));
++        assertFalse("a comment naming the file itself is allowed", rejected(PKG + "MainActivity.java", GOOD_ACTIVITY));
++        assertFalse(rejected("settings.gradle", GOOD_SETTINGS));
++        assertFalse(rejected("settings.gradle.kts", "include(\":app\")\n"));
++        assertFalse(rejected("app/build.gradle", "plugins { id 'com.android.application' }\napply from: 'vanta-quality.gradle'\n"));
++        assertFalse(rejected("gradle.properties", "android.useAndroidX=true\n"));
++    }
++
++    @Test
++    public void javaJsonFieldAccessIsNotMistakenForAFileHeader() {
++        String valid = "package com.ronin.generated.pa4dce5f62877;\n"
++                + "public class Example {\n"
++                + "    void update(Job j, Job job) {\n"
++                + "        j.json\n"
++                + "            .put(\"ready\", true);\n"
++                + "        job.json\n"
++                + "            .put(\"ready\", false);\n"
++                + "    }\n"
++                + "}\n";
++        assertFalse(rejected(PKG + "Example.java", valid));
++    }
++
++    @Test
++    public void unknownTypesAreIgnored() {
++        assertFalse(rejected("README.md", "```sh\n./gradlew assembleRelease\n```\n"));
++    }
++
++    @Test
++    public void fenceAfterManifestIsRejectedAtItsLine() {
++        String merged = GOOD_MANIFEST + "```\n\n```xml\n<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<RelativeLayout/>\n```\n";
++        List<ForgeSourceGuard.Finding> found = ForgeSourceGuard.inspect("app/src/main/AndroidManifest.xml", merged);
++        assertFalse(found.isEmpty());
++        assertEquals(7, found.get(0).line);
++    }
++
++    @Test
++    public void layoutWithPathHeadersIsRejected() {
++        String merged = "<!-- app/src/main/AndroidManifest.xml -->\n" + GOOD_MANIFEST
++                + "\n<!-- app/src/main/res/layout/activity_master.xml -->\n<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<RelativeLayout/>\n";
++        assertTrue(rejected("app/src/main/res/layout/activity_master.xml", merged));
++    }
++
++    @Test
++    public void xmlInSettingsGradleIsRejected() {
++        String wrong = "app/src/main/res/values/dimens.xml\n<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n"
++                + "    <dimen name=\"text_size_title\">24dp</dimen>\n</resources>";
++        assertTrue(rejected("settings.gradle", wrong));
++    }
++
++    @Test
++    public void gradleInJavaFileIsRejected() {
++        String wrong = "// QWEN-3.5-9B GENERATED: BUILD ARTIFACT ASSET\nSOURCE FILE: app/build.gradle.kts\n\n"
++                + "plugins {\n    id(\"com.android.application\")\n}\n";
++        assertTrue(rejected(PKG + "App.java", wrong));
++    }
++
++    @Test
++    public void wrongPublicClassIsRejected() {
++        String wrong = "package com.ronin.generated.pa4dce5f62877;\n\npublic class MainActivity {\n}\n";
++        assertTrue(rejected("app/src/androidTest/java/com/ronin/generated/pa4dce5f62877/MainActivityTest.java", wrong));
++    }
++
++    @Test
++    public void wrongPackageIsRejected() {
++        String wrong = "package com.example.other;\n\npublic class MainActivity {\n}\n";
++        assertTrue(rejected(PKG + "MainActivity.java", wrong));
++    }
++
++    @Test
++    public void echoedContextSeparatorIsRejected() {
++        assertTrue(rejected("app/build.gradle", "--- settings.gradle ---\ninclude ':app'\n"));
++    }
++
++    @Test
++    public void settingsWithoutAppModuleIsRejected() {
++        assertTrue(rejected("settings.gradle", "rootProject.name = 'x'\n"));
++    }
++
++    @Test
++    public void copiedInstructionLabelIsRejected() {
++        assertTrue(rejected(PKG + "MainActivity.java", "// SOURCE FILE: " + PKG + "MainActivity.java\n" + GOOD_ACTIVITY));
++    }
++
++    @Test
++    public void requireCleanDiscardsTheFilesSavedChunks() {
++        try {
++            ForgeSourceGuard.requireClean("settings.gradle", "<?xml version=\"1.0\"?>\n<resources/>\n", "author_file_0");
++            fail("expected InvalidOutput");
++        } catch (ForgeRecovery.InvalidOutput expected) {
++            assertTrue(expected.getMessage().startsWith("AUTHORED_FILE_REJECTED"));
++            assertTrue(expected.discard.contains("author_file_0"));
++            assertTrue(expected.discard.contains("author_file_0_chunk_0"));
++            assertTrue(expected.discard.contains("author_file_0_part_3_expanded_1_output_limit"));
++        }
++    }
++
++    @Test
++    public void requireCleanAcceptsGoodFile() throws Exception {
++        ForgeSourceGuard.requireClean("app/src/main/AndroidManifest.xml", GOOD_MANIFEST, "author_file_3");
++    }
++
++    @Test
++    public void findingsUseRepairTargetFormat() {
++        List<String> lines = ForgeSourceGuard.findings("settings.gradle", "rootProject.name = 'x'\n", true);
++        assertEquals("settings.gradle:1: settings script does not include the ':app' module", lines.get(0));
++        assertTrue(ForgeDiagnosticPatterns.errors(ForgeDiagnosticPatterns.PREFLIGHT_MARKER + "\n" + lines.get(0)).containsKey("settings.gradle"));
++    }
++}
+--- /dev/null
++++ b/docs/LOCAL-VALIDATION.md
+@@ -0,0 +1,11 @@
++# Local verification — Vanta 0.18.1-rc2
++
++- The two new production classes compiled with JDK 17 and minimal stand-ins for the Android project dependencies (ForgeRecovery.InvalidOutput and Errors.redact).
++- 21 provided/regression Java fixture tests passed with 0 failures through a local Java reflection harness. This test harness used minimal compatible JUnit annotation/assertion substitutes, because JUnit JARs cannot be downloaded in this environment; it is not the Gradle `testDebugUnitTest` task.
++- Guard scanned 192 Java/XML/Gradle/properties files in the integrated source with XML parsing disabled (the normal preflight already handles XML validation separately). 0 structural guard findings after correcting a false-positive for legitimate `j.json`/`job.json` Java field accesses.
++
++NOT VERIFIED HERE:
++- Full Android app compile / instrumentation / runtime / APK update (Android SDK 36 and Gradle artifacts unavailable here).
++- Release APK signing or certificate match (original installed Vanta signing private key is not included in the source/project or available here).
++
++DO NOT uninstall your installed Vanta just to install an APK signed with a different key; that would risk its saved app data. Always reuse the exact original signing certificate and installed application ID, and verify the installed versionCode is below 182.
+--- /dev/null
++++ b/docs/local-validation.log
+@@ -0,0 +1,37 @@
++PASS com.ronin.vanta.ForgeSourceGuardTest.layoutWithPathHeadersIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.cleanFilesPass
++PASS com.ronin.vanta.ForgeSourceGuardTest.unknownTypesAreIgnored
++PASS com.ronin.vanta.ForgeSourceGuardTest.fenceAfterManifestIsRejectedAtItsLine
++PASS com.ronin.vanta.ForgeSourceGuardTest.xmlInSettingsGradleIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.gradleInJavaFileIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.wrongPublicClassIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.wrongPackageIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.echoedContextSeparatorIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.settingsWithoutAppModuleIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.copiedInstructionLabelIsRejected
++PASS com.ronin.vanta.ForgeSourceGuardTest.requireCleanDiscardsTheFilesSavedChunks
++PASS com.ronin.vanta.ForgeSourceGuardTest.requireCleanAcceptsGoodFile
++PASS com.ronin.vanta.ForgeSourceGuardTest.findingsUseRepairTargetFormat
++PASS com.ronin.vanta.ForgeDiagnosticPatternsTest.preflightReportNamesBothFilesWithParserLines
++PASS com.ronin.vanta.ForgeDiagnosticPatternsTest.looseLinesOutsidePreflightAreNotTargets
++PASS com.ronin.vanta.ForgeDiagnosticPatternsTest.groovySettingsFailureTargetsSettingsGradle
++PASS com.ronin.vanta.ForgeDiagnosticPatternsTest.buildFileWhereBlockTargetsAppBuildGradle
++PASS com.ronin.vanta.ForgeDiagnosticPatternsTest.existingCompilerFormatsStillWork
++PASS com.ronin.vanta.ForgeDiagnosticPatternsTest.relativeHandlesWorkerPaths
++SUMMARY: 20 passed; 0 failed
++app/src/androidTest/java/com/ronin/vanta/ConnectionRecoveryDeviceTest.java:51: bare file path 'job.json' as a line of source ? content for another file was merged in here
++app/src/androidTest/java/com/ronin/vanta/NetworkRecoveryDeviceTest.java:31: bare file path 'job.json' as a line of source ? content for another file was merged in here
++app/src/test/java/com/ronin/vanta/ForgeReliabilityTest.java:142: bare file path 'j.json' as a line of source ? content for another file was merged in here
++app/src/test/java/com/ronin/vanta/ForgeReliabilityTest.java:152: bare file path 'j.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/ForgeRecoveryController.java:372: bare file path 'j.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/JobEngine.java:437: bare file path 'job.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/JobEngine.java:473: bare file path 'job.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/JobEngine.java:570: bare file path 'job.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/JobEngine.java:766: bare file path 'j.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/VantaHub.java:1702: bare file path 'j.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/JobOperations.java:209: bare file path 'j.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/JobOperations.java:1329: bare file path 'j.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/ForgeTransportRecovery.java:111: bare file path 'job.json' as a line of source ? content for another file was merged in here
++app/src/main/java/com/ronin/vanta/ForgeTransportRecovery.java:144: bare file path 'job.json' as a line of source ? content for another file was merged in here
++AUDIT: 192 source/config files checked, 14 findings
++AUDIT: 192 source/config files checked; 0 false-positive findings
