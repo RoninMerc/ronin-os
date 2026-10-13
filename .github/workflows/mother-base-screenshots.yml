@@ -1,0 +1,38 @@
+name: Capture Mother Base screenshots
+on:
+  push:
+    branches: [trl-mother-base-v1]
+    paths: ['.github/workflows/mother-base-screenshots.yml', 'mother-base/capture-screenshots.py']
+permissions:
+  contents: write
+jobs:
+  capture:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: '8.0.x'}
+      - name: Add capture harness only in build runner
+        run: python mother-base/capture-screenshots.py
+      - name: Build and capture real Windows controls
+        shell: pwsh
+        run: |
+          dotnet publish mother-base/TRL.MotherBase.csproj -c Release -r win-x64 --self-contained true -o mother-base/publish
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+          $process = Start-Process mother-base/publish/TRL-Mother-Base.exe -ArgumentList '--screenshots' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Capture failed" }
+          if ((Get-ChildItem mother-base/screenshots/*.png).Count -ne 4) { throw "Missing screenshots" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mother-Base-Screenshots
+          path: mother-base/screenshots/*.png
+      - name: Save sample screenshots without changing released app
+        shell: pwsh
+        run: |
+          git restore mother-base/Program.cs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mother-base/screenshots/*.png
+          git commit -m "Add actual Windows interface screenshots with sample data [skip ci]"
+          git push origin HEAD:trl-mother-base-v1
