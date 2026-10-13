@@ -48,6 +48,7 @@ final class TabletDashboard {
  private boolean resumed,closed,loading,positioned,userPanned;
  private long nextFleet,lastConnection,localStamp;
  private String error="",checkpointSignature="",activeCheckpoint="";
+ private AlertDialog settingsDialog;
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final Runnable poll=()->{if(!closed&&resumed){refresh();schedule();}};
  static boolean enabled(Activity a){return a.getResources().getConfiguration().smallestScreenWidthDp>=600;}
@@ -112,7 +113,7 @@ final class TabletDashboard {
  private Button button(String s,Runnable run){Button b=new Button(activity);b.setText(s);b.setAllCaps(false);b.setTextColor(WHITE);b.setTextSize(13);b.setPadding(dp(8),0,dp(8),0);b.setMinHeight(dp(48));b.setMinWidth(dp(48));b.setBackground(background(PANEL,LINE,8));b.setOnClickListener(v->run.run());return b;}
  void resume(){if(closed||resumed)return;resumed=true;map.onResume();nextFleet=0;handler.removeCallbacks(poll);handler.post(poll);}
  void pause(){resumed=false;handler.removeCallbacks(poll);map.onPause();}
- void close(){if(closed)return;closed=true;pause();handler.removeCallbacksAndMessages(null);checkpoints.closeTabletQr();map.onDetach();}
+ void close(){if(closed)return;closed=true;pause();handler.removeCallbacksAndMessages(null);checkpoints.closeTabletQr();if(settingsDialog!=null)settingsDialog.dismiss();map.onDetach();}
  private void schedule(){handler.removeCallbacks(poll);if(resumed&&!closed)handler.postDelayed(poll,1000);}
  void requestFleet(){nextFleet=0;refresh();}
  void refresh(){
@@ -133,13 +134,13 @@ final class TabletDashboard {
   for(Map.Entry<Integer,FleetRelay.Patrol> x:received.entrySet()){
    if(x.getKey()<1||x.getKey()>3||x.getValue()==null)continue;
    FleetRelay.Patrol p=x.getValue(),previous=fleet.get(x.getKey());
-   if(p.hasFix&&previous!=null&&previous.hasFix&&p.time<previous.time)continue;
-   if(!p.hasFix&&previous!=null&&previous.hasFix){p.lat=previous.lat;p.lon=previous.lon;p.accuracy=previous.accuracy;p.time=previous.time;p.hasFix=true;p.state=(p.onDuty?"GPS unavailable — retained":"Off duty — retained");}
+   if(p.hasFix&&previous!=null&&previous.hasFix&&p.time<previous.time){previous.onDuty=p.onDuty;previous.retained=true;fleet.put(x.getKey(),previous);continue;}
+   if(!p.hasFix&&previous!=null&&previous.hasFix){p.lat=previous.lat;p.lon=previous.lon;p.accuracy=previous.accuracy;p.time=previous.time;p.hasFix=true;p.retained=true;p.state=(p.onDuty?"GPS unavailable — retained":"Off duty — retained");}
    fleet.put(x.getKey(),p);
   }
  }
  private void render(){
-  if(closed)return;if(!FleetRelay.master(activity)){fleet.clear();receivedSlots.clear();}long now=System.currentTimeMillis();
+  if(closed)return;if(!FleetRelay.master(activity)){fleet.clear();receivedSlots.clear();for(int i=0;i<3;i++)if(patrolMarkers[i]!=null){patrolMarkers[i].closeInfoWindow();map.getOverlays().remove(patrolMarkers[i]);patrolMarkers[i]=null;}}long now=System.currentTimeMillis();
   fleetStatus.setText((connected()?"FLEET CONNECTED":"FLEET "+(loading?"CONNECTING":"OFFLINE / CACHED"))+" · "+TabletSettings.refresh(activity)+"s\n"+(lastConnection>0?"Last received "+time(lastConnection):"No fleet response yet"));
   if(!FleetRelay.configured(activity))fleetStatus.setText("DEVICE SETUP REQUIRED — USE SETTINGS");
   else if(!FleetRelay.master(activity))fleetStatus.setText("FULL FLEET VIEW REQUIRES MASTER / SUPERVISOR ROLE");
@@ -155,10 +156,10 @@ final class TabletDashboard {
    guardActivity[i].setText(unused?"Unused patrol slot":o==null?"Waiting for activity":o.activity()+" · "+o.locationLine());
    guardTime[i].setText(o==null?"Activity time unavailable":"Activity: "+(o.recordedAt>0?time(o.recordedAt):o.recordedText));
    guardProgress[i].setText(unused?"Verified scans: N/A":"Verified scans this shift: "+engine.checkpoints.total(g));
-   String status=unused?"N/A":p==null?"GPS UNAVAILABLE":!p.onDuty?"OFF DUTY":!p.hasFix?"GPS UNAVAILABLE":!connected()||!receivedSlots.contains(i+1)||!TabletPolicy.fresh(p.time,now)?"STALE GPS — "+age(p.time):p.state+" · GPS "+age(p.time);
-   guardState[i].setText(status);guardState[i].setTextColor(unused?MUTED:p!=null&&p.onDuty&&p.hasFix&&connected()&&receivedSlots.contains(i+1)&&TabletPolicy.fresh(p.time,now)?COLOURS[i]:AMBER);
+   String status=unused?"N/A":p==null?"GPS UNAVAILABLE":!p.onDuty?"OFF DUTY":!p.hasFix?"GPS UNAVAILABLE":!connected()||!receivedSlots.contains(i+1)||p.retained||!TabletPolicy.fresh(p.time,now)?"STALE GPS — "+age(p.time):p.state+" · GPS "+age(p.time);
+   guardState[i].setText(status);guardState[i].setTextColor(unused?MUTED:p!=null&&p.onDuty&&p.hasFix&&connected()&&receivedSlots.contains(i+1)&&!p.retained&&TabletPolicy.fresh(p.time,now)?COLOURS[i]:AMBER);
    if(p!=null&&p.hasFix&&TabletPolicy.point(p.lat,p.lon)){
-    boolean stale=!connected()||!receivedSlots.contains(i+1)||!TabletPolicy.fresh(p.time,now)||!p.onDuty;
+    boolean stale=!connected()||!receivedSlots.contains(i+1)||p.retained||!TabletPolicy.fresh(p.time,now)||!p.onDuty;
     Marker marker=patrolMarkers[i];if(marker==null){marker=new Marker(map);marker.setAnchor(Marker.ANCHOR_CENTER,Marker.ANCHOR_CENTER);map.getOverlays().add(marker);patrolMarkers[i]=marker;}
     GeoPoint point=new GeoPoint(p.lat,p.lon);if(!point.equals(marker.getPosition()))marker.setPosition(point);
     marker.setTitle("Patrol "+(i+1)+(stale?" — STALE / OFF DUTY":" — "+p.state));marker.setSnippet("Fix "+time(p.time)+" · "+accuracy(p.accuracy));marker.setIcon(icon("P"+(i+1),stale?0xff737887:COLOURS[i],44));
@@ -240,7 +241,7 @@ final class TabletDashboard {
  private String age(long time){long s=TabletPolicy.age(time,System.currentTimeMillis())/1000;return s>86400?"age unknown":s<60?s+"s ago":s/60+"m ago";}
  private static float distance(double a,double o,double b,double p){float[] r=new float[1];android.location.Location.distanceBetween(a,o,b,p,r);return r[0];}
  private void saveCache(){if(!FleetRelay.master(activity))return;try{JSONArray rows=new JSONArray();for(FleetRelay.Patrol p:fleet.values())if(p.hasFix)rows.put(new JSONObject().put("number",p.number).put("lat",p.lat).put("lon",p.lon).put("accuracy",Float.isFinite(p.accuracy)?p.accuracy:JSONObject.NULL).put("time",p.time).put("duty",p.onDuty).put("state",p.state));TabletSettings.prefs(activity).edit().putString("fleet_cache",rows.toString()).putLong("fleet_last_connection",lastConnection).apply();}catch(Exception ignored){}}
- private void restoreCache(){if(!FleetRelay.configured(activity)||!FleetRelay.master(activity))return;try{JSONArray a=new JSONArray(TabletSettings.prefs(activity).getString("fleet_cache","[]"));for(int i=0;i<a.length();i++){JSONObject o=a.getJSONObject(i);FleetRelay.Patrol p=new FleetRelay.Patrol();p.number=o.getInt("number");p.lat=o.getDouble("lat");p.lon=o.getDouble("lon");p.time=o.getLong("time");p.accuracy=(float)o.optDouble("accuracy");p.onDuty=o.optBoolean("duty");p.state="Retained location";p.hasFix=p.time>0&&TabletPolicy.point(p.lat,p.lon);if(p.number>=1&&p.number<=3&&p.hasFix)fleet.put(p.number,p);}error="Cached until relay reconnects";lastConnection=TabletSettings.prefs(activity).getLong("fleet_last_connection",0);}catch(Exception ignored){}}
+ private void restoreCache(){if(!FleetRelay.configured(activity)||!FleetRelay.master(activity))return;try{JSONArray a=new JSONArray(TabletSettings.prefs(activity).getString("fleet_cache","[]"));for(int i=0;i<a.length();i++){JSONObject o=a.getJSONObject(i);FleetRelay.Patrol p=new FleetRelay.Patrol();p.number=o.getInt("number");p.lat=o.getDouble("lat");p.lon=o.getDouble("lon");p.time=o.getLong("time");p.accuracy=(float)o.optDouble("accuracy");p.onDuty=o.optBoolean("duty");p.state="Retained location";p.retained=true;p.hasFix=p.time>0&&TabletPolicy.point(p.lat,p.lon);if(p.number>=1&&p.number<=3&&p.hasFix)fleet.put(p.number,p);}error="Cached until relay reconnects";lastConnection=TabletSettings.prefs(activity).getLong("fleet_last_connection",0);}catch(Exception ignored){}}
  void settings(){
   LinearLayout form=column();form.setPadding(dp(18),dp(10),dp(18),dp(10));
   section(form,"GENERAL");
@@ -276,7 +277,7 @@ final class TabletDashboard {
    TabletSettings.saveRadius(activity,idx!=0,r);
    TabletSettings.prefs(activity).edit().putInt("fleet_seconds",refresh.getSelectedItemPosition()==1?30:refresh.getSelectedItemPosition()==2?60:15).putBoolean("follow_local",follow.isChecked()).putBoolean("proximity_alert",alert.isChecked()).apply();
    nextFleet=0;dialog.dismiss();refresh();
-  }catch(Exception e){Toast.makeText(activity,"Enter a valid distance from 1 to 500 metres.",Toast.LENGTH_LONG).show();}}));dialog.show();
+  }catch(Exception e){Toast.makeText(activity,"Enter a valid distance from 1 to 500 metres.",Toast.LENGTH_LONG).show();}}));settingsDialog=dialog;dialog.setOnDismissListener(x->settingsDialog=null);dialog.show();
  }
  private void section(LinearLayout f,String label){TextView t=text(label,12,RED,true);t.setPadding(0,dp(20),0,dp(8));f.addView(t);}
  private void item(LinearLayout f,String label,Runnable action){Button b=button(label,action);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(50));lp.bottomMargin=dp(5);f.addView(b,lp);}

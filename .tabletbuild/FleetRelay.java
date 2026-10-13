@@ -17,7 +17,7 @@ public final class FleetRelay {
     private static final ExecutorService IO=Executors.newSingleThreadExecutor();
 
     public static final class Patrol {
-        public int number; public boolean onDuty,hasFix; public double lat,lon; public float accuracy,speed; public long time;
+        public int number; public boolean onDuty,hasFix,retained; public double lat,lon; public float accuracy,speed; public long time;
         public String state="Waiting for relay"; public JSONArray segments=new JSONArray();
         public long age(){return TabletPolicy.age(time,System.currentTimeMillis());}
     }
@@ -52,7 +52,7 @@ public final class FleetRelay {
     }
     public static void publishLatest(Context c){
         if(master(c)||!configured(c)||!onDuty(c))return;
-        SharedPreferences p=prefs(c);if(p.getLong("fix_time",0)==0)return;
+        SharedPreferences p=prefs(c);if(p.getLong("fix_time",0)==0||p.getBoolean("mock",false))return;
         JSONObject o=payload(c,Double.longBitsToDouble(p.getLong("lat",0)),Double.longBitsToDouble(p.getLong("lon",0)),
             p.getFloat("accuracy",0),0f,p.getLong("fix_time",0));
         post(c,"/api/fleet",o);

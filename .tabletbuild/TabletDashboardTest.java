@@ -34,6 +34,16 @@ public final class TabletDashboardTest {
  }
  @Test public void SubscriberRoleCannotFetchOrDisplaySupervisorFleet()throws Exception{
   int before=activity.loads;main(()->{FleetRelay.configure(activity,false,1);activity.dashboard.requestFleet();});
-  assertEquals(before,activity.loads);assertTrue(((Map<?,?>)field("fleet")).isEmpty());
+  assertEquals(before,activity.loads);assertTrue(((Map<?,?>)field("fleet")).isEmpty());for(Marker m:(Marker[])field("patrolMarkers"))assertNull(m);
+ }
+
+ @Test public void RelayParserRejectsMissingZeroAndMockCoordinates()throws Exception{
+  Method parser=FleetRelay.class.getDeclaredMethod("parse",String.class,Map.class);parser.setAccessible(true);
+  Map<Integer,FleetRelay.Patrol> out=new LinkedHashMap<>();
+  long now=System.currentTimeMillis();
+  String missing="{\"patrols\":[{\"patrol\":1,\"lon\":153,\"time\":"+now+"},{\"patrol\":2,\"lat\":-27,\"time\":"+now+"},{\"patrol\":3,\"lat\":0,\"lon\":0,\"time\":"+now+"}]}";
+  parser.invoke(null,missing,out);for(FleetRelay.Patrol p:out.values())assertFalse(p.hasFix);
+  out.clear();parser.invoke(null,"{\"patrols\":[{\"patrol\":1,\"lat\":-27.47,\"lon\":153.025,\"time\":"+now+"}]}",out);assertTrue(out.get(1).hasFix);
+  out.clear();parser.invoke(null,"{\"patrols\":[{\"patrol\":1,\"lat\":-27.47,\"lon\":153.025,\"time\":"+now+",\"mock\":true}]}",out);assertFalse(out.get(1).hasFix);
  }
 }
