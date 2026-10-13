@@ -8,7 +8,10 @@ def replace(path,old,new):
  path.write_text(s.replace(old,new,1))
 def rx(path,pattern,change):
  s=path.read_text();s,n=re.subn(pattern,change,s,count=0)
- if n!=1:\n  for line in path.read_text().splitlines():\n   if any(x in line for x in ['Runnable','nextCheckElapsed','onPageFinished','public void run']):print('FILTER_FLOW: '+line[:240])\n  raise RuntimeError('Monitor filter method anchor mismatch: '+str(path)+' '+pattern)
+ if n!=1:
+  for line in path.read_text().splitlines():
+   if any(x in line for x in ['Runnable','nextCheckElapsed','onPageFinished','public void run']):print('FILTER_FLOW: '+line[:240])
+  raise RuntimeError('Monitor filter method anchor mismatch: '+str(path)+' '+pattern)
  path.write_text(s)
 replace(root/'app/build.gradle','versionCode 160','versionCode 161')
 replace(root/'app/build.gradle',"versionName '1.1.50'","versionName '1.1.51'")
