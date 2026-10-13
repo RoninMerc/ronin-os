@@ -164,7 +164,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
-          arch: x86_64
+          arch: ${{ matrix.api == 27 && 'x86' || 'x86_64' }}
           profile: pixel_2
           target: google_apis
           ram-size: 2048M
