@@ -8,10 +8,12 @@ test('missing registration and missing event ID are quarantined',()=>{assert.ok(
 test('unlabelled guesses cannot become registration',()=>assert.ok(normalise({...row,vehicleText:'Silver Toyota ABC123'}).error));
 test('credential and unknown fields are not retained',()=>{const {event}=normalise({...row,password:'forbidden',vehicle:{plate:'ABC123',cookie:'forbidden'}});assert.ok(!JSON.stringify(event).includes('forbidden'));});
 const cp={id:'c1',name:'Gate',group:'PBC1',order:1,lat:-27.4,lon:153,radius:40,photoBase64:''};
-test('checkpoint sets validate range, duplicates and photo formats atomically',()=>{assert.equal(checkpoints([cp]).length,1);for(const rows of [[cp,cp],[{...cp,lat:91}],[{...cp,radius:1}],[{...cp,photoBase64:Buffer.from('not an image').toString('base64')}]])assert.throws(()=>checkpoints(rows));});
+test('checkpoint sets validate range, duplicates and photo formats atomically',()=>{assert.equal(checkpoints([cp]).length,1);for(const rows of [[cp,cp],[{...cp,lat:91}],[{...cp,radius:0}],[{...cp,photoBase64:Buffer.from('not an image').toString('base64')}]])assert.throws(()=>checkpoints(rows));});
 
 test('labelled multiline issue text is parsed without flattening field boundaries',()=>{const {event}=normalise({...row,vehicleText:undefined,issue:'Vehicle Breach - 2nd Warning\nRego: XYZ123\nMake: Ford\nColour: Blue'});assert.equal(event.plate,'XYZ123');assert.equal(event.make,'Ford');});
 
 test('monitor content hashes cannot substitute for a stable source report ID',()=>assert.ok(normalise({...row,sourceReportId:undefined}).error));
 
 test('explicit no-plate placeholders are reviewed rather than stored as registrations',()=>assert.ok(normalise({...row,vehicleText:'Rego: UNKNOWN\nMake: Toyota'}).error));
+
+test('tablet checkpoint distances below 20 metres persist without rounding or clamping',()=>{for(const radius of [1,5,10,15,20,25,50,3.5])assert.equal(checkpoints([{...cp,radius}])[0].radius,radius);for(const radius of [0,-5,501,NaN,Infinity])assert.throws(()=>checkpoints([{...cp,radius}]));});

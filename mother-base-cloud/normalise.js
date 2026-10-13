@@ -32,7 +32,7 @@ function checkpoints(rows){
   const id=clean(a.id,120),name=clean(a.name,180),group=clean(a.group,12);
   const order=a.order,lat=a.lat,lon=a.lon,radius=a.radius;
   if(!id||id.length!==String(a.id).trim().length||!name||seen.has(id)||!['PBC1','PBC2','PBC3'].includes(group))throw Error('Invalid checkpoint ID, name or group');
-  if(!Number.isInteger(order)||order<0||order>10000||!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||Math.abs(lon)>180||!Number.isFinite(radius)||radius<10||radius>500)throw Error('Invalid checkpoint order, GPS or distance');
+  if(!Number.isInteger(order)||order<0||order>10000||!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||Math.abs(lon)>180||!Number.isFinite(radius)||radius<1||radius>500)throw Error('Invalid checkpoint order, GPS or distance');
   const photoBase64=typeof a.photoBase64==='string'?a.photoBase64:'';
   if(photoBase64.length>900000||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(photoBase64))throw Error('Invalid QR photo');
   if(photoBase64){
