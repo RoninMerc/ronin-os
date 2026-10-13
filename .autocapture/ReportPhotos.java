@@ -33,7 +33,7 @@ final class ReportPhotos {
    if(!allowed(current))throw new IOException("Unsupported photo host or route");
    javax.net.ssl.HttpsURLConnection con=(javax.net.ssl.HttpsURLConnection)new URL(current).openConnection();
    con.setInstanceFollowRedirects(false);con.setConnectTimeout(15000);con.setReadTimeout(25000);con.setUseCaches(false);
-   if(cookies!=null)con.setRequestProperty("Cookie",cookies);con.setRequestProperty("Referer",PatrolEngine.MONITOR);
+   if(cookies!=null&&new URL(current).getHost().equalsIgnoreCase("trlsecurity.silvertracker.net"))con.setRequestProperty("Cookie",cookies);con.setRequestProperty("Referer",PatrolEngine.MONITOR);
    try{
     int status=con.getResponseCode();
     if(status>=300&&status<400){current=new URL(new URL(current),con.getHeaderField("Location")).toString();continue;}

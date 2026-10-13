@@ -74,6 +74,9 @@ jobs:
       - name: Compile signed APK and run existing plus tablet unit tests
         working-directory: /tmp/patrol-v134
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest wrapper --gradle-version 8.13
+      - name: Validate training export helper syntax
+        run: |
+          pwsh -NoProfile -Command '$trlExportTokens=$null; $trlExportErrors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD ".autocapture/Export-TRL-Training-Photos.ps1"),[ref]$trlExportTokens,[ref]$trlExportErrors) > $null; if($trlExportErrors.Count -gt 0){$trlExportErrors | Format-List; exit 1}'
       - name: Verify real APK and original signing certificate
         run: |
           mkdir -p /tmp/tablet-release /tmp/tablet-device

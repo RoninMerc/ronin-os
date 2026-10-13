@@ -32,7 +32,8 @@ public final class AutoCaptureFlowTest {
    engine.webView().loadUrl(PatrolEngine.MONITOR);
   });
   Thread.sleep(500);a=(MainActivity)ins.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));ins.waitForIdleSync();
-  Method show=MainActivity.class.getDeclaredMethod("showBrowser");show.setAccessible(true);ins.runOnMainSync(()->{try{show.invoke(a);}catch(Exception e){throw new RuntimeException(e);}});ins.waitForIdleSync();
+  for(int attempt=0;attempt<40;attempt++){ins.runOnMainSync(()->{for(Activity active:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(active instanceof MainActivity&&!active.isFinishing())a=(MainActivity)active;});Thread.sleep(100);}
+  Method show=MainActivity.class.getDeclaredMethod("showBrowser");show.setAccessible(true);ins.runOnMainSync(()->{try{show.invoke(a);engine.webView().setWebViewClient(new WebViewClient(){@Override public WebResourceResponse shouldInterceptRequest(WebView w,WebResourceRequest r){return response(r);}@Override public void onPageFinished(WebView w,String url){MonitorFilterUi.pageReady(w);}});engine.webView().loadUrl(PatrolEngine.MONITOR);}catch(Exception e){throw new RuntimeException(e);}});ins.waitForIdleSync();
  }
  @After public void stop(){ins.runOnMainSync(()->{AutoCaptureJob.stop(a);engine.stopRuntime("TEST_END","Synthetic capture fixture complete");SilverTrackVehicleCollector.resetForDebug();CaptureHooks.pages=null;CaptureHooks.poster=null;new MasterFeedSecrets(c).clear();a.finish();});ins.waitForIdleSync();}
  WebResourceResponse response(WebResourceRequest r){
@@ -46,20 +47,28 @@ public final class AutoCaptureFlowTest {
    body="<h1>ISSUE MONITOR — SYNTHETIC CAPTURE TEST</h1><table><thead><tr><th>Issue ID</th><th>Property</th><th>Reported Issue</th><th>Created Date</th><th>Created By</th><th>Report</th></tr></thead><tbody><tr><td>"+id+"</td><td>Synthetic Property</td><td>Parking Breach - 1st Warning</td><td>14/07/2026 06:00</td><td>Synthetic Guard</td><td><a href='IssueDetails.aspx?IssueID="+id+"'>View</a></td></tr></tbody></table><span aria-current='page'>"+(second?"2":"1")+"</span>"+next;
   }
   if(r.isForMainFrame()&&!url.contains("IssueDetails.aspx")&&name.getMethodName().startsWith("TabletCapture")){
+   body=body.replace("<th>Property</th>","").replace("<th>Created Date</th>","").replace("<th>Created By</th>","").replace("<td>Synthetic Property</td>","").replace("<td>14/07/2026 06:00</td>","").replace("<td>Synthetic Guard</td>","");
    String inner=("<html><body>"+body+"</body></html>").replace("&","&amp;").replace("\"","&quot;");
    body="<h1>SYNTHETIC FRAME CAPTURE FIXTURE</h1><iframe style='width:100%;height:650px' srcdoc=\""+inner+"\"></iframe>";
   }
   return new WebResourceResponse("text/html","UTF-8",new ByteArrayInputStream(("<html><body>"+body+"</body></html>").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
  }
+ String js(String value)throws Exception{CountDownLatch done=new CountDownLatch(1);AtomicReference<String> result=new AtomicReference<>();ins.runOnMainSync(()->engine.webView().evaluateJavascript(value,x->{result.set(x);done.countDown();}));assertTrue(done.await(10,TimeUnit.SECONDS));return String.valueOf(new JSONTokener(result.get()).nextValue());}
+ void ready()throws Exception{
+  ByteArrayOutputStream bytes=new ByteArrayOutputStream();try(InputStream in=c.getAssets().open("extract.js")){byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))>0)bytes.write(buffer,0,n);}
+  String reader=bytes.toString("UTF-8").replace("__GUARD_IDS__","[]");
+  for(int i=0;i<100;i++){JSONObject page=new JSONObject(js(CaptureCatalog.wrap(reader)));if(page.getJSONArray("allRows").length()>0)return;Thread.sleep(100);}
+  fail("Synthetic report row not readable: "+js(CaptureCatalog.wrap(reader)));
+ }
  void begin(){ins.runOnMainSync(()->{CaptureQueue.prefs(c).edit().putBoolean("auto_enabled",true).commit();AutoCaptureJob.start(a,engine.webView(),engine.zone(),true);});}
  void done()throws Exception{for(int i=0;i<800;i++){if(!AutoCaptureJob.running()&&CaptureQueue.prefs(c).getString("stage","").startsWith("Finished"))return;Thread.sleep(100);}fail(AutoCaptureJob.status(c));}
  @Test public void TabletCaptureTraversesPagesReadsDetailsAndReceivesVehicleAndPhotoReceipts()throws Exception{
-  begin();done();assertEquals(2,vehicles.size());assertEquals(2,images.size());assertEquals(2,CaptureQueue.count(c,"created"));assertEquals(2,CaptureQueue.count(c,"photos"));assertEquals(0,CaptureQueue.load(c).length());
+  ready();begin();done();assertEquals(AutoCaptureJob.status(c),2,vehicles.size());assertEquals(2,images.size());assertEquals(2,CaptureQueue.count(c,"created"));assertEquals(2,CaptureQueue.count(c,"photos"));assertEquals(0,CaptureQueue.load(c).length());
   for(JSONObject row:vehicles.values()){assertTrue(row.getString("sourceReportId").startsWith("SilverTrack:"));assertTrue(row.has("occurredAt"));assertEquals("Toyota Corolla",row.getJSONObject("vehicle").getString("vehicle"));}
  }
  @Test public void TransientTransportFailuresRetryAndOnlyCountConfirmedImports()throws Exception{
   single=true;failUploads=2;CaptureQueue.prefs(c).edit().putBoolean("capture_photos",false).commit();ins.runOnMainSync(()->engine.webView().reload());Thread.sleep(500);
-  begin();done();assertEquals(1,vehicles.size());assertTrue(posts.get()>=3);assertEquals(1,CaptureQueue.count(c,"created"));assertTrue(CaptureQueue.count(c,"failed")>=2);assertEquals(0,images.size());
+  ready();begin();done();assertEquals(AutoCaptureJob.status(c),1,vehicles.size());assertTrue(posts.get()>=3);assertEquals(1,CaptureQueue.count(c,"created"));assertTrue(CaptureQueue.count(c,"failed")>=2);assertEquals(0,images.size());
  }
  @Test public void PagerRefusesLastPageAndMutatingLinks()throws Exception{
   unsafe=true;ins.runOnMainSync(()->engine.webView().reload());Thread.sleep(500);

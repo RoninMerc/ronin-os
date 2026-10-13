@@ -3,20 +3,22 @@ import android.app.*;import android.content.*;import android.os.*;import android
 final class AutoCaptureJob {
  private static final Handler UI=new Handler(Looper.getMainLooper());private static final Set<String> visited=new HashSet<>();
  private static WeakReference<Activity> activity=new WeakReference<>(null);private static WeakReference<WebView> browser=new WeakReference<>(null);
- private static boolean running,reading,pageDone,waiting;private static long began,nextAt;private static String fingerprint="",beforeNext="",finished="";
+ private static boolean running,reading,pageDone,waiting,rewinding,pendingRewind;private static long began,nextAt;private static String fingerprint="",beforeNext="",finished="";
  private static int stable;private static Context context;private static ZoneId zone;private static int generation;
  static boolean enabled(Context c){return CaptureQueue.prefs(c).getBoolean("auto_enabled",true);}
  static boolean running(){return running;}
- static void bind(Activity a,WebView w,ZoneId z){activity=new WeakReference<>(a);browser=new WeakReference<>(w);context=a.getApplicationContext();zone=z;if(TabletSettings.tablet(a)&&enabled(a))UI.postDelayed(()->{if(activity.get()==a&&!running)start(a,w,z,false);},1600);}
- static void filtersChanged(Activity a,WebView w){if(!TabletSettings.tablet(a)||!enabled(a))return;finished="";pause(a,"Filters changed; waiting for the selected results.");UI.postDelayed(()->{if(activity.get()==a)start(a,w,((PatrolApp)a.getApplication()).engine().zone(),true);},1800);}
+ static void bind(Activity a,WebView w,ZoneId z){activity=new WeakReference<>(a);browser=new WeakReference<>(w);context=a.getApplicationContext();zone=z;if(TabletSettings.tablet(a)&&enabled(a))UI.postDelayed(()->{if(activity.get()==a&&enabled(a)&&!running)start(a,w,z,false);},1600);}
+ static void filtersChanged(Activity a,WebView w){if(!TabletSettings.tablet(a)||!enabled(a))return;finished="";pendingRewind=true;pause(a,"Filters changed; waiting for the selected results.");UI.postDelayed(()->{if(activity.get()==a&&enabled(a))start(a,w,((PatrolApp)a.getApplication()).engine().zone(),true);},1800);}
  static void start(Activity a,WebView w,ZoneId z,boolean explicit){
   if(!TabletSettings.tablet(a)){VehicleCaptureUi.showSinglePage(a,((PatrolApp)a.getApplication()).engine());return;}
   activity=new WeakReference<>(a);browser=new WeakReference<>(w);context=a.getApplicationContext();zone=z;
   if(!MasterFeedClient.master(a)){CaptureQueue.stage(a,"Waiting: this tablet must be the authorised Master collector.");return;}
   if(!MasterFeedClient.ready(a,true)){CaptureQueue.stage(a,"Waiting: configure the Publisher key on this Master collector.");return;}
   if(!PatrolEngine.monitorPage(w.getUrl())){CaptureQueue.stage(a,"Waiting: sign into the SilverTrack Issue Monitor.");return;}
+  if(!((PatrolApp)a.getApplication()).engine().browserVisible||a.isFinishing()){CaptureQueue.stage(a,"Paused: open the tablet SilverTrack browser to resume.");return;}
   if(running)return;
   if(!explicit&&!finished.isEmpty()){w.evaluateJavascript("JSON.stringify("+CapturePager.SCRIPT+"(false))",x->{try{JSONObject d=new JSONObject(String.valueOf(new JSONTokener(x).nextValue()));if(!finished.equals(d.optString("fingerprint")))start(a,w,z,true);}catch(Exception ignored){}});return;}
+  rewinding=pendingRewind||!explicit;pendingRewind=false;
   running=true;reading=false;pageDone=false;waiting=false;stable=0;fingerprint="";beforeNext="";visited.clear();began=SystemClock.elapsedRealtime();nextAt=0;++generation;
   CaptureQueue.prefs(a).edit().putBoolean("auto_enabled",true).putBoolean("job_active",true).commit();CaptureQueue.stage(a,"Reading selected SilverTrack results automatically…");
   if(explicit)SilverTrackVehicleCollector.retryFailures(a);
@@ -44,6 +46,11 @@ final class AutoCaptureJob {
      if(!key.equals(beforeNext)&&!key.equals("#")){waiting=false;pageDone=false;reading=false;fingerprint="";stable=0;began=SystemClock.elapsedRealtime();}
      else{if(SystemClock.elapsedRealtime()-began>30000)pause(a,"Paused: SilverTrack did not load the next page. Resume after its results appear.");schedule(token);return;}
     }
+    if(rewinding){rewinding=false;w.evaluateJavascript("JSON.stringify("+CapturePager.SCRIPT+"(true,true))",x->{
+     if(!running||token!=generation)return;
+     try{JSONObject first=new JSONObject(String.valueOf(new JSONTokener(x).nextValue()));if(first.optBoolean("clicked")){beforeNext=key;waiting=true;began=SystemClock.elapsedRealtime();fingerprint="";stable=0;CaptureQueue.stage(context,"Loading the first selected result page…");}}catch(Exception ignored){}
+     nextAt=SystemClock.elapsedRealtime()+1400;schedule(token);
+    });return;}
     if(!key.equals(fingerprint)){fingerprint=key;stable=0;nextAt=SystemClock.elapsedRealtime()+1200;schedule(token);return;}
     if(++stable<2){schedule(token);return;}
     if(!pageDone){

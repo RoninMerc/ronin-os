@@ -11,7 +11,7 @@ final class VehicleCaptureUi {
   Runnable tick=new Runnable(){public void run(){if(visible[0]){state.setText(AutoCaptureJob.status(a));handler.postDelayed(this,1000);}}};
   android.widget.ScrollView scroll=new android.widget.ScrollView(a);scroll.addView(state);
   AlertDialog dialog=new AlertDialog.Builder(a).setTitle("Automatic parking report sync").setView(scroll).setNegativeButton("Close",null).setNeutralButton("Pause",(d,w)->AutoCaptureJob.stop(a)).setPositiveButton("Resume / retry",null).create();
-  dialog.setOnShowListener(d->{dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{AutoCaptureJob.start(a,engine.webView(),engine.zone(),true);});handler.post(tick);if(!AutoCaptureJob.running())AutoCaptureJob.start(a,engine.webView(),engine.zone(),true);});
+  dialog.setOnShowListener(d->{dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{AutoCaptureJob.start(a,engine.webView(),engine.zone(),true);});handler.post(tick);if(AutoCaptureJob.enabled(a)&&!AutoCaptureJob.running())AutoCaptureJob.start(a,engine.webView(),engine.zone(),false);});
   dialog.setOnDismissListener(d->{visible[0]=false;handler.removeCallbacks(tick);});dialog.show();
  }
  static void showSinglePage(Activity a,PatrolEngine engine){

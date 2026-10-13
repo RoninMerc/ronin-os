@@ -85,7 +85,7 @@ final class SilverTrackVehicleCollector{
      long last=completed.containsKey(key)?completed.get(key):0;
      if(!force&&System.currentTimeMillis()-last<300000){cached++;continue;}if(key.equals(identity))continue;
      boolean queued=false;for(JSONObject q:pending)if(key.equals(q.optString("identity")))queued=true;
-     if(!queued&&pending.size()<180){pending.add(item);accepted++;}
+     if(!queued&&pending.size()<1000){pending.add(item);accepted++;}
     }
     scanNote(c,"Parking rows: "+parkingRows+" · linked reports: "+targets.length()+" · queued: "+accepted+" · already captured: "+cached+" · waiting: "+pending.size()+(targets.length()==0?"\\nNo stable, read-only report links were found. Capture does not follow edit/delete or unidentified actions.":""));
     if(targets.length()==0&&parkingRows>0){CaptureQueue.add(c,"unlinked",parkingRows);CaptureQueue.prefs(c).edit().putString("last","Parking rows found, but no stable read-only detail links could be resolved on this page. No import is claimed.").commit();}
