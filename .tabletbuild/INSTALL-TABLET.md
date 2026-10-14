@@ -1,9 +1,9 @@
-# TRL Patrol Link 1.1.58 — local crash diagnosis and recovery
+# TRL Patrol Link 1.1.59 — ANR worker repair
 
-Install TRL-Patrol-Link-v1.1.58.apk over the existing application. Do not uninstall or clear storage. Original release signing and package remain, preserving saved configuration.
+Install TRL-Patrol-Link-v1.1.59.apk over the existing app. Do not uninstall or clear storage. Original signing and package remain.
 
-Use the app normally. If it crashes, reopen it. A TRL Crash Recovery screen provides Copy crash details and Continue Patrol Link. Copy and paste the technical text into the support chat; it excludes exception messages, keys and report contents. Continue resumes the existing application. The previous report remains in Diagnostics.
+Use Continue Patrol Link if the recovery screen is showing. Feed-key reads and checkpoint-photo processing no longer block the dashboard thread. The TRL tablet design and Phone/Tablet/Auto choices remain.
 
-Android 9+ supported. Tablet mode retains the TRL landscape satellite dashboard; Phone/Tablet/Auto selection remains. All operational integrations and data formats remain. No cloud or database settings changed.
+If the app becomes unresponsive again, reopen it, wait a few seconds for Android's available ANR trace, tap Copy crash details and send that technical text. Only main-thread method names/line numbers are retained. Android may not supply a trace; absence is shown explicitly.
 
-The reported after-dashboard failure was not reproduced from emulator launch checks. This APK collects the specific Java exception or supported Android exit reason needed to diagnose it; successful builds/tests do not confirm that the underlying field fault is resolved.
+Build and synthetic worker tests are not proof that the actual field ANR is resolved. Full source and test results accompany the release. Live fleet/GPS, SilverTrack capture, QR and Ronin Forge remain field checks.
