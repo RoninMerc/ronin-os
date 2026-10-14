@@ -1,4 +1,5 @@
-# Verification scope
-Build results are included in CONFIRMED-TEST-RESULTS.md after the release pipeline succeeds.
-The suite includes retained unit and Android regression tests plus injected browser/map/engine startup failures, interrupted-browser recovery, pairing preservation, and real signed release force-stop/relaunch checks on APIs30 and35.
-Automated GPS/report data are explicitly synthetic. Physical tablet/phone launches, live SilverTrack imports, field GPS and Ronin Forge mirroring remain device verification items.
+# Verification scope — 1.1.58
+
+The release workflow compiles signed/debug/instrumentation APKs, verifies the original certificate, independently compiles the full exported source, and runs existing unit and Android regression checks. See CONFIRMED-TEST-RESULTS.md and individual API transcripts for completed results.
+
+New tests verify diagnostic privacy, original uncaught-handler delegation, and a recovery screen retaining encrypted pairing. GPS/source fixtures are synthetic. Real-device exception, live imports, fleet/GPS, physical QR and Ronin Forge still require field verification. No user crash report is automatically uploaded.

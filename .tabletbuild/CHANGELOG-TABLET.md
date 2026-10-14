@@ -1,16 +1,7 @@
-# 1.1.57 / code169
-- Native TRL startup frame appears before engine, map and embedded browser initialization.
-- Paired Readers display fleet/activity without constructing SilverTrack WebView.
-- Dashboard renderer attachment no longer rebuilds the satellite map on every renderer replacement.
-- Browser construction/renderer failures have a native retry path; incomplete browser/map startup is remembered across process restarts.
-- Engine startup failures show bounded phase/class diagnostics and a retry control, with no credentials or exception messages.
-- Removed offscreen browser preraster allocation during startup; saved sessions and original authentication formats remain intact.
-- Lifecycle callbacks handle deferred initialization and recovery.
-- Retained dark TRL landscape dashboard, satellite imagery, Phone/Tablet/Auto selection, physical QR, fleet/GPS, guard selection, laps, voice, SilverTrack filters, automatic report paging and protected photos.
-No SilverTrack credentials are sent to patrol devices. No cloud service, database or signing key changed.
+# 1.1.58 / code170
 
-- Saved engine/voice state loads on a worker, including foreground-service restarts; Android's foreground notification appears promptly while loading.
+Adds local technical crash diagnostics and a native recovery screen after an unexpected process exit. Copy crash details works without starting monitoring, GPS or the dashboard. Continue restarts normal operation with original settings. Uncaught exceptions still go through Android's original crash handler; no crash is fabricated as successful activity. Diagnostics exclude exception messages, keys, SilverTrack credentials, URLs and report contents. Android 11+ native crash/ANR exit reasons are recorded without traces or descriptions.
 
-- Existing Android 9 minimum retained; startup checks include the oldest supported Android version.
+Monitoring and GPS services pause automatic restart only while an unacknowledged crash is pending. Acknowledgement retains the diagnostic text and changes no pairing, role, checkpoint or voice data. Dashboard observer callbacks are marshalled to the UI thread. Removed unnecessary offscreen preraster allocation for report-detail capture.
 
-- Vehicle report links no longer require String.matchAll; labelled field enumeration avoids Array.flatMap, preserving capture on the Android9 bundled browser.
+Retains the TRL tablet design, satellite map, Phone/Tablet/Auto modes, automatic read-only report paging, protected photos, physical QR, fleet, guard and voice workflows. This is a recovery/diagnostic release; the actual reported device exception has not yet been obtained.

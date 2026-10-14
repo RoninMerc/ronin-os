@@ -1,6 +1,6 @@
 from pathlib import Path
 import shutil,re,json,zipfile,os,xml.etree.ElementTree as E
-original=Path('/tmp/patrol-v134');root=Path('/tmp/tablet-source/TRL-Patrol-Link-v1.1.57')
+original=Path('/tmp/patrol-v134');root=Path('/tmp/tablet-source/TRL-Patrol-Link-v1.1.58')
 root.mkdir(parents=True,exist_ok=True)
 for p in original.rglob('*'):
  rel=p.relative_to(original)
@@ -20,7 +20,7 @@ while True:
  assert depth==0;s=s[:m.start()]+s[i:]
 s=re.sub(r'\bsigningConfig\s+signingConfigs\.\w+[ \t]*;?', '',s);assert not re.search(r'storePassword|keyPassword|storeFile|keyAlias|signingConfigs',s);gradle.write_text(s)
 for name in ['CHANGELOG-TABLET.md','INSTALL-TABLET.md','TABLET-TEST-RESULTS.md']:shutil.copyfile(Path('.tabletbuild')/name,root/name)
-(root/'README.md').write_text("""# TRL Patrol Link v1.1.57 phone/tablet Android project
+(root/'README.md').write_text("""# TRL Patrol Link v1.1.58 phone/tablet Android project
 Open this folder in Android Studio. Use JDK 17, Android SDK/build tools 36, and the included Gradle 8.13 wrapper.
 Linux/macOS: ./gradlew :app:testDebugUnitTest :app:assembleDebug
 Windows: gradlew.bat :app:testDebugUnitTest :app:assembleDebug
@@ -38,11 +38,11 @@ for p in (original/'app/build/test-results').rglob('TEST-*.xml'):
  for t in tree.iter('testsuite'):assert not any(int(t.get(k,'0')) for k in ['failures','errors'])
  tests.extend(c.attrib for c in tree.iter('testcase'))
 assert tests
-provenance={'version':'1.1.57','versionCode':169,'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'jvmTestsPassed':len(tests),'productionSigningKeysIncluded':False,'personalVoiceRecordingsIncluded':False,'syntheticFixtureExcludedFromRelease':True}
+provenance={'version':'1.1.58','versionCode':169,'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'jvmTestsPassed':len(tests),'productionSigningKeysIncluded':False,'personalVoiceRecordingsIncluded':False,'syntheticFixtureExcludedFromRelease':True}
 (root/'BUILD-PROVENANCE.json').write_text(json.dumps(provenance,indent=2))
 (root/'.gitignore').write_text('.gradle/\n**/build/\nlocal.properties\n*.jks\n*.keystore\nkey.properties\nkeystore.properties\n.env\n')
 out=Path('/tmp/tablet-delivery');out.mkdir(parents=True,exist_ok=True)
-with zipfile.ZipFile(out/'TRL-Patrol-Link-v1.1.57-FULL-SOURCE.zip','w',zipfile.ZIP_DEFLATED) as z:
+with zipfile.ZipFile(out/'TRL-Patrol-Link-v1.1.58-FULL-SOURCE.zip','w',zipfile.ZIP_DEFLATED) as z:
  for p in sorted(root.rglob('*')):
   if p.is_file():z.write(p,p.relative_to(root.parent))
 (out/'JVM-TESTS.json').write_text(json.dumps({'passed':len(tests),'testcases':tests},indent=2))
