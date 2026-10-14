@@ -1,0 +1,89 @@
+name: Publish verified Patrol Link 1.1.59
+on:
+  push:
+    branches: [trl-tablet-v1.1.53]
+    paths: ['.github/workflows/publish-v159.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '4a022ebe2353ebe5e9ae16750c7f1c8993639932', fetch-depth: 0}
+      - name: Verify successful device attempts
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python3 - <<'PY'
+          import subprocess,json
+          for job_id in [115635259390,115635259428,115635259474,115637852458]:
+              j=json.loads(subprocess.check_output(['gh','api','repos/RoninMerc/ronin-os/actions/jobs/'+str(job_id)]))
+              assert j['run_id']==38496833863 and j['conclusion']=='success',j
+          r=json.loads(subprocess.check_output(['gh','api','repos/RoninMerc/ronin-os/actions/runs/38496833863']))
+          assert r['head_sha']=='4a022ebe2353ebe5e9ae16750c7f1c8993639932'
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: RoninMerc/ronin-os
+          run-id: 38496833863
+          artifact-ids: '11863907583'
+          path: release
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: RoninMerc/ronin-os
+          run-id: 38496833863
+          artifact-ids: '11864403456,11864253400,11864273037'
+          path: results
+      - name: Fetch successful rerun directly by immutable artifact ID
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python3 - <<'PY'
+          import subprocess,zipfile
+          from pathlib import Path
+          archive=Path('/tmp/api30-success.zip')
+          with archive.open('wb') as out:
+              subprocess.run(['gh','api','repos/RoninMerc/ronin-os/actions/artifacts/11863978336/zip'],stdout=out,check=True)
+          folder=Path('results/Patrol-v159-device-results-30');folder.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(archive) as z:
+              for member in z.infolist():
+                  if member.is_dir():continue
+                  name=Path(member.filename)
+                  assert not name.is_absolute() and '..' not in name.parts
+                  assert name.name.endswith('-tests.txt') or name.name.endswith('-TEST-FIXTURE.png')
+                  target=folder/name.name;target.write_bytes(z.read(member))
+          PY
+      - name: Collect successful attempts and verify delivered files
+        run: |
+          python3 - <<'PY'
+          import json,re,shutil
+          from pathlib import Path
+          out=Path('release');assert json.loads((out/'JVM-TESTS.json').read_text())['passed']==98
+          assert (out/'TRL-Patrol-Link-v1.1.59.apk').is_file()
+          verify=(out/'APK-VERIFY.txt').read_text();assert 'ff91d55288f1a7160e13c1affcdfef9bba89d24b2a74b0e4d7f7e923569e9332' in verify
+          total=0;seen=set()
+          for folder in Path('results').iterdir():
+              api=folder.name.split('-')[-1];assert api in ['28','30','35','36'] and api not in seen;seen.add(api)
+              for p in folder.iterdir():
+                  if p.name.endswith('-tests.txt'):
+                      s=p.read_text();assert 'FAILURES' not in s and 'INSTRUMENTATION_FAILED' not in s
+                      passed=re.findall(r'OK \((\d+) tests?\)',s);assert passed;total+=int(passed[-1])
+                      shutil.copyfile(p,out/('API-'+api+'-'+p.name))
+                  elif p.name.endswith('-TEST-FIXTURE.png'):shutil.copyfile(p,out/p.name)
+          assert seen=={'28','30','35','36'} and total==204,(seen,total)
+          (out/'CONFIRMED-TEST-RESULTS.md').write_text('# Confirmed 1.1.59/code171 verification\n\nSigned/debug/instrumentation APKs and exported full source compiled. Original certificate verified. 98 JVM tests and 204 Android checks passed across APIs 28, 30, 35 and 36. Includes signed upgrades, preserved pairing/UID/guard/checkpoint/voice data, repeated Master/Reader cold launches, Phone/Tablet switching, native satellite dashboard bounds, source/photo transport fixtures, ANR-frame privacy and bounds, and deliberately delayed key/photo workers with responsive UI. Android16 landscape compatibility was verified. Android11 upgrade orientation passed on rerun; the successful attempt is included and the failed original artifact remains in Actions.\n\nThe actual field ANR has not yet been matched to a blocked stack. Known recurring UI-thread crypto/photo work is moved to workers. Copy crash details reads available main-thread ANR methods without raw traces/messages/data. Physical GPS, QR, Ronin Forge and live SilverTrack records need field verification. Screenshots and source/GPS/keys are synthetic fixtures.\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRL-Patrol-Link-v1.1.59-APK-AND-REPORTS
+          path: release
+          retention-days: 30
+      - name: Publish the exact verified binary and source
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          gh release create trl-patrol-link-v1.1.59-anr-ui-workers --repo RoninMerc/ronin-os --target 4a022ebe2353ebe5e9ae16750c7f1c8993639932 --prerelease --title "TRL Patrol Link 1.1.59 — ANR workers and Android16 tablet compatibility" --notes-file .tabletbuild/INSTALL-TABLET.md release/*

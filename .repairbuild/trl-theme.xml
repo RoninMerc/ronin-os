@@ -1,0 +1,10 @@
+<resources>
+ <style name="TRLTheme" parent="android:style/Theme.Material.NoActionBar">
+  <item name="android:colorAccent">#D71920</item><item name="android:colorBackground">#090909</item><item name="android:windowBackground">#090909</item>
+  <item name="android:statusBarColor">#090909</item><item name="android:navigationBarColor">#090909</item><item name="android:windowLightStatusBar">false</item>
+  <item name="android:textColorPrimary">#F7F7F7</item><item name="android:textColorSecondary">#AAAAB0</item><item name="android:alertDialogTheme">@style/TRLDialog</item>
+ </style>
+ <style name="TRLDialog" parent="android:style/Theme.Material.Dialog.Alert">
+  <item name="android:colorAccent">#D71920</item><item name="android:colorBackground">#19191C</item><item name="android:textColorPrimary">#F7F7F7</item><item name="android:textColorSecondary">#AAAAB0</item>
+ </style>
+</resources>
