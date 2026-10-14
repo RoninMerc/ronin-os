@@ -140,7 +140,7 @@ public final class MainActivity extends Activity implements PatrolEngine.Listene
     }
     private LinearLayout card() { LinearLayout c = vertical(); c.setPadding(dp(18),dp(16),dp(18),dp(16)); c.setBackground(background(PANEL,LINE)); return c; }
     private Button button(String label, boolean primary, Runnable action) {
-        Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setTextSize(15); b.setTextColor(primary&&!TabletSettings.tablet(this)?0xff061017:WHITE);
+        Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setTextSize(15); b.setTextColor(primary&&!CrashReport.pending(this)&&!TabletSettings.tablet(this)?0xff061017:WHITE);
         b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL)); b.setBackground(background(primary ? ACCENT : PANEL, primary ? 0 : LINE));
         b.setPadding(dp(12),dp(12),dp(12),dp(12)); b.setMinHeight(dp(52)); b.setOnClickListener(v->action.run()); return b;
     }
