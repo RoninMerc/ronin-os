@@ -305,9 +305,11 @@ public final class CheckpointProximityUi {
                 JSONArray remote=data==null?null:data.optJSONArray("checkpoints");
                 if(remote==null||remote.length()==0){state.setText("Relay is reachable, but there is no shared checkpoint set yet.");return;}
                 long received=data.optLong("receivedAt",System.currentTimeMillis());
-                applyRemote(remote,received);
-                state.setText("Downloaded "+remote.length()+" checkpoints. Local set now has "+mappedCount()+" mapped checkpoints.");
-                Toast.makeText(activity,"Shared checkpoints loaded onto this phone.",Toast.LENGTH_LONG).show();
+                state.setText("Applying shared checkpoint photos…");
+                applyRemote(remote,received,()->{
+                    state.setText("Downloaded "+remote.length()+" checkpoints. Local set now has "+mappedCount()+" mapped checkpoints.");
+                    Toast.makeText(activity,"Shared checkpoints loaded onto this phone.",Toast.LENGTH_LONG).show();
+                });
             });
         }));
 
@@ -355,7 +357,9 @@ public final class CheckpointProximityUi {
         }));d.show();
     }
 
-    private void applyRemote(JSONArray remote,long receivedAt){
+    private void applyRemote(JSONArray remote,long receivedAt){applyRemote(remote,receivedAt,()->{});}
+    private void applyRemote(JSONArray remote,long receivedAt,Runnable ready){
+        if(receivedAt<=prefs.getLong("checkpoint_sync_received_at",0)){ready.run();return;}
         PHOTO_IO.execute(()->{
         AnrHooks.photo();
         ArrayList<Checkpoint> incoming=new ArrayList<>();
@@ -399,7 +403,7 @@ public final class CheckpointProximityUi {
             activeId="";closedId="";
             if(scanDialog!=null&&scanDialog.isShowing())scanDialog.dismiss();
             scanDialog=null;scanDialogId="";
-            tick();
+            tick();ready.run();
             });
         }catch(Exception ignored){}
         });
