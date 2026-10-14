@@ -38,8 +38,26 @@ jobs:
           github-token: ${{ github.token }}
           repository: RoninMerc/ronin-os
           run-id: 38496833863
-          artifact-ids: '11864403456,11863978336,11864253400,11864273037'
+          artifact-ids: '11864403456,11864253400,11864273037'
           path: results
+      - name: Fetch successful rerun directly by immutable artifact ID
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python3 - <<'PY'
+          import subprocess,zipfile
+          from pathlib import Path
+          archive=Path('/tmp/api30-success.zip')
+          with archive.open('wb') as out:
+              subprocess.run(['gh','api','repos/RoninMerc/ronin-os/actions/artifacts/11863978336/zip'],stdout=out,check=True)
+          folder=Path('results/Patrol-v159-device-results-30');folder.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(archive) as z:
+              for member in z.infolist():
+                  if member.is_dir():continue
+                  name=Path(member.filename)
+                  assert not name.is_absolute() and '..' not in name.parts
+                  assert name.name.endswith('-tests.txt') or name.name.endswith('-TEST-FIXTURE.png')
+                  target=folder/name.name;target.write_bytes(z.read(member))
+          PY
       - name: Collect successful attempts and verify delivered files
         run: |
           python3 - <<'PY'
